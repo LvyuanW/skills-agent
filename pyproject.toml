@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skills-cli-agent"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["PyYAML>=6.0"]
+
+[project.scripts]
+skills-agent = "skills_agent.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["skills_agent*"]
+
+[tool.setuptools.package-data]
+skills_agent = ["builtin_skills/*/SKILL.md", "builtin_skills/*/scripts/*.py"]
