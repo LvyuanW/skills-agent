@@ -28,6 +28,12 @@ class ToolRegistry:
                                              script, ["name", "command"]))
         if subagent:
             self.schemas.append(self._schema("subagent", "Delegate a named task; only its final report returns. "
+                                             "Prefer delegation for a bounded task that can be completed from "
+                                             "explicit inputs and handed back as findings with concrete evidence, "
+                                             "such as multi-step investigation, log analysis, codebase exploration "
+                                             "or independent review. Use direct tools for simple targeted lookups; "
+                                             "keep tightly coupled steps that need frequent decisions or new "
+                                             "information from the parent conversation in the main agent. "
                                              "Ordinary subagents do not inherit the parent conversation; provide "
                                              "the necessary background in task. For conversation-history retrieval, "
                                              "use history=true. Only this mode supplies the complete current working "
