@@ -28,7 +28,7 @@ export OPENAI_MODEL='支持工具调用的模型名称'
 
 也可以使用 `.venv/bin/python -m skills_agent`。`run --session demo` 创建或恢复名为 `demo` 的会话，先按时间顺序回放主会话，再等待输入，回答后继续留在会话中。启动命令不接受消息参数。Ctrl-C 中断当前任务并停止正在运行的脚本，随后可继续输入。
 
-两种 API 均使用流式接收。正文收到即显示；正文和工具调用按到达顺序记录、渲染，历史回放保持相同顺序。工具调用只显示摘要及完成状态、失败退出码和输出行数，不展开命令源码、工具 JSON 或思考字段。终端输入时显示 `>`，发送后清除临时输入区，显示一次与历史回放相同的 `user:` 消息块；附件只列名称。用户输入为黑底白字，Agent 回复为白底黑字，工具摘要为白底蓝字。颜色只用于终端，重定向输出及原始日志不含新增的颜色控制码。`history` 使用相同的摘要显示；`history --full` 展开完整公开记录，不调用模型。原始日志始终完整保存，摘要只影响显示，不额外调用模型。
+两种 API 均使用流式接收。正文收到即显示；正文和工具调用按到达顺序记录、渲染，历史回放保持相同顺序。工具调用显示名称及完成状态、失败退出码和输出行数，不展开命令源码或工具 JSON；可读思考标记为“思考”，按到达顺序显示，签名和加密内容不显示。终端输入时显示 `>`，发送后清除临时输入区，显示一次与历史回放相同的 `user:` 消息块；附件只列名称。用户输入为黑底白字，Agent 回复为白底黑字，工具摘要为白底蓝字。颜色只用于终端，重定向输出及原始日志不含新增的颜色控制码。`history` 使用相同的摘要显示；`history --full` 展开完整公开记录，不调用模型。原始日志始终完整保存，显示摘要不调用模型；工作上下文的压缩与长工具结果报告另有独立模型调用。
 
 终端中的 Agent 正文渲染 Markdown，包括标题、加粗、斜体、列表、引用、链接、代码和表格。流式接收时更新当前正文的预览；正文超过一屏时显示末尾，结束或出现下一条工具摘要时，完整正文进入终端回滚历史。历史回放直接渲染完整正文。重定向输出和日志保留 Markdown 源文。
 
@@ -44,9 +44,9 @@ export ANTHROPIC_MODEL='支持工具调用的模型名称'
 .venv/bin/skills-agent run --provider anthropic --session claude
 ```
 
-`--model` 优先于对应的 `OPENAI_MODEL` / `ANTHROPIC_MODEL`。`--base-url` 优先于对应的 `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`，值为包含 API 前缀的根地址，例如 `http://localhost:8000/v1`。默认端点分别为 OpenAI `/v1/chat/completions` 和 Anthropic `/v1/messages`。本地兼容服务可以不设置密钥。
+`--model` 优先于对应的 `OPENAI_MODEL` / `ANTHROPIC_MODEL`。`--base-url` 优先于对应的 `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`，值为包含 API 前缀的根地址，例如 `http://localhost:8000/v1`。OpenAI 官方接入默认使用 `/v1/responses`，并以 `/v1/responses/input_tokens` 计量同一份输入；Anthropic 使用 `/v1/messages` 和 `/v1/messages/count_tokens`。本地兼容服务可以不设置密钥。网关可通过 `--api-format responses` 使用对应接口；Chat 协议需配置与模型匹配的计量方式，不能用 Responses 的计数冒充 Chat 请求计数。
 
-OpenAI 兼容接口返回的 `reasoning_content` 会完整保存，并随保留的助手消息回传，包括未调用工具的回答，以支持 [DeepSeek 思考模式](https://api-docs.deepseek.com/guides/thinking_mode/)。该字段不在终端或历史摘要中显示。
+OpenAI 兼容接口返回的 `reasoning_content` 会完整保存，并随保留的助手消息回传，包括未调用工具的回答，以支持 [DeepSeek 思考模式](https://api-docs.deepseek.com/guides/thinking_mode/)。可读内容在终端显示为思考；必要的协议状态随保留消息回传。
 
 ## 图片和文件
 
@@ -67,7 +67,7 @@ macOS 下在输入行按 **Ctrl-V** 粘贴剪贴板中的图片或已复制的�
 > 对比新数据
 ```
 
-`--file` 和会话内的 `/file PATH` 将文件加入下一条消息的附件，可添加多个；有附件时直接输入空行也可发送。每个附件先完整复制到会话目录。PNG、JPEG、GIF、WebP 和 PDF 使用模型原生输入，需要所选模型及兼容服务支持该格式。UTF-8 文本作为文本附件输入，过长时模型只收到摘录及完整副本路径。其他格式保留副本路径，由模型编写脚本或使用适合的现有代码读取。
+`--file` 和会话内的 `/file PATH` 将文件加入下一条消息的附件，可添加多个；有附件时直接输入空行也可发送。每个附件先完整复制到会话目录。PNG、JPEG、GIF、WebP 和 PDF 使用模型原生输入，需要所选模型及兼容服务支持该格式。UTF-8 文本作为完整文本附件输入；受保护输入超出上下文预算时明确报错，不机械截断。其他格式保留副本路径，由模型编写脚本或使用适合的现有代码读取。
 
 `--workspace` 指定 shell 工作目录，默认当前目录。附件的相对路径按工作目录解析。`--sessions-dir` 指定会话存储位置，默认 `<workspace>/.agent/sessions`。
 
@@ -96,12 +96,12 @@ skills_agent/
   runtime.py         两个入口共用的参数与 Agent 构造
   agent.py           同步模型/工具循环、独立子会话
   session/           追加式事件日志、输入附件副本
-  context/           历史选择、提取摘要、预算裁剪
+  context/           持久化工作上下文、模型压缩与核验、原始历史检索
   providers/         OpenAI 与 Anthropic 协议转换
   tools/             shell、subagent、sandbox
   skills/            技能发现与系统提示词中的技能目录
   sandbox/           Docker 命令执行
-  builtin_skills/    内置 workspace skill 及其脚本
+  builtin_skills/    内置 workspace/history skill 及参考脚本
 tests/
 adapters/ale/        ALE Deployer 与运行配置
 ```
@@ -110,16 +110,30 @@ adapters/ale/        ALE Deployer 与运行配置
 
 ### 会话与上下文
 
-下一版设计讨论见 [上下文管理设计与调研](docs/context-management-design.md)（尚未实施）；以下为当前实现。
+实现依据见 [上下文管理设计与调研](docs/context-management-design.md)。
 
-- `events.jsonl` 只追加，按接收顺序保存正文和工具调用片段，响应结束后保存完整消息及原始 API 分片 `_raw.stream_events`，完整消息用于构建模型上下文，显示时不重复输出。工具参数、工具输出和中断前收到的内容均保留。附件在 `attachments/`，子会话在 `subagents/`。
-- 终端显示主 Agent 的对话及中间步骤摘要。sub-agent 的调用细节、内部对话及直接返回值不展示，只显示目标摘要，例如 `sub-agent 处理了：统计文件`，`history --full` 也遵循此规则。主 Agent 使用返回结果完成最终回答。
-- sub-agent 与主 Agent 共享工作目录、技能和模型配置；拥有独立历史和上下文，只接收 `task` 中显式给出的信息，只返回最终结果。执行是同步的，子 Agent 不再创建子 Agent。
-- 模型上下文从日志构建，去掉 `_raw`。超出预算时压缩已执行的长命令源码、工具输出和文本附件，再按近期与关键词相关性选择历史，对遗漏内容生成提取式摘要。命令摘录标明已经执行，并通过工具调用 ID 指向会话中的完整原文；实际执行和原始日志使用完整命令。摘要不额外调用模型。
-- 保留消息的 `reasoning_content` 计入预算但不截断，也不写入提取式摘要；旧会话从原始响应或流式分片恢复该字段，不修改日志。必需保留的工具调用及其思考字段超预算时直接报错。
-- 工具调用与对应结果作为整体选择，当前用户输入与最新完整工具调用组保留。不完整的工具组不进入模型上下文，原始日志不变。
-- `--context-chars` 默认 48000，统计规范化消息、系统指令和工具定义的 JSON 字符数。它不是精确 token 上限；原生图片、PDF 只计元数据，实际媒体 token 由模型服务计算。不可裁剪的当前输入超预算时直接报错。
-- `--max-output-tokens` 默认 4096。模型输出截断时保留已收到的正文供显示和回放，记录错误并停止，不执行不完整的工具调用。
+- `events.jsonl` 只追加原始消息、流式事件和完整工具输出；事件 ID 是稳定的字节偏移引用。`attachments/` 保存输入副本，`subagents/` 保存子任务和辅助调用的私有记录。
+- `context.json` 保存已挑选的工作记录、摘要、覆盖事件、已处理位置和最近计量。每次只处理新增事件；已压缩内容不会从原始日志重新填回。
+- `--context-tokens` 默认 **272000**。每次请求计量系统提示词、工具定义、所有实际发送消息、必要思考状态和媒体。达到 **90%（244800）** 时，以已有摘要和较早的已挑选记录生成新摘要；保留最近 **10 次主模型响应及全部对应工具结果**，另保留最新用户任务原文。辅助模型调用不计入这10次。
+- 摘要目标约8192 tokens。生成后独立核验真实性与遗漏，检查来源、原句、用户约束和方案采纳状态；发现问题修订一次并复核。失败不替换旧上下文。连接中断最多尝试3次，不拼接残片，不重跑工具；取消和输出截断不重试。
+- `--summary-output-tokens` 默认32768，是辅助生成的输出额度，与摘要目标及报告正文预算分开；需符合实际模型输出能力。`--model-context-window` 指定实际窗口时，输入与输出额度一并检查。最近10组或最新用户任务本身过长时明确报错，不缩短保护范围。
+- Anthropic 客户端压缩在协议允许的边界移除失效 thinking 的发送副本，原始历史不变。工具结果尚待回送且需要原签名时延后压缩；硬预算仍不能超出。
+- shell/sandbox 必填 `name`，并可选择 `result_mode: auto | direct | report`。`auto` 默认保留不超过8192 tokens的结果，超过则生成2048 tokens以内的报告；`direct` 保留原文，装不下时返回原始事件和行范围；`report` 直接形成有证据的结论。原始结果总是先完整落盘。官方接口对报告正文的独立计量包含少量请求开销，因此是保守预算。
+- sub-agent 必填 `name + task`，最终返回 Markdown 报告，说明适用的结论、证据、产物和未解决事项；内部对话不进入主上下文或 UI。`history=true` 时，携带完整工作上下文只读快照，通过 history skill 搜索父会话；快照装不下就报错，不截断。普通子任务只接收明确交代的输入。
+- `history.sqlite` 增量索引原始主会话，支持中文与英文检索、事件/路径精确查找、行范围、邻近记录及工具配对。检索子任务通过查询扩展、回看证据和检查后续修正生成报告，只把最终报告带回主上下文。任何时候均可检索，不必等到压缩后。
+- `--max-output-tokens` 默认4096。模型输出截断时保留已收到的公开内容和原始响应，记录错误，不执行不完整的工具调用。
+
+DeepSeek 使用官方请求编码器与匹配的 tokenizer：
+
+```sh
+uv sync --extra deepseek
+# 从所用模型的官方发布资源取得 tokenizer.json，编码版本必须与模型匹配。
+export SKILLS_AGENT_TOKENIZER_PATH='/absolute/path/to/tokenizer.json'
+export SKILLS_AGENT_TOKENIZER_ENCODING='v41'  # 使用对应模型版本；另支持 v4
+uv run --env-file .env skills-agent run --session demo
+```
+
+`api.deepseek.com` 自动选择 Chat 协议和 DeepSeek 计量；其他 DeepSeek 网关还需 `--token-counter deepseek --api-format chat`。配置也可用 `--tokenizer-path` 与 `--tokenizer-encoding`。不使用字符数估算替代；不支持的模型编码或媒体计量会明确报错。官方编码器及模型匹配说明见 [deepseek-recipe](https://github.com/deepseek-ai/deepseek-recipe/blob/main/docs/tokenizer.md)。
 
 ### Skills 和 scripts
 
@@ -159,9 +173,9 @@ python3 analyze.py
 
 脚本可使用当前环境中安装的语言与库，无需注册、固定入口或统一返回格式。shell 返回退出码、stdout 和 stderr，模型据此继续修改代码。配置的技能说明作为任务指导，普通输入资料与执行结果作为数据。
 
-shell 和 sandbox 可附带 `summary`，用简短自然语言说明此次操作的目的，供终端显示。它不影响脚本执行；参数尚未收全时显示“接收调用”，完整后显示摘要，未提供摘要时仅显示调用及完成状态。断流或中断时保留已经显示的正文，并记录错误，不执行不完整的工具调用。
+shell 和 sandbox 必填 `name`，用简短自然语言说明脚本用途，供终端显示。参数尚未收全时显示“接收调用”，完整后显示名称。断流或中断时保留已经显示的正文，并记录错误，不执行不完整的工具调用。
 
-内置 `workspace` skill 讲解文本读取和检索方法，附带可阅读、改写的参考实现。会话历史使用其中的 `history` 辅助命令读取，保留公开记录并排除隐藏的子会话细节。
+内置 `workspace` skill 讲解文本读取和检索方法，附带可阅读、改写的参考实现。独立的 `history` skill 提供原始会话检索和报告方法；主会话索引包含已返回的子任务报告，不索引私有子会话。
 
 ### Sandbox
 
@@ -179,6 +193,6 @@ shell 和 sandbox 可附带 `summary`，用简短自然语言说明此次操作�
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-测试通过本地模拟模型覆盖两种协议：读取技能与参考源码、返回新脚本源码、写入执行、根据错误修改、验证结果并续聊。同时验证多轮交互与恢复历史、长命令实际执行与完整记录、模型上下文裁剪、附件编码、工具配对、子会话显示隔离、进程中断清理和 Docker 参数。ALE 测试需要本地官方源码，运行方法见接入说明。模拟模型验证协议及执行链路，不代表真实模型的代码生成质量；未调用远程付费模型，也未验证实际容器启动。
+测试通过本地模拟模型覆盖两种协议：读取技能与参考源码、返回新脚本源码、写入执行、根据错误修改、验证结果并续聊。同时验证多轮交互与恢复历史、长命令实际执行与完整记录、工作上下文增量保存、压缩核验与历史检索、附件编码、工具配对、子会话显示隔离、进程中断清理和 Docker 参数。ALE 测试需要本地官方源码，运行方法见接入说明。模拟模型验证协议及执行链路，不代表真实模型的代码生成质量；未调用远程付费模型，也未验证实际容器启动。
 
-协议依据：[OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、[OpenAI 流事件](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events)、[OpenAI 文件输入](https://developers.openai.com/api/docs/guides/file-inputs)、[Anthropic 流事件](https://platform.claude.com/docs/en/build-with-claude/streaming)、[Anthropic 工具调用](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)、[Anthropic 图片](https://platform.claude.com/docs/en/build-with-claude/vision)、[Anthropic PDF](https://platform.claude.com/docs/en/build-with-claude/pdf-support)。
+协议依据：[OpenAI token计量](https://developers.openai.com/api/docs/guides/token-counting)、[OpenAI Responses](https://developers.openai.com/api/reference/resources/responses/methods/create)、[OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、[OpenAI 流事件](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events)、[OpenAI 文件输入](https://developers.openai.com/api/docs/guides/file-inputs)、[Anthropic 流事件](https://platform.claude.com/docs/en/build-with-claude/streaming)、[Anthropic 工具调用](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)、[Anthropic 图片](https://platform.claude.com/docs/en/build-with-claude/vision)、[Anthropic PDF](https://platform.claude.com/docs/en/build-with-claude/pdf-support)。

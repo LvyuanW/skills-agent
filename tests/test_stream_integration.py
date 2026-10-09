@@ -10,7 +10,7 @@ import threading
 import time
 import unittest
 
-from tests.sse import frame, stream_response
+from tests.sse import frame, stream_response, responses_from_chat
 
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -23,22 +23,29 @@ COMMAND = "printf STREAM_TOOL_OUTPUT; printf result > result.txt"
 
 
 def gated_response(provider):
-    arguments = json.dumps({"command": COMMAND, "summary": SUMMARY})
-    split = arguments.index('"summary"')
+    arguments = json.dumps({"command": COMMAND, "name": SUMMARY})
+    split = arguments.index('"name"')
     if provider == "openai":
-        def chunk(delta, reason=None):
-            return {"choices": [{"index": 0, "delta": delta, "finish_reason": reason}]}
-
+        reasoning = {"type": "reasoning", "id": "r1", "encrypted_content": "opaque-reasoning",
+                     "summary": [{"type": "summary_text", "text": "PRIVATE_REASONING"}]}
+        call = {"type": "function_call", "id": "fc1", "call_id": "call_1", "name": "shell",
+                "arguments": arguments, "status": "completed"}
+        body = {"type": "message", "id": "m1", "role": "assistant", "status": "completed",
+                "content": [{"type": "output_text", "text": FIRST_BODY + LAST_BODY, "annotations": []}]}
         beginning = [
-            chunk({"role": "assistant", "reasoning_content": "PRIVATE_REASONING"}),
-            chunk({"tool_calls": [{"index": 0, "id": "call_1", "type": "function", "function": {
-                "name": "shell", "arguments": arguments[:split],
-            }}]}),
-            chunk({"tool_calls": [{"index": 0, "function": {"arguments": arguments[split:]}}]}),
-            chunk({"content": FIRST_BODY}),
+            {"type": "response.reasoning_summary_text.delta", "output_index": 0, "summary_index": 0,
+             "delta": "PRIVATE_REASONING"},
+            {"type": "response.output_item.added", "output_index": 1, "item": {**call, "arguments": ""}},
+            {"type": "response.function_call_arguments.delta", "output_index": 1, "delta": arguments[:split]},
+            {"type": "response.function_call_arguments.delta", "output_index": 1, "delta": arguments[split:]},
+            {"type": "response.output_text.delta", "output_index": 2, "content_index": 0, "delta": FIRST_BODY},
         ]
-        ending = [chunk({"content": LAST_BODY, "reasoning_content": None}), chunk({}, "tool_calls"), None]
-        final = {"choices": [{"finish_reason": "stop", "message": {"content": FINAL}}]}
+        ending = [
+            {"type": "response.output_text.delta", "output_index": 2, "content_index": 0, "delta": LAST_BODY},
+            {"type": "response.completed", "response": {"id": "r", "status": "completed",
+             "output": [reasoning, call, body]}},
+        ]
+        final = responses_from_chat({"choices": [{"finish_reason": "stop", "message": {"content": FINAL}}]})
     else:
         beginning = [
             {"type": "message_start", "message": {"id": "msg_1", "role": "assistant", "content": [],
@@ -73,14 +80,24 @@ class StreamIntegrationTests(unittest.TestCase):
                 workspace = Path(directory)
                 initial, remaining, final = gated_response(provider)
                 release, waiting, completed = threading.Event(), threading.Event(), threading.Event()
-                requests, errors = [], []
+                requests, errors, counts = [], [], []
 
                 class Handler(BaseHTTPRequestHandler):
                     def log_message(self, *args):
                         pass
 
                     def do_POST(self):
-                        requests.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+                        payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                        if self.path.endswith(("/input_tokens", "/count_tokens")):
+                            counts.append(payload)
+                            response = b'{"input_tokens":128}'
+                            self.send_response(200)
+                            self.send_header("Content-Type", "application/json")
+                            self.send_header("Content-Length", str(len(response)))
+                            self.end_headers()
+                            self.wfile.write(response)
+                            return
+                        requests.append(payload)
                         self.send_response(200)
                         self.send_header("Content-Type", "text/event-stream")
                         self.end_headers()
@@ -113,7 +130,8 @@ class StreamIntegrationTests(unittest.TestCase):
                     process = subprocess.Popen(
                         [sys.executable, "-m", "skills_agent", "run", "--workspace", directory,
                          "--session", "gated", "--provider", provider, "--model", "test-model",
-                         "--base-url", f"http://127.0.0.1:{server.server_port}/v1"],
+                         "--base-url", f"http://127.0.0.1:{server.server_port}/v1",
+                         *(["--api-format", "responses"] if provider == "openai" else [])],
                         cwd=PROJECT, env=ENVIRONMENT, stdin=subprocess.PIPE,
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     )
@@ -148,7 +166,7 @@ class StreamIntegrationTests(unittest.TestCase):
                     self.assertFalse((workspace / "result.txt").exists())
                     log = workspace / ".agent/sessions/gated/events.jsonl"
                     pending = [json.loads(line) for line in log.read_text().splitlines()]
-                    self.assertEqual(pending[-1], {"type": "text_delta", "text": FIRST_BODY})
+                    self.assertEqual({k: pending[-1][k] for k in ("type", "text")}, {"type": "text_delta", "text": FIRST_BODY})
                     self.assertFalse(any(event.get("type") == "message"
                                          and event["message"]["role"] == "assistant" for event in pending))
 
@@ -163,14 +181,20 @@ class StreamIntegrationTests(unittest.TestCase):
                     self.assertEqual(errors, [])
                     self.assertTrue(completed.is_set())
                     self.assertEqual(len(requests), 2)
+                    self.assertGreaterEqual(len(counts), 2)
                     self.assertTrue(all(request["stream"] for request in requests))
                     if provider == "openai":
-                        assistant = next(message for message in requests[1]["messages"]
-                                         if message["role"] == "assistant")
-                        self.assertEqual(assistant["reasoning_content"], "PRIVATE_REASONING")
+                        reasoning = next(item for item in requests[1]["input"] if item.get("type") == "reasoning")
+                        self.assertEqual(reasoning["summary"][0]["text"], "PRIVATE_REASONING")
+                        self.assertEqual(reasoning["encrypted_content"], "opaque-reasoning")
+                    else:
+                        assistant = next(message for message in requests[1]["messages"] if message["role"] == "assistant")
+                        self.assertEqual(assistant["content"][0]["signature"], "private")
                     self.assertEqual((workspace / "result.txt").read_text(), "result")
                     self.assertNotIn("user:", output)
-                    self.assertNotIn("PRIVATE_REASONING", output)
+                    self.assertEqual(output.count("PRIVATE_REASONING"), 1)
+                    self.assertLess(output.index("PRIVATE_REASONING"), output.index(SUMMARY))
+                    self.assertNotIn("opaque-reasoning", output)
                     self.assertNotIn("STREAM_TOOL_OUTPUT", output)
                     for marker in (FIRST_BODY, LAST_BODY, FINAL):
                         self.assertEqual(output.count(marker), 1)
@@ -189,7 +213,8 @@ class StreamIntegrationTests(unittest.TestCase):
                         self.assertLess(replay.index(first_marker), replay.index(FIRST_BODY))
                         for marker in (FIRST_BODY, LAST_BODY, FINAL):
                             self.assertEqual(replay.count(marker), 1)
-                        self.assertNotIn("PRIVATE_REASONING", replay)
+                        self.assertEqual(replay.count("PRIVATE_REASONING"), 1)
+                        self.assertNotIn("opaque-reasoning", replay)
                         self.assertEqual("STREAM_TOOL_OUTPUT" in replay, full)
                         if not full:
                             self.assertEqual(replay, "user:\nrun gated stream\n" + output)

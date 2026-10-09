@@ -72,11 +72,17 @@ class SkillsAgentDeployer(BaseAgentDeployer):
             sys.executable, "-m", "skills_agent.benchmark",
             "--prompt-file", str(prompt_file), "--workspace", str(workspace),
             "--log-dir", str(work_dir), "--provider", cfg.provider,
-            "--model", cfg.model, "--context-chars", str(cfg.context_chars),
+            "--model", cfg.model, "--context-tokens", str(cfg.context_tokens),
+            "--api-format", cfg.api_format, "--token-counter", cfg.token_counter,
             "--max-output-tokens", str(cfg.max_output_tokens),
+            "--summary-output-tokens", str(cfg.summary_output_tokens),
         ]
         if cfg.base_url:
             argv.extend(["--base-url", cfg.base_url])
+        for field in ("tokenizer_path", "tokenizer_encoding", "model_context_window"):
+            value = getattr(cfg, field)
+            if value is not None:
+                argv.extend(["--" + field.replace("_", "-"), str(value)])
         for directory in cfg.skill_dirs:
             argv.extend(["--skill-dir", directory])
         return argv
@@ -189,7 +195,7 @@ class SkillsAgentDeployer(BaseAgentDeployer):
                     builder.add_step(source="system", message=event["message"])
                 elif kind == "subagent_summary":
                     builder.add_step(
-                        source="system", message=f"sub-agent: {event['goal']}",
+                        source="system", message=f"sub-agent: {event.get('name') or event.get('goal', '')}",
                         extra={"status": event["status"]},
                     )
                 parsed += 1

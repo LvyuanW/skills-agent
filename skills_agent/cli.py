@@ -25,13 +25,71 @@ def _print(text, role, output):
     print(text, file=output, flush=True)
 
 
+def _assistant_content(message, output):
+    content = message.get("content", [])
+    blocks = [{"type": "text", "text": content}] if isinstance(content, str) else content or []
+    reasoning = message.get("reasoning_content")
+    if isinstance(reasoning, str) and reasoning and not any(block["type"] == "thinking" for block in blocks):
+        blocks = [{"type": "thinking", "thinking": reasoning}, *blocks]
+    previous = None
+    for block in blocks:
+        kind = block["type"]
+        if kind not in {"text", "thinking"}:
+            continue
+        text = block.get("thinking" if kind == "thinking" else "text")
+        if not isinstance(text, str) or not text:
+            continue
+        if kind != previous:
+            _print("思考:" if kind == "thinking" else "assistant:", "assistant", output)
+        if output.isatty():
+            print_markdown(text, output)
+        else:
+            _print(text, "assistant", output)
+        previous = kind
+
+
+def _arguments(call):
+    try:
+        value = json.loads(call.get("arguments", ""))
+    except (ValueError, TypeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _purpose(arguments, *keys):
+    for key in keys:
+        value = arguments.get(key)
+        if isinstance(value, str) and value.strip():
+            return _brief(value)
+    return None
+
+
+def _tool_start(name, arguments):
+    purpose = _purpose(arguments, "name")
+    if name == "subagent":
+        purpose = purpose or _purpose(arguments, "goal")
+        return f"· sub-agent「{purpose}」：处理中" if purpose else "· sub-agent：接收调用"
+    if purpose:
+        return f"· {name}「{purpose}」：执行中"
+    return f"· {name}：{_purpose(arguments, 'summary') or '执行脚本'}"
+
+
+def _subagent_summary(event, output):
+    name = _purpose(event, "name")
+    if name:
+        status = "已返回报告" if event.get("status") == "completed" else "未完成"
+        _print(f"· sub-agent「{name}」：{status}", "tool", output)
+    else:
+        action = "处理了" if event.get("status") == "completed" else "未完成"
+        _print(f"sub-agent {action}：{_brief(event.get('goal', '子任务'))}", "tool", output)
+
+
 def _render_full_event(event, output):
     """Render original public content; child calls/results stay in the session log."""
     output = output or sys.stdout
     kind = event.get("type")
     if kind == "subagent_summary":
-        action = "处理了" if event["status"] == "completed" else "未完成"
-        _print(f"sub-agent {action}：{event['goal']}", "tool", output)
+        _subagent_summary(event, output)
     elif kind == "error":
         if event.get("partial_content"):
             _render_full_event({"type": "message", "message": {
@@ -45,19 +103,20 @@ def _render_full_event(event, output):
             return
         content = message.get("content", [])
         blocks = [{"type": "text", "text": content}] if isinstance(content, str) else content
-        if blocks:
+        if role == "assistant":
+            _assistant_content(message, output)
+        elif blocks:
             label = f"tool {message['name']}" if role == "tool" else role
             _print(f"{label}:", role, output)
             for block in blocks:
                 if block["type"] == "text":
-                    if role == "assistant" and output.isatty():
-                        print_markdown(block["text"], output)
-                    else:
-                        _print(block["text"], role, output)
+                    _print(block["text"], role, output)
                 else:
                     _print(f"[{block['type']}] {block['path']}", role, output)
         for call in message.get("tool_calls", []):
-            if call["name"] != "subagent":
+            if call["name"] == "subagent":
+                _print(_tool_start(call["name"], _arguments(call)), "tool", output)
+            else:
                 _print(f"tool_call {call['name']}: {call['arguments']}", "tool", output)
         output.flush()
 
@@ -74,15 +133,14 @@ def _text(content):
     return "\n".join(block["text"] for block in content or [] if block["type"] == "text")
 
 
-def render_event(event, output=None, *, full=False, echo_user=True):
+def render_event(event, output=None, *, full=False, echo_user=True, tool_names=None):
     """Summarize intermediate work without changing the stored events."""
     output = output or sys.stdout
     kind = event.get("type")
     if full:
         return _render_full_event(event, output)
     if kind == "subagent_summary":
-        action = "处理了" if event["status"] == "completed" else "未完成"
-        _print(f"sub-agent {action}：{_brief(event['goal'])}", "tool", output)
+        _subagent_summary(event, output)
     elif kind == "error":
         if event.get("partial_content"):
             count = len(_text(event["partial_content"]))
@@ -108,18 +166,13 @@ def render_event(event, output=None, *, full=False, echo_user=True):
                     lines = sum(len(str(result.get(key, "")).splitlines()) for key in ("stdout", "stderr"))
                     if lines:
                         status += f"，输出 {lines} 行"
-            _print(f"· {message['name']}：{status}", "tool", output)
-        elif role == "assistant" and message.get("tool_calls"):
-            for call in message["tool_calls"]:
-                if call["name"] == "subagent":
-                    continue
-                try:
-                    arguments = json.loads(call["arguments"])
-                except (ValueError, TypeError):
-                    arguments = {}
-                summary = arguments.get("summary") if isinstance(arguments, dict) else None
-                summary = summary if isinstance(summary, str) and summary.strip() else "执行脚本"
-                _print(f"· {call['name']}：{_brief(summary)}", "tool", output)
+            purpose = _purpose(message, "task_name") or (tool_names or {}).get(message.get("tool_call_id"))
+            label = f"{message['name']}「{purpose}」" if purpose else message["name"]
+            _print(f"· {label}：{status}", "tool", output)
+        elif role == "assistant":
+            _assistant_content(message, output)
+            for call in message.get("tool_calls", []):
+                _print(_tool_start(call["name"], _arguments(call)), "tool", output)
         elif role == "user":
             content = message.get("content", [])
             blocks = [{"type": "text", "text": content}] if isinstance(content, str) else content
@@ -148,13 +201,18 @@ class ConsoleRenderer:
         self._line_ended = False
         self._had_deltas = False
         self._calls = {}
+        self._channel = None
+        self._tool_names = {}
 
-    def _write_delta(self, text):
+    def _write_delta(self, text, *, channel="text"):
         if not text:
             return
+        if self._channel != channel:
+            self._finish_stream()
         if not self._streaming:
-            _print("assistant:", "assistant", self.output)
+            _print("思考:" if channel == "thinking" else "assistant:", "assistant", self.output)
             self._streaming = True
+            self._channel = channel
             if self.output.isatty():
                 self._markdown = MarkdownStream(self.output, live=self.live)
         if self._markdown:
@@ -170,7 +228,7 @@ class ConsoleRenderer:
         })
         for key in ("name", "arguments"):
             call[key] += event.get(key) or ""
-        if call["name"] not in {"shell", "sandbox"}:
+        if call["name"] not in {"shell", "sandbox", "subagent"}:
             return
         try:
             arguments = json.loads(call["arguments"])
@@ -178,17 +236,14 @@ class ConsoleRenderer:
             arguments = None
         display = None
         if isinstance(arguments, dict) and not call["shown"]:
-            if self.full:
+            if self.full and call["name"] != "subagent":
                 display = f"tool_call {call['name']}: {call['arguments']}"
             else:
-                summary = arguments.get("summary")
-                if isinstance(summary, str) and summary.strip():
-                    display = f"· {call['name']}：{_brief(summary)}"
-                elif not call["announced"]:
-                    display = f"· {call['name']}：执行脚本"
+                display = _tool_start(call["name"], arguments)
             call["shown"] = True
         elif not call["announced"]:
-            display = f"· {call['name']}：接收调用"
+            label = "sub-agent" if call["name"] == "subagent" else call["name"]
+            display = f"· {label}：接收调用"
         if display is not None:
             self._finish_stream()
             _print(display, "tool", self.output)
@@ -206,14 +261,15 @@ class ConsoleRenderer:
             self.output.flush()
         self._streaming = False
         self._line_ended = False
+        self._channel = None
 
     def close(self):
         self._finish_stream()
 
     def __call__(self, event):
-        if event.get("type") == "text_delta":
+        if event.get("type") in {"text_delta", "thinking_delta"}:
             self._had_deltas = self._had_deltas or bool(event["text"])
-            self._write_delta(event["text"])
+            self._write_delta(event["text"], channel="thinking" if event["type"] == "thinking_delta" else "text")
             return
         if event.get("type") == "tool_call_delta":
             self._had_deltas = True
@@ -221,6 +277,10 @@ class ConsoleRenderer:
             return
         self._finish_stream()
         if event.get("type") == "message" and event["message"]["role"] == "assistant":
+            for call in event["message"].get("tool_calls", []):
+                purpose = _purpose(_arguments(call), "name")
+                if purpose:
+                    self._tool_names[call["id"]] = purpose
             streamed = event.get("streamed") or self._had_deltas
             self._had_deltas = False
             self._calls.clear()
@@ -232,7 +292,10 @@ class ConsoleRenderer:
             self._calls.clear()
             if self.full and streamed and event.get("partial_content"):
                 event = {key: value for key, value in event.items() if key != "partial_content"}
-        render_event(event, self.output, full=self.full, echo_user=self.echo_user)
+        render_event(event, self.output, full=self.full, echo_user=self.echo_user,
+                     tool_names=self._tool_names)
+        if event.get("type") == "message" and event["message"]["role"] == "tool":
+            self._tool_names.pop(event["message"].get("tool_call_id"), None)
 
 
 def parser():

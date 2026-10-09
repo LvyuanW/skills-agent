@@ -78,12 +78,14 @@ class DisplayTests(unittest.TestCase):
             self.assertIn("完成，输出 500 行", compact)
             self.assertIn("  original request\nsecond line  ", compact)
             self.assertIn("  final answer\nunchanged  ", compact)
-            for hidden in ("RAW_SOURCE", "RAW_OUTPUT", "RAW_REASONING", "intermediate details"):
+            self.assertIn("思考:\nRAW_REASONING\n", compact)
+            self.assertIn("intermediate details", compact)
+            for hidden in ("RAW_SOURCE", "RAW_OUTPUT"):
                 self.assertNotIn(hidden, compact)
             detailed = self.render(session.events(), full=True)
             self.assertIn(events[1]["message"]["tool_calls"][0]["arguments"], detailed)
             self.assertIn(events[2]["message"]["content"], detailed)
-            self.assertNotIn("RAW_REASONING", detailed)
+            self.assertEqual(detailed.count("RAW_REASONING"), 1)
             self.assertEqual(events, original)
             self.assertEqual(path.read_bytes(), before)
 
@@ -93,14 +95,12 @@ class DisplayTests(unittest.TestCase):
             with self.subTest(content_type=type(content).__name__):
                 self.assertEqual(self.render([message("assistant", content)]), "assistant:\n" + final + "\n")
 
-    def test_intermediate_text_and_code_without_summary_are_hidden(self):
+    def test_public_body_with_tool_calls_is_shown_and_raw_private_fields_are_hidden(self):
         text = "I need to think through these inputs.\n```python\n" + "print('INTERMEDIATE_CODE')\n" * 500 + "```"
         event = message("assistant", [{"type": "text", "text": text}], tool_calls=[call(), call(identifier="c2")],
                         _raw={"reasoning_content": "PRIVATE_REASONING", "thinking": "PRIVATE_THINKING"})
         output = self.render([event])
-        self.assertEqual(output, "· shell：执行脚本\n" * 2)
-        self.assertNotIn("think through", output)
-        self.assertNotIn("INTERMEDIATE_CODE", output)
+        self.assertEqual(output, "assistant:\n" + text + "\n" + "· shell：执行脚本\n" * 2)
         self.assertNotIn("RAW_COMMAND", output)
         self.assertNotIn("PRIVATE_", output)
         detailed = self.render([event], full=True)
@@ -114,7 +114,7 @@ class DisplayTests(unittest.TestCase):
                 tool_call = call()
                 tool_call["arguments"] = arguments
                 event = message("assistant", "Read inputs", tool_calls=[tool_call])
-                self.assertEqual(self.render([event]), "· shell：执行脚本\n")
+                self.assertEqual(self.render([event]), "assistant:\nRead inputs\n· shell：执行脚本\n")
         self.assertEqual(self.render([message("assistant", [], tool_calls=[call()])]),
                          "· shell：执行脚本\n")
 
@@ -131,6 +131,11 @@ class DisplayTests(unittest.TestCase):
                 self.assertNotIn("RAW_STD", output)
                 self.assertLess(len(output), 130)
                 self.assertEqual(len(output.splitlines()), 1)
+
+    def test_result_metadata_displays_name_without_prior_call(self):
+        output = self.render([message("tool", '{"exit_code":0,"stdout":"","stderr":""}',
+                                     name="shell", task_name="检查配置", tool_call_id="c1")])
+        self.assertEqual(output, "· shell「检查配置」：完成\n")
 
     def test_non_json_or_non_object_tool_result_does_not_break_display(self):
         for content in ("RAW_LEGACY_OUTPUT", "[]", "null", '"RAW_TEXT"'):
@@ -181,6 +186,15 @@ class DisplayTests(unittest.TestCase):
         class Model:
             def complete(self, *args, **kwargs):
                 return {"role": "assistant", "content": "done"}
+
+            def count_tokens(self, *args):
+                return 128
+
+            def count_text(self, text):
+                return len(text) // 4
+
+            def compact_messages(self, messages):
+                return copy.deepcopy(messages)
 
         with TemporaryDirectory() as directory:
             workspace = Path(directory)

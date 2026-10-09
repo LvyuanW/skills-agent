@@ -10,13 +10,29 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from tests.sse import stream_response
+from tests.sse import stream_response, responses_from_chat
 
 from skills_agent.agent import Agent
 from skills_agent.cli import ConsoleRenderer, main, render_event
 from skills_agent.providers import ProviderError
 from skills_agent.session import Session
 from skills_agent.skills import SkillRegistry
+
+
+class FakeCounter:
+    """Prescribed token counts keep model fixtures wholly offline."""
+    max_output_tokens = 4096
+    model_context_window = 272000
+
+    def count_tokens(self, system, messages, tools):
+        return 128
+
+    def count_text(self, text):
+        return 64 if text else 0
+
+    def compact_messages(self, messages):
+        from copy import deepcopy
+        return deepcopy(messages)
 
 
 def answer(text, calls=None):
@@ -32,7 +48,7 @@ def call(name, values, identifier="c1"):
 
 class AgentTests(unittest.TestCase):
     def test_empty_response_is_recorded_but_does_not_report_success(self):
-        class Model:
+        class Model(FakeCounter):
             def complete(self, *args, **kwargs):
                 return answer("")
 
@@ -46,15 +62,15 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(session.events()[-1]["type"], "error")
 
     def test_child_conversation_and_result_are_private_in_live_and_replayed_output(self):
-        class Model:
-            def complete(self, system, messages, tools, *, on_event=None):
+        class Model(FakeCounter):
+            def complete(self, system, messages, tools, *, on_event=None, max_output_tokens=None):
                 is_child = not any(tool["name"] == "subagent" for tool in tools)
                 if messages[-1]["role"] == "user":
                     if is_child:
-                        return answer("CHILD_THOUGHT", [call("shell", {"command": "printf CHILD_TOOL_OUTPUT"})])
+                        return answer("CHILD_THOUGHT", [call("shell", {"name": "运行测试脚本", "command": "printf CHILD_TOOL_OUTPUT"})])
                     return answer("main text", [
-                        call("shell", {"command": "printf PARENT_OUTPUT"}, "c0"),
-                        call("subagent", {"goal": "统计文件", "task": "PRIVATE_TASK"}),
+                        call("shell", {"name": "运行测试脚本", "command": "printf PARENT_OUTPUT"}, "c0"),
+                        call("subagent", {"name": "统计文件", "task": "PRIVATE_TASK"}),
                     ])
                 if is_child:
                     return answer("PRIVATE_CHILD_RESULT")
@@ -71,7 +87,7 @@ class AgentTests(unittest.TestCase):
             live = output.getvalue()
             self.assertIn("main text", live)
             self.assertIn("PARENT_OUTPUT", live)
-            self.assertIn("sub-agent 处理了：统计文件", live)
+            self.assertIn("sub-agent「统计文件」：已返回报告", live)
             for secret in ("PRIVATE_TASK", "CHILD_THOUGHT", "CHILD_TOOL_OUTPUT", "PRIVATE_CHILD_RESULT"):
                 self.assertNotIn(secret, live)
             replay = io.StringIO()
@@ -84,10 +100,10 @@ class AgentTests(unittest.TestCase):
             self.assertIn("PRIVATE_CHILD_RESULT", (session.path / "events.jsonl").read_text())
 
     def test_interrupted_child_stream_stays_private_in_main_log_and_replay(self):
-        class Model:
-            def complete(self, system, messages, tools, *, on_event=None):
+        class Model(FakeCounter):
+            def complete(self, system, messages, tools, *, on_event=None, max_output_tokens=None):
                 if any(tool["name"] == "subagent" for tool in tools):
-                    child_call = call("subagent", {"goal": "统计文件", "task": "delegate task"})
+                    child_call = call("subagent", {"name": "统计文件", "task": "delegate task"})
                     on_event({"type": "text_delta", "text": "parent text"})
                     on_event({"type": "tool_call_delta", "index": 0,
                               "name": "subagent", "arguments": child_call["arguments"]})
@@ -109,12 +125,12 @@ class AgentTests(unittest.TestCase):
                 with self.assertRaises(KeyboardInterrupt) as caught:
                     agent.run(session.make_user_message("task", []))
                 self.assertIsNot(caught.exception, model.interruption)
-                self.assertEqual(session.events()[-1], {"type": "error", "message": "Interrupted"})
+                self.assertEqual({k: session.events()[-1][k] for k in ("type", "message")}, {"type": "error", "message": "Interrupted"})
                 root_log = (session.path / "events.jsonl").read_text()
                 self.assertNotIn("PRIVATE_CHILD_", root_log)
                 self.assertNotIn("PRIVATE_CHILD_", output.getvalue())
                 self.assertEqual(output.getvalue().count("parent text"), 1)
-                self.assertIn("sub-agent 未完成：统计文件", output.getvalue())
+                self.assertIn("sub-agent「统计文件」：未完成", output.getvalue())
                 self.assertIn("error: Interrupted", output.getvalue())
                 replay = io.StringIO()
                 renderer = ConsoleRenderer(replay, full=full)
@@ -126,14 +142,20 @@ class AgentTests(unittest.TestCase):
                 child_events = [json.loads(line) for line in child_logs[0].read_text().splitlines()]
                 self.assertEqual(child_events[-1]["_raw"], model.interruption.raw)
                 self.assertEqual(child_events[-1]["partial_content"], model.interruption.partial_content)
-                self.assertIn({"type": "text_delta", "text": "PRIVATE_CHILD_PARTIAL"}, child_events)
+                self.assertTrue(any(event.get("type") == "text_delta" and event.get("text") == "PRIVATE_CHILD_PARTIAL" for event in child_events))
 
-    def test_tool_output_is_saved_and_displayed_in_full(self):
-        class Model:
-            def complete(self, system, messages, tools, *, on_event=None):
+    def test_tool_output_is_saved_in_full_and_only_report_enters_context(self):
+        class Model(FakeCounter):
+            def count_text(self, text):
+                return 9000 if "x" * 15000 in text else 64
+
+            def complete(self, system, messages, tools, *, on_event=None, max_output_tokens=None):
+                if not tools:
+                    assert "x" * 15000 in messages[0]["content"]
+                    return answer("Generated 15000 x characters; exit code 0.")
                 if messages[-1]["role"] == "user":
                     return answer("", [call("shell", {
-                        "command": "python3 -c 'print(\"x\" * 15000)'",
+                        "name": "生成长输出", "command": "python3 -c 'print(\"x\" * 15000)'",
                     })])
                 self.observed = messages
                 return answer("done")
@@ -143,15 +165,17 @@ class AgentTests(unittest.TestCase):
             session = Session(path, "full")
             output = io.StringIO()
             model = Model()
-            agent = Agent(model, session, SkillRegistry([]), path, context_chars=7000,
+            agent = Agent(model, session, SkillRegistry([]), path, context_tokens=272000,
                           on_event=lambda event: render_event(event, output, full=True))
             agent.run(session.make_user_message("read output", []))
             self.assertIn("x" * 15000, output.getvalue())
             saved_tool = next(message for message in session.messages() if message["role"] == "tool")
             self.assertEqual(json.loads(saved_tool["content"])["stdout"], "x" * 15000 + "\n")
             self.assertNotIn("x" * 15000, json.dumps(model.observed))
+            self.assertIn("Generated 15000 x characters", json.dumps(model.observed))
+            self.assertEqual(len(list((session.path / "subagents").glob("*/events.jsonl"))), 1)
 
-    def test_generated_script_runs_once_and_is_compacted_only_in_model_context(self):
+    def test_generated_script_runs_once_and_recent_command_stays_verbatim(self):
         source = (
             "from pathlib import Path\n"
             "# " + "reference detail " * 1500 + "\n"
@@ -161,10 +185,10 @@ class AgentTests(unittest.TestCase):
         )
         command = "cat > generated.py <<'PY'\n" + source + "PY\npython3 generated.py"
 
-        class Model:
-            def complete(self, system, messages, tools, *, on_event=None):
+        class Model(FakeCounter):
+            def complete(self, system, messages, tools, *, on_event=None, max_output_tokens=None):
                 if messages[-1]["role"] == "user":
-                    return answer("", [call("shell", {"command": command})])
+                    return answer("", [call("shell", {"name": "运行测试脚本", "command": command})])
                 self.observed = messages
                 return answer("done")
 
@@ -173,16 +197,16 @@ class AgentTests(unittest.TestCase):
             session = Session(path, "generated")
             output = io.StringIO()
             model = Model()
-            agent = Agent(model, session, SkillRegistry([]), path, context_chars=9000,
+            agent = Agent(model, session, SkillRegistry([]), path, context_tokens=272000,
                           on_event=lambda event: render_event(event, output, full=True))
             self.assertEqual(agent.run(session.make_user_message("write and run a script", [])), "done")
             self.assertEqual((path / "generated.py").read_text(), source)
             self.assertEqual((path / "runs.txt").read_text(), "executed once\n")
             saved_call = next(message for message in session.messages() if message.get("tool_calls"))
-            self.assertEqual(json.loads(saved_call["tool_calls"][0]["arguments"]), {"command": command})
+            self.assertEqual(json.loads(saved_call["tool_calls"][0]["arguments"]), {"name": "运行测试脚本", "command": command})
             context_call = next(message for message in model.observed if message.get("tool_calls"))
             excerpt = json.loads(context_call["tool_calls"][0]["arguments"])["command"]
-            self.assertLess(len(excerpt), len(command))
+            self.assertEqual(excerpt, command)
             self.assertIn("generated.py", excerpt)
             result = next(message for message in model.observed if message["role"] == "tool")
             self.assertEqual(json.loads(result["content"])["stdout"], "generated script completed\n")
@@ -195,7 +219,7 @@ class AgentTests(unittest.TestCase):
     def test_failed_provider_response_is_recorded_without_executing_tools(self):
         raw = {"incomplete": "original response"}
 
-        class Model:
+        class Model(FakeCounter):
             def complete(self, *args, **kwargs):
                 raise ProviderError("truncated", raw)
 
@@ -209,7 +233,7 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(len(session.messages()), 1)
 
     def test_partial_response_is_displayed_and_replayed_but_not_sent_as_history(self):
-        class Model:
+        class Model(FakeCounter):
             def complete(self, *args, **kwargs):
                 error = ProviderError("truncated", {"private": "RAW_ONLY"})
                 error.partial_content = [{"type": "text", "text": "  original partial\n"}]
@@ -253,7 +277,7 @@ class CLIInteractionTests(unittest.TestCase):
         return code, output.getvalue(), error.getvalue()
 
     def test_named_session_opens_without_submitting_a_task(self):
-        class Model:
+        class Model(FakeCounter):
             def complete(self, *args, **kwargs):
                 raise AssertionError("Starting a session must wait for input")
 
@@ -268,8 +292,8 @@ class CLIInteractionTests(unittest.TestCase):
         self.assertEqual(result.exception.code, 2)
 
     def test_piped_lines_are_distinct_turns_and_preserve_user_text(self):
-        class Model:
-            def complete(self, system, messages, tools, *, on_event=None):
+        class Model(FakeCounter):
+            def complete(self, system, messages, tools, *, on_event=None, max_output_tokens=None):
                 self.messages = messages
                 return answer("response")
 
@@ -289,7 +313,7 @@ class CLIInteractionTests(unittest.TestCase):
             self.assertNotIn("second turn", output)
 
     def test_files_and_images_are_queued_for_only_the_next_turn(self):
-        class Model:
+        class Model(FakeCounter):
             def complete(self, *args, **kwargs):
                 return answer("attached")
 
@@ -310,7 +334,7 @@ class CLIInteractionTests(unittest.TestCase):
             self.assertEqual(users[1]["content"], [{"type": "text", "text": "follow up"}])
 
     def test_file_errors_are_reported_and_session_continues(self):
-        class Model:
+        class Model(FakeCounter):
             def complete(self, *args, **kwargs):
                 return answer("done")
 
@@ -324,7 +348,7 @@ class CLIInteractionTests(unittest.TestCase):
             self.assertIn("assistant:\ndone", output)
 
     def test_provider_error_is_shown_once_and_next_turn_runs(self):
-        class Model:
+        class Model(FakeCounter):
             count = 0
 
             def complete(self, *args, **kwargs):
@@ -340,7 +364,7 @@ class CLIInteractionTests(unittest.TestCase):
             self.assertIn("assistant:\ndone", output)
 
     def test_ctrl_c_at_prompt_returns_to_prompt(self):
-        class Model:
+        class Model(FakeCounter):
             def complete(self, *args, **kwargs):
                 return answer("done")
 
@@ -351,7 +375,7 @@ class CLIInteractionTests(unittest.TestCase):
             self.assertIn("assistant:\ndone", output)
 
     def test_ctrl_c_during_turn_returns_to_prompt(self):
-        class Model:
+        class Model(FakeCounter):
             count = 0
 
             def complete(self, *args, **kwargs):
@@ -372,6 +396,7 @@ class CLIProtocolTests(unittest.TestCase):
         for provider in ("openai", "anthropic"):
             with self.subTest(provider=provider), TemporaryDirectory() as directory:
                 requests = []
+                counts = []
                 workspace = Path(directory)
                 skill = workspace / "skills" / "totals"
                 (skill / "scripts").mkdir(parents=True)
@@ -405,10 +430,19 @@ class CLIProtocolTests(unittest.TestCase):
 
                     def do_POST(self):
                         data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                        if self.path.endswith(("/input_tokens", "/count_tokens")):
+                            counts.append((self.path, data))
+                            encoded = b'{"input_tokens":128}'
+                            self.send_response(200)
+                            self.send_header("Content-Type", "application/json")
+                            self.send_header("Content-Length", str(len(encoded)))
+                            self.end_headers()
+                            self.wfile.write(encoded)
+                            return
                         requests.append((self.path, data))
                         if len(requests) <= len(commands):
                             arguments = {"command": commands[len(requests) - 1],
-                                         "summary": summaries[len(requests) - 1]}
+                                         "name": summaries[len(requests) - 1]}
                             identifier = f"shell{len(requests)}"
                             if provider == "openai":
                                 response = {"choices": [{"finish_reason": "tool_calls", "message": {
@@ -423,6 +457,8 @@ class CLIProtocolTests(unittest.TestCase):
                             response = {"choices": [{"finish_reason": "stop", "message": {"content": "completed"}}]}
                         else:
                             response = {"stop_reason": "end_turn", "content": [{"type": "text", "text": "completed"}]}
+                        if provider == "openai":
+                            response = responses_from_chat(response)
                         encoded = stream_response(response)
                         self.send_response(200)
                         self.send_header("Content-Type", "text/event-stream")
@@ -437,9 +473,15 @@ class CLIProtocolTests(unittest.TestCase):
                     command = [sys.executable, "-m", "skills_agent", "run", "--workspace", directory,
                                "--provider", provider, "--model", "test-model", "--base-url",
                                f"http://127.0.0.1:{server.server_port}/v1"]
+                    if provider == "openai":
+                        command.extend(["--api-format", "responses"])
                     first = subprocess.run(command, input="create result\nfollow up\n/exit\n",
                                            capture_output=True, text=True)
                     self.assertEqual(first.returncode, 0, first.stderr + first.stdout)
+                    self.assertTrue(counts, "Working context must call the official counter before generation")
+                    input_key = "input" if provider == "openai" else "messages"
+                    self.assertEqual(counts[0][1][input_key], requests[0][1][input_key])
+                    self.assertEqual(counts[0][1]["tools"], requests[0][1]["tools"])
                     self.assertEqual((workspace / "result.txt").read_text(), "10")
                     self.assertEqual((workspace / "task.py").read_text(), fixed_source)
                     self.assertNotIn("KeyError", first.stdout)
@@ -448,8 +490,8 @@ class CLIProtocolTests(unittest.TestCase):
                     self.assertNotIn("cat > task.py", first.stdout)
                     for summary in summaries:
                         self.assertIn(summary, first.stdout)
-                    self.assertIn("shell：失败（退出码 1）", first.stdout)
-                    self.assertIn("shell：完成", first.stdout)
+                    self.assertIn("失败（退出码 1）", first.stdout)
+                    self.assertIn("完成", first.stdout)
                     self.assertIn("completed", first.stdout)
                     session = Session(workspace / ".agent" / "sessions", "default")
                     messages = session.messages()
@@ -464,8 +506,8 @@ class CLIProtocolTests(unittest.TestCase):
                     for index in range(3):
                         payload = requests[index + 1][1]
                         if provider == "openai":
-                            received = [json.loads(message["content"]) for message in payload["messages"]
-                                        if message["role"] == "tool"]
+                            received = [json.loads(item["output"]) for item in payload["input"]
+                                        if item.get("type") == "function_call_output"]
                         else:
                             received = [json.loads(block["content"]) for message in payload["messages"]
                                         for block in message["content"] if block["type"] == "tool_result"]
@@ -505,7 +547,7 @@ class CLIProtocolTests(unittest.TestCase):
                         for tool_call in message.get("tool_calls", []):
                             self.assertIn(tool_call["arguments"], full_history.stdout)
                     self.assertEqual(session_log.read_bytes(), recorded)
-                    expected = "/v1/chat/completions" if provider == "openai" else "/v1/messages"
+                    expected = "/v1/responses" if provider == "openai" else "/v1/messages"
                     self.assertTrue(all(path == expected for path, _ in requests))
                 finally:
                     server.shutdown()

@@ -1,11 +1,14 @@
 from contextlib import closing
 from copy import deepcopy
 from pathlib import Path
+from urllib.parse import urlparse
 
 from .base import (
-    HTTPProvider, ProviderError, blocks, encoded_file, parse_arguments,
+    HTTPProvider, ProviderError, ProviderConnectionError, ProviderOutputLimitError,
+    blocks, encoded_file, parse_arguments, input_token_count, post_json,
     post_stream, validate_calls, validate_tool_pairs,
 )
+from .responses import ResponsesMixin
 
 
 def _content(content) -> list[dict]:
@@ -25,16 +28,58 @@ def _content(content) -> list[dict]:
             }})
         elif kind == "file":
             result.append({"type": "text", "text": f"File: {block['path']}"})
+        elif kind in {"thinking", "redacted_thinking"}:
+            continue
         else:
             raise ProviderError(f"Unsupported content type: {kind}")
     return result
 
 
-class OpenAIProvider(HTTPProvider):
+class OpenAIProvider(ResponsesMixin, HTTPProvider):
     default_base_url = "https://api.openai.com/v1"
 
-    def complete(self, system: str, messages: list[dict], tools: list[dict],
-                 *, on_event=None) -> dict:
+    def __init__(self, model: str, api_key: str, base_url: str | None = None,
+                 max_output_tokens: int = 4096, *, api_format: str = "auto",
+                 token_counter: str = "auto", tokenizer_path: str | None = None,
+                 tokenizer_encoding: str | None = None, model_context_window: int | None = None):
+        super().__init__(model, api_key, base_url, max_output_tokens,
+                         model_context_window=model_context_window)
+        host = urlparse(self.base_url).hostname
+        if api_format not in {"auto", "responses", "chat"}:
+            raise ValueError("api_format must be auto, responses, or chat")
+        self.api_format = ("responses" if host == "api.openai.com" else "chat") if api_format == "auto" else api_format
+        if token_counter not in {"auto", "official", "deepseek"}:
+            raise ValueError("token_counter must be auto, official, or deepseek")
+        self.token_counter = token_counter
+        if token_counter == "auto":
+            self.token_counter = "deepseek" if host == "api.deepseek.com" else "official"
+        self.tokenizer_path = tokenizer_path
+        self.tokenizer_encoding = tokenizer_encoding
+        self._deepseek_counter = None
+
+    def count_tokens(self, system: str, messages: list[dict], tools: list[dict]) -> int:
+        if self.token_counter == "deepseek":
+            if self.api_format != "chat":
+                raise ProviderError("DeepSeek counting requires api_format=chat")
+            return self._counter().count_request(self._chat_payload(system, messages, tools))
+        if self.api_format != "responses":
+            raise ProviderError("Chat gateway needs a matching token counter; use Responses with its official count endpoint or configure DeepSeek tokenizer")
+        return input_token_count(post_json(self.base_url + "/responses/input_tokens",
+                                           self._responses_payload(system, messages, tools),
+                                           {"Authorization": f"Bearer {self.api_key}"}))
+
+    def _counter(self):
+        if self._deepseek_counter is None:
+            from .deepseek import DeepSeekCounter
+            self._deepseek_counter = DeepSeekCounter(self.tokenizer_path, self.tokenizer_encoding)
+        return self._deepseek_counter
+
+    def count_text(self, text: str) -> int:
+        if self.token_counter == "deepseek":
+            return self._counter().count_text(text)
+        return super().count_text(text)
+
+    def _chat_payload(self, system: str, messages: list[dict], tools: list[dict]) -> dict:
         validate_tool_pairs(messages)
         converted = [{"role": "system", "content": system}] if system else []
         for message in messages:
@@ -54,16 +99,25 @@ class OpenAIProvider(HTTPProvider):
                         "function": {"name": call["name"], "arguments": call["arguments"]},
                     } for call in message["tool_calls"]]
             converted.append(item)
-        payload = {
-            "model": self.model, "messages": converted,
-            "max_completion_tokens": self.max_output_tokens,
-            "stream": True, "stream_options": {"include_usage": True},
-        }
+        payload = {"model": self.model, "messages": converted}
         if tools:
             payload["tools"] = [{"type": "function", "function": {
                 "name": tool["name"], "description": tool["description"],
                 "parameters": tool["parameters"],
             }} for tool in tools]
+        return payload
+
+    def complete(self, system: str, messages: list[dict], tools: list[dict],
+                 *, on_event=None, max_output_tokens: int | None = None) -> dict:
+        if self.api_format == "responses":
+            return self._complete_responses(system, messages, tools, on_event=on_event,
+                                            max_output_tokens=max_output_tokens)
+        payload = self._chat_payload(system, messages, tools)
+        limit = self.max_output_tokens if max_output_tokens is None else max_output_tokens
+        if limit <= 0:
+            raise ValueError("max_output_tokens must be positive")
+        output_key = "max_tokens" if self.token_counter == "deepseek" else "max_completion_tokens"
+        payload.update({output_key: limit, "stream": True, "stream_options": {"include_usage": True}})
         message = {"role": "assistant", "content": None}
         choice = {"index": 0, "message": message, "finish_reason": None}
         raw = {"choices": [choice], "stream_events": []}
@@ -146,6 +200,14 @@ class OpenAIProvider(HTTPProvider):
                                 if not isinstance(value, str):
                                     raise ProviderError("Invalid OpenAI reasoning_content delta")
                                 message[key] = message.get(key, "") + value
+                                if value:
+                                    if content and last_channel == "thinking":
+                                        content[-1]["thinking"] += value
+                                    else:
+                                        content.append({"type": "thinking", "thinking": value})
+                                    last_channel = "thinking"
+                                    if on_event:
+                                        on_event({"type": "thinking_delta", "text": value})
                         elif key == "tool_calls":
                             if value is None:
                                 continue
@@ -193,8 +255,10 @@ class OpenAIProvider(HTTPProvider):
                             raise ProviderError("Duplicate OpenAI finish reason")
                         choice["finish_reason"] = reason
             if not done:
-                raise ProviderError("OpenAI stream ended before [DONE]")
+                raise ProviderConnectionError("OpenAI stream ended before [DONE]")
             reason = choice["finish_reason"]
+            if reason == "length":
+                raise ProviderOutputLimitError(f"OpenAI response stopped: {reason}")
             if reason not in {"stop", "tool_calls"}:
                 raise ProviderError(f"OpenAI response stopped: {reason}")
             if sorted(indexed_calls) != list(range(len(indexed_calls))):

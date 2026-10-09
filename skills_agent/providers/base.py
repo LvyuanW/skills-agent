@@ -1,5 +1,6 @@
 import base64
 import json
+from copy import deepcopy
 from http.client import HTTPException
 from pathlib import Path
 from typing import Protocol
@@ -14,9 +15,50 @@ class ProviderError(RuntimeError):
         self.partial_content = partial_content if partial_content is not None else []
 
 
+class ProviderConnectionError(ProviderError):
+    """A transport failure or a stream that ended before its terminal event."""
+
+
+class ProviderOutputLimitError(ProviderError):
+    """The provider stopped generation at an output or context limit."""
+
+
 class Provider(Protocol):
     def complete(self, system: str, messages: list[dict], tools: list[dict],
-                 *, on_event=None) -> dict: ...
+                 *, on_event=None, max_output_tokens: int | None = None) -> dict: ...
+
+    def count_tokens(self, system: str, messages: list[dict], tools: list[dict]) -> int: ...
+
+    def count_text(self, text: str) -> int: ...
+
+    def compact_messages(self, messages: list[dict]) -> list[dict]: ...
+
+    def can_compact(self, messages: list[dict]) -> bool: ...
+
+
+def post_json(url: str, payload: dict, headers: dict) -> dict:
+    req = request.Request(url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                          headers={"Content-Type": "application/json", **headers}, method="POST")
+    try:
+        with request.urlopen(req, timeout=120) as response:
+            result = json.load(response)
+    except error.HTTPError as exc:
+        exc.close()
+        raise ProviderError(f"API HTTP error {exc.code}") from None
+    except (error.URLError, OSError, HTTPException):
+        raise ProviderConnectionError("API connection failed") from None
+    except (ValueError, UnicodeError):
+        raise ProviderError("API returned invalid JSON") from None
+    if not isinstance(result, dict):
+        raise ProviderError("API response must be a JSON object")
+    return result
+
+
+def input_token_count(response: dict) -> int:
+    count = response.get("input_tokens")
+    if type(count) is not int or count < 0:
+        raise ProviderError("Token counter returned an invalid input_tokens value")
+    return count
 
 
 def post_stream(url: str, payload: dict, headers: dict):
@@ -64,7 +106,7 @@ def post_stream(url: str, payload: dict, headers: dict):
         exc.close()
         raise ProviderError(f"API HTTP error {exc.code}") from None
     except (error.URLError, OSError, HTTPException):
-        raise ProviderError("API connection failed") from None
+        raise ProviderConnectionError("API connection failed") from None
     except UnicodeError:
         raise ProviderError("API returned invalid stream encoding") from None
 
@@ -136,10 +178,26 @@ class HTTPProvider:
     default_base_url: str
 
     def __init__(self, model: str, api_key: str, base_url: str | None = None,
-                 max_output_tokens: int = 4096):
+                 max_output_tokens: int = 4096, *, model_context_window: int | None = None):
         if not model or max_output_tokens <= 0:
             raise ValueError("model and positive max_output_tokens are required")
         self.model = model
         self.api_key = api_key
         self.base_url = (base_url or self.default_base_url).rstrip("/")
         self.max_output_tokens = max_output_tokens
+        if model_context_window is not None and model_context_window <= 0:
+            raise ValueError("model_context_window must be positive")
+        self.model_context_window = model_context_window
+
+    def count_text(self, text: str) -> int:
+        # Official APIs count requests, not bare strings. Include their small
+        # envelope rather than subtract an invalid/unstable empty-message count.
+        if not text:
+            return 0
+        return self.count_tokens("", [{"role": "user", "content": text}], [])
+
+    def compact_messages(self, messages: list[dict]) -> list[dict]:
+        return deepcopy(messages)
+
+    def can_compact(self, messages: list[dict]) -> bool:
+        return True

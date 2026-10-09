@@ -67,7 +67,7 @@ class AnthropicStreamTests(unittest.TestCase):
         })
         self.assertEqual(closed, [True])
 
-    def test_reasoning_and_tool_fragments_stay_private_and_raw_is_preserved(self):
+    def test_readable_thinking_streams_and_signatures_stay_raw(self):
         events = [start(), {"type": "ping"}, {"type": "future_event", "value": "raw only"},
                   block_start(0, {"type": "thinking", "thinking": "", "signature": ""}),
                   delta(0, "thinking_delta", "thinking", "PRIVATE_REASONING"),
@@ -85,6 +85,7 @@ class AnthropicStreamTests(unittest.TestCase):
         self.assertEqual("".join(event["text"] for event in shown if event["type"] == "text_delta"),
                          "I will inspect\nnext")
         self.assertEqual(shown, [
+            {"type": "thinking_delta", "text": "PRIVATE_REASONING"},
             {"type": "text_delta", "text": "I will "},
             {"type": "text_delta", "text": "inspect"},
             {"type": "tool_call_delta", "index": 2, "id": "call_1", "name": "shell"},
@@ -94,6 +95,7 @@ class AnthropicStreamTests(unittest.TestCase):
             {"type": "text_delta", "text": "next"},
         ])
         self.assertEqual(result["content"], [
+            {"type": "thinking", "thinking": "PRIVATE_REASONING", "signature": "PRIVATE_SIGNATURE"},
             {"type": "text", "text": "I will inspect"}, {"type": "text", "text": "next"},
         ])
         self.assertEqual(json.loads(result["tool_calls"][0]["arguments"]), {
@@ -112,7 +114,8 @@ class AnthropicStreamTests(unittest.TestCase):
         shown = []
         result = self.complete(events, shown.append)
         self.assertEqual(shown, [{"type": "text_delta", "text": "visible"}])
-        self.assertEqual(result["content"], [{"type": "text", "text": "visible"}])
+        self.assertEqual(result["content"], [{"type": "redacted_thinking", "data": "hidden"},
+                                              {"type": "text", "text": "visible"}])
         self.assertEqual(result["_raw"]["content"][0]["data"], "hidden")
 
     def test_eof_and_failed_finish_keep_received_body(self):

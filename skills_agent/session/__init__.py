@@ -8,6 +8,7 @@ import re
 import shutil
 from pathlib import Path
 from uuid import uuid4
+from datetime import datetime, timezone
 
 
 class Session:
@@ -18,19 +19,35 @@ class Session:
         self.path.mkdir(parents=True, exist_ok=True)
         self._events_path = self.path / "events.jsonl"
 
-    def append(self, message: dict) -> None:
-        self.append_event({"type": "message", "message": message})
+    def append(self, message: dict) -> dict:
+        return self.append_event({"type": "message", "message": message})
 
-    def append_event(self, event: dict) -> None:
-        line = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
-        with self._events_path.open("a", encoding="utf-8") as stream:
-            stream.write(line + "\n")
+    def append_event(self, event: dict) -> dict:
+        with self._events_path.open("ab") as stream:
+            event = {"timestamp": datetime.now(timezone.utc).isoformat(),
+                     **event, "event_id": f"event-{stream.tell()}"}
+            line = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
+            stream.write((line + "\n").encode("utf-8"))
+        return event
+
+    def iter_events(self, after: int = 0):
+        """Read only appended bytes; legacy logs get stable references without rewriting."""
+        if not self._events_path.exists():
+            return
+        with self._events_path.open("rb") as stream:
+            stream.seek(after)
+            while True:
+                offset = stream.tell()
+                line = stream.readline()
+                if not line:
+                    return
+                if line.strip():
+                    event = json.loads(line)
+                    event.setdefault("event_id", f"event-{offset}")
+                    yield stream.tell(), event
 
     def events(self) -> list[dict]:
-        if not self._events_path.exists():
-            return []
-        with self._events_path.open(encoding="utf-8") as stream:
-            return [json.loads(line) for line in stream if line.strip()]
+        return [event for _, event in self.iter_events()]
 
     def messages(self) -> list[dict]:
         return [event["message"] for event in self.events() if event.get("type") == "message"]

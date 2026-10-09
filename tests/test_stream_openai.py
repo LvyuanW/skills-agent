@@ -6,7 +6,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from skills_agent.context import ContextBuilder
 from skills_agent.providers import OpenAIProvider, ProviderError
 from skills_agent.providers.base import post_stream
 from skills_agent.session import Session
@@ -25,7 +24,7 @@ class OpenAIStreamTests(unittest.TestCase):
     def complete(self, events, on_event=None):
         with patch("skills_agent.providers.openai.post_stream",
                    return_value=(event for event in events)):
-            return OpenAIProvider("test", "secret").complete("", [], [], on_event=on_event)
+            return OpenAIProvider("test", "secret", api_format="chat").complete("", [], [], on_event=on_event)
 
     def test_text_is_delivered_before_reading_later_frames_and_stream_closes(self):
         observed, closed = [], []
@@ -42,14 +41,14 @@ class OpenAIStreamTests(unittest.TestCase):
                 closed.append(True)
 
         with patch("skills_agent.providers.openai.post_stream", return_value=stream()) as send:
-            result = OpenAIProvider("test", "secret").complete("", [], [], on_event=observed.append)
+            result = OpenAIProvider("test", "secret", api_format="chat").complete("", [], [], on_event=observed.append)
         self.assertEqual(result["content"], [{"type": "text", "text": "你好世界"}])
         self.assertEqual(result["_raw"]["usage"], {"total_tokens": 9})
         self.assertTrue(send.call_args.args[1]["stream"])
         self.assertEqual(send.call_args.args[1]["stream_options"], {"include_usage": True})
         self.assertEqual(closed, [True])
 
-    def test_indexed_tools_and_text_preserve_wire_order_without_reasoning_callbacks(self):
+    def test_indexed_tools_text_and_thinking_preserve_wire_order(self):
         events = [
             chunk({"reasoning_content": "PRIVATE_REASONING", "content": "first"}),
             chunk(tool(1, id="call_", type="function", function={"name": "sub", "arguments": '{"task":'})),
@@ -63,7 +62,7 @@ class OpenAIStreamTests(unittest.TestCase):
         observed = []
         result = self.complete(events, observed.append)
         self.assertEqual([event["type"] for event in observed], [
-            "text_delta", "tool_call_delta", "text_delta", "tool_call_delta",
+            "thinking_delta", "text_delta", "text_delta", "tool_call_delta", "text_delta", "tool_call_delta",
             "tool_call_delta", "text_delta", "tool_call_delta",
         ])
         self.assertEqual(result["tool_calls"], [
@@ -72,9 +71,10 @@ class OpenAIStreamTests(unittest.TestCase):
         ])
         self.assertEqual(result["_raw"]["stream_events"], original[:-1])
         self.assertEqual(events, original)
-        self.assertNotIn("PRIVATE_REASONING", json.dumps(observed))
+        self.assertEqual(observed[0], {"type": "thinking_delta", "text": "PRIVATE_REASONING"})
         self.assertEqual(result["reasoning_content"], "PRIVATE_REASONING")
-        self.assertEqual(result["content"], [{"type": "text", "text": "firstmiddleafter"}])
+        self.assertEqual(result["content"], [{"type": "thinking", "thinking": "PRIVATE_REASONING"},
+                                             {"type": "text", "text": "firstmiddleafter"}])
 
     def test_reasoning_roundtrips_through_tools_and_later_user_turns(self):
         reasoning = "  private\n思考 remains unchanged  "
@@ -94,23 +94,22 @@ class OpenAIStreamTests(unittest.TestCase):
             for event in sequence
         )) for sequence in sequences]
         observed = []
-        provider = OpenAIProvider("test", "secret")
+        provider = OpenAIProvider("test", "secret", api_format="chat")
         tools = [{"name": "shell", "description": "Run a command", "parameters": {"type": "object"}}]
-        context = ContextBuilder()
         with TemporaryDirectory() as directory, \
                 patch("skills_agent.providers.base.request.urlopen", side_effect=responses) as send:
             session = Session(Path(directory), "reasoning")
             session.append({"role": "user", "content": "first task"})
-            first = provider.complete("", context.build(session.messages()), tools, on_event=observed.append)
+            first = provider.complete("", session.messages(), tools, on_event=observed.append)
             self.assertEqual(first["reasoning_content"], reasoning)
             self.assertEqual(first["_raw"]["choices"][0]["message"]["reasoning_content"], reasoning)
             session.append(first)
             session.append({"role": "tool", "tool_call_id": "a", "content": "/tmp"})
-            final = provider.complete("", context.build(session.messages()), tools, on_event=observed.append)
+            final = provider.complete("", session.messages(), tools, on_event=observed.append)
             session.append(final)
             session.append({"role": "user", "content": "second task"})
             restored = Session(Path(directory), "reasoning")
-            provider.complete("", context.build(restored.messages()), tools, on_event=observed.append)
+            provider.complete("", restored.messages(), tools, on_event=observed.append)
         second_request = json.loads(send.call_args_list[1].args[0].data)
         third_request = json.loads(send.call_args_list[2].args[0].data)
         self.assertEqual(second_request["messages"][1], {
@@ -122,7 +121,7 @@ class OpenAIStreamTests(unittest.TestCase):
             "role": "assistant", "content": [{"type": "text", "text": "done"}],
             "reasoning_content": "private final reasoning",
         })
-        self.assertNotIn("private", json.dumps(observed))
+        self.assertTrue(any(event["type"] == "thinking_delta" for event in observed))
         self.assertNotIn("_raw", json.dumps(third_request))
         self.assertTrue(all(response.closed for response in responses))
 
@@ -133,7 +132,7 @@ class OpenAIStreamTests(unittest.TestCase):
                 with patch("skills_agent.providers.openai.post_stream", return_value=(event for event in [
                     chunk({"content": "next"}, "stop"), None,
                 ])) as send:
-                    OpenAIProvider("test", "secret").complete("", [result], [])
+                    OpenAIProvider("test", "secret", api_format="chat").complete("", [result], [])
                 sent = send.call_args.args[1]["messages"][0]
                 if delta.get("reasoning_content") == "":
                     self.assertEqual(result["reasoning_content"], "")
@@ -155,7 +154,7 @@ class OpenAIStreamTests(unittest.TestCase):
         for value in [None, 7, False, [], {}]:
             with self.subTest(value=value), patch("skills_agent.providers.openai.post_stream") as send:
                 with self.assertRaisesRegex(ProviderError, "reasoning_content"):
-                    OpenAIProvider("test", "secret").complete("", [{
+                    OpenAIProvider("test", "secret", api_format="chat").complete("", [{
                         "role": "assistant", "content": "done", "reasoning_content": value,
                     }], [])
                 send.assert_not_called()
@@ -222,7 +221,7 @@ class OpenAIStreamTests(unittest.TestCase):
 
         response = InterruptedResponse(b"data: " + json.dumps(first).encode() + b"\n\n")
         with patch("skills_agent.providers.base.request.urlopen", return_value=response), self.assertRaises(KeyboardInterrupt) as caught:
-            OpenAIProvider("test", "secret").complete("", [], [], on_event=observed.append)
+            OpenAIProvider("test", "secret", api_format="chat").complete("", [], [], on_event=observed.append)
         self.assertTrue(response.closed)
         self.assertEqual(caught.exception.raw["stream_events"], [first])
         self.assertEqual(caught.exception.partial_content, [{"type": "text", "text": "received"}])
@@ -257,7 +256,7 @@ class SSETransportTests(unittest.TestCase):
         first = chunk({"content": "partial"})
         response = BrokenResponse(b"data: " + json.dumps(first).encode() + b"\n\n")
         with patch("skills_agent.providers.base.request.urlopen", return_value=response), self.assertRaises(ProviderError) as caught:
-            OpenAIProvider("test", "secret").complete("", [], [])
+            OpenAIProvider("test", "secret", api_format="chat").complete("", [], [])
         self.assertEqual(str(caught.exception), "API connection failed")
         self.assertEqual(caught.exception.raw["stream_events"], [first])
         self.assertEqual(caught.exception.partial_content, [{"type": "text", "text": "partial"}])

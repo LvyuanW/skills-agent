@@ -1,60 +1,44 @@
-"""The small tool boundary: shell, sandbox, and subagents."""
+"""The small tool boundary: arbitrary scripts and named delegated tasks."""
 
 import json
 import os
 import signal
 import subprocess
-from collections.abc import Callable
 from pathlib import Path
-
-from skills_agent.sandbox import DockerSandbox
 
 
 class ToolRegistry:
-    def __init__(
-        self,
-        workspace: Path,
-        sandbox: DockerSandbox | None = None,
-        subagent: Callable[[str, str], str] | None = None,
-    ):
+    def __init__(self, workspace: Path, sandbox=None, subagent=None):
         self.workspace = Path(workspace).expanduser().resolve()
-        self.sandbox = sandbox
-        self.subagent = subagent
-        definitions = [
-            ("shell", "Run arbitrary shell commands on the host in the workspace. "
-             "Read skill instructions and reference source code, execute multiline inline code, "
-             "or write and run new scripts for the current task.",
-             {"command": "Shell command or multiline script to execute."}),
-        ]
-        if sandbox is not None:
-            definitions.append(("sandbox", "Run a command inside the configured Docker sandbox.", {"command": "Shell command to execute."}))
-        if subagent is not None:
-            definitions.append(("subagent", "Delegate a task and return its final result.", {
-                "goal": "Short summary of the delegated goal, shown to the user.",
-                "task": "Self-contained instructions and relevant context for the subagent.",
-            }))
-        self.schemas = [
-            {
-                "name": name,
-                "description": description,
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        key: {"type": "string", "description": detail}
-                        for key, detail in properties.items()
-                    },
-                    "required": list(properties),
-                    "additionalProperties": False,
-                },
-            }
-            for name, description, properties in definitions
-        ]
-        for schema in self.schemas:
-            if schema["name"] in {"shell", "sandbox"}:
-                schema["parameters"]["properties"]["summary"] = {
-                    "type": "string",
-                    "description": "Brief user-facing description of the action, in the user's language; no code or detailed reasoning.",
-                }
+        self.sandbox, self.subagent = sandbox, subagent
+        script = {
+            "name": {"type": "string", "description": "Short action and purpose, shown to the user."},
+            "command": {"type": "string", "description": "Arbitrary shell command or multiline script."},
+            "result_mode": {"type": "string", "enum": ["auto", "direct", "report"],
+                            "description": "auto: original up to 8192 tokens, otherwise report. "
+                            "direct: exact source (skills/code/data), or a source reference if it cannot fit. "
+                            "report: concise conclusions with evidence. Default auto."},
+        }
+        self.schemas = [self._schema("shell", "Run arbitrary scripts on the host in the workspace. "
+                                    "Read skills and reference source, write task-specific code, inspect results. "
+                                    "Filter large data in your script and print relevant evidence.", script, ["name", "command"])]
+        if sandbox:
+            self.schemas.append(self._schema("sandbox", "Run arbitrary scripts inside the configured Docker sandbox.",
+                                             script, ["name", "command"]))
+        if subagent:
+            self.schemas.append(self._schema("subagent", "Delegate a named task; only its final report returns. "
+                                             "For history retrieval, set history=true to include the complete current "
+                                             "working context as read-only background and use the history skill.", {
+                "name": {"type": "string", "description": "Short task name, shown to the user."},
+                "task": {"type": "string", "description": "Goal, input, boundaries and required evidence."},
+                "history": {"type": "boolean", "description": "Retrieve details from this session's original history. Default false."},
+            }, ["name", "task"]))
+
+    @staticmethod
+    def _schema(name, description, properties, required):
+        return {"name": name, "description": description, "parameters": {
+            "type": "object", "properties": properties, "required": required, "additionalProperties": False,
+        }}
 
     def execute(self, name: str, arguments: str) -> str:
         try:
@@ -62,19 +46,22 @@ class ToolRegistry:
             if schema is None:
                 raise ValueError(f"Unknown tool: {name}")
             values = json.loads(arguments)
-            expected = schema["parameters"]["required"]
-            allowed = schema["parameters"]["properties"]
+            expected, allowed = schema["parameters"]["required"], schema["parameters"]["properties"]
             if not isinstance(values, dict) or not set(expected) <= set(values) <= set(allowed):
                 raise ValueError(f"Expected arguments: {', '.join(expected)}")
             for key, value in values.items():
-                if not isinstance(value, str):
-                    raise ValueError(f"Argument {key} must be a string")
+                field = allowed[key]
+                expected_type = bool if field["type"] == "boolean" else str
+                if not isinstance(value, expected_type):
+                    raise ValueError(f"Argument {key} must be a {field['type']}")
+                if isinstance(value, str) and not value.strip():
+                    raise ValueError(f"Argument {key} must not be empty")
+                if "enum" in field and value not in field["enum"]:
+                    raise ValueError(f"Invalid {key}: {value}")
             if name == "shell":
-                with subprocess.Popen(
-                    values["command"], shell=True, cwd=self.workspace,
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                    text=True, errors="replace", start_new_session=True,
-                ) as process:
+                with subprocess.Popen(values["command"], shell=True, cwd=self.workspace,
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                      text=True, errors="replace", start_new_session=True) as process:
                     try:
                         stdout, stderr = process.communicate()
                     except BaseException:
@@ -84,15 +71,11 @@ class ToolRegistry:
                             pass
                         process.wait()
                         raise
-                result = {
-                    "exit_code": process.returncode,
-                    "stdout": stdout,
-                    "stderr": stderr,
-                }
+                result = {"exit_code": process.returncode, "stdout": stdout, "stderr": stderr}
             elif name == "sandbox":
                 result = self.sandbox.run(values["command"])
             else:
-                result = {"result": self.subagent(values["goal"], values["task"])}
+                result = {"result": self.subagent(values["name"], values["task"], history=values.get("history", False))}
         except Exception as exc:
             result = {"error": str(exc)}
         return json.dumps(result, ensure_ascii=False)

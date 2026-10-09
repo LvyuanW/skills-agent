@@ -19,7 +19,7 @@ from unittest.mock import patch
 import pyte
 
 from skills_agent.cli import ConsoleRenderer
-from tests.sse import stream_response
+from tests.sse import stream_response, responses_from_chat
 from tests.test_markdown import Output
 
 if os.name == "posix":
@@ -78,7 +78,8 @@ class Terminal:
         try:
             self.process = subprocess.Popen(
                 [sys.executable, "-m", "skills_agent", "run", "--workspace", str(workspace),
-                 "--session", "terminal", "--model", "test-model", "--base-url", endpoint],
+                 "--session", "terminal", "--model", "test-model", "--base-url", endpoint,
+                 "--api-format", "responses"],
                 stdin=slave, stdout=slave, stderr=slave, cwd=PROJECT,
                 env={"PATH": os.defpath, "PYTHONPATH": str(PROJECT), "TERM": "xterm-256color"},
                 start_new_session=True, preexec_fn=terminal_owner,
@@ -156,8 +157,16 @@ class TerminalTests(unittest.TestCase):
 
             def do_POST(self):
                 payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                if self.path.endswith("/input_tokens"):
+                    encoded = b'{"input_tokens":128}'
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(encoded)))
+                    self.end_headers()
+                    self.wfile.write(encoded)
+                    return
                 requests.append(payload)
-                encoded = stream_response(respond(payload, len(requests)))
+                encoded = stream_response(responses_from_chat(respond(payload, len(requests))))
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Content-Length", str(len(encoded)))
@@ -175,9 +184,7 @@ class TerminalTests(unittest.TestCase):
     def response(self, text="", *, command=None, summary=None):
         message = {"content": text or None}
         if command is not None:
-            arguments = {"command": command}
-            if summary is not None:
-                arguments["summary"] = summary
+            arguments = {"command": command, "name": summary or "运行测试脚本"}
             message["tool_calls"] = [{"id": "shell-1", "type": "function", "function": {
                 "name": "shell", "arguments": json.dumps(arguments),
             }}]
@@ -243,8 +250,8 @@ class TerminalTests(unittest.TestCase):
         self.assertNotIn("`SECOND_FINAL`", plain)
         self.assert_color(text, first, USER_COLOR)
         self.assert_color(text, second, USER_COLOR)
-        self.assert_color(text, "shell：运行测试脚本", TOOL_COLOR)
-        self.assert_color(text, "shell：完成", TOOL_COLOR)
+        self.assert_color(text, "shell「运行测试脚本」：执行中", TOOL_COLOR)
+        self.assert_color(text, "shell「运行测试脚本」：完成", TOOL_COLOR)
         self.assert_color(text, "FIRST_FINAL", ASSISTANT_COLOR)
         self.assert_color(text, "SECOND_FINAL", ASSISTANT_COLOR)
         for marker in ("FIRST_FINAL", "SECOND_FINAL"):
@@ -282,8 +289,8 @@ class TerminalTests(unittest.TestCase):
                 terminal.send(keys + "\n")
                 terminal.prompt(count + 1)
                 self.assertEqual(len(requests), count)
-                self.assertEqual(requests[-1]["messages"][-1]["content"],
-                                 [{"type": "text", "text": expected}])
+                self.assertEqual(requests[-1]["input"][-1]["content"],
+                                 [{"type": "input_text", "text": expected}])
         users = [event["message"]["content"][0]["text"] for event in self.events()
                  if event.get("type") == "message" and event["message"]["role"] == "user"]
         self.assertEqual(users, [expected for _, expected in edits])
@@ -297,8 +304,8 @@ class TerminalTests(unittest.TestCase):
         terminal.send("\x1b[A\x01edited \x05 again\n")
         text = terminal.prompt(3)
         self.assertEqual(len(requests), 2)
-        self.assertEqual(requests[-1]["messages"][-1]["content"],
-                         [{"type": "text", "text": "edited previous request again"}])
+        self.assertEqual(requests[-1]["input"][-1]["content"],
+                         [{"type": "input_text", "text": "edited previous request again"}])
         self.assertNotIn("**HISTORY_DONE_1**", terminal_text(text))
         self.assertNotIn("^[[", text)
         self.assert_color(text, "edited previous request again", USER_COLOR)
@@ -359,8 +366,8 @@ class TerminalTests(unittest.TestCase):
         terminal.wait_for(lambda output: "粘贴的第二行" in output)
         terminal.send("\n")
         live = terminal.prompt(3)
-        self.assertEqual(requests[-1]["messages"][-1]["content"],
-                         [{"type": "text", "text": message}])
+        self.assertEqual(requests[-1]["input"][-1]["content"],
+                         [{"type": "input_text", "text": message}])
         replay = Output()
         with patch.dict(os.environ, {"COLUMNS": "80", "LINES": "24"}):
             renderer = ConsoleRenderer(replay, live=False)

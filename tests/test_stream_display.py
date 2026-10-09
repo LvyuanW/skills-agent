@@ -274,7 +274,137 @@ class StreamDisplayTests(unittest.TestCase):
             renderer(event)
             render_event(event, ordinary)
         self.assertEqual(streamed.getvalue(), ordinary.getvalue())
-        self.assertEqual(streamed.getvalue().count("assistant:"), 1)
+        self.assertEqual(streamed.getvalue().count("assistant:"), 2)
+
+    def test_thinking_text_and_named_tools_keep_arrival_order_without_duplicates(self):
+        call = {
+            "id": "shell-1", "name": "shell",
+            "arguments": json.dumps({"name": "核对文件", "command": "PRIVATE_COMMAND"}),
+        }
+        events = [
+            {"type": "thinking_delta", "text": "先核对"},
+            {"type": "thinking_delta", "text": "文件。"},
+            {"type": "text_delta", "text": "开始检查。"},
+            tool_delta(name="shell", arguments=call["arguments"]),
+            {"type": "thinking_delta", "text": "等待结果。"},
+            message("assistant", "开始检查。", streamed=True, tool_calls=[call],
+                    reasoning_content="先核对文件。等待结果。"),
+            message("tool", '{"exit_code":0,"stdout":"PRIVATE_OUTPUT","stderr":""}',
+                    name="shell", tool_call_id="shell-1"),
+        ]
+        original = copy.deepcopy(events)
+        outputs = []
+        for live in (True, False):
+            output = Output()
+            renderer = ConsoleRenderer(output, live=live)
+            for event in events:
+                renderer(event)
+            renderer.close()
+            outputs.append(output.getvalue())
+        expected = ("思考:\n先核对文件。\nassistant:\n开始检查。\n"
+                    "· shell「核对文件」：执行中\n思考:\n等待结果。\n"
+                    "· shell「核对文件」：完成，输出 1 行\n")
+        self.assertEqual(outputs, [expected, expected])
+        self.assertEqual(events, original)
+
+    def test_thinking_only_response_is_visible_once_and_uses_assistant_colors(self):
+        output = Output(tty=True)
+        renderer = ConsoleRenderer(output, live=False)
+        renderer({"type": "thinking_delta", "text": "**检查**约束"})
+        renderer(message("assistant", [{"type": "thinking", "thinking": "**检查**约束",
+                                         "signature": "PRIVATE_SIGNATURE"}], streamed=True))
+        rendered = terminal_text(output.getvalue())
+        self.assertEqual(rendered, "思考:\n检查约束")
+        self.assertNotIn("PRIVATE", output.getvalue())
+        screen = terminal_screen(output.getvalue())
+        self.assertEqual((screen.buffer[1][0].fg, screen.buffer[1][0].bg),
+                         ("black", "brightwhite"))
+
+    def test_nonstream_thinking_blocks_preserve_content_order_and_hide_signatures(self):
+        event = message("assistant", [
+            {"type": "text", "text": "first body"},
+            {"type": "thinking", "thinking": "readable thinking", "signature": "PRIVATE_SIGNATURE"},
+            {"type": "redacted_thinking", "data": "PRIVATE_ENCRYPTED"},
+            {"type": "text", "text": "second body"},
+        ], _raw={"thinking": "PRIVATE_RAW"})
+        for full in (False, True):
+            output = Output()
+            ConsoleRenderer(output, full=full)(event)
+            self.assertEqual(output.getvalue(), "assistant:\nfirst body\n思考:\nreadable thinking\n"
+                                               "assistant:\nsecond body\n")
+
+    def test_empty_or_redacted_thinking_does_not_create_visible_message(self):
+        output = Output()
+        renderer = ConsoleRenderer(output)
+        renderer({"type": "thinking_delta", "text": ""})
+        renderer(message("assistant", [{"type": "redacted_thinking", "data": "PRIVATE_ENCRYPTED"}],
+                         reasoning_content=""))
+        self.assertEqual(output.getvalue(), "")
+
+    def test_thinking_saved_in_session_replays_once_in_stream_order(self):
+        events = [
+            {"type": "text_delta", "text": "before thinking"},
+            {"type": "thinking_delta", "text": "readable reasoning"},
+            {"type": "text_delta", "text": "after thinking"},
+            message("assistant", "before thinkingafter thinking", streamed=True,
+                    reasoning_content="readable reasoning"),
+        ]
+        with TemporaryDirectory() as directory:
+            session = Session(Path(directory) / ".agent/sessions", "default")
+            for event in events:
+                session.append_event(event)
+            path = session.path / "events.jsonl"
+            original = path.read_bytes()
+            for full in (False, True):
+                output = Output()
+                with redirect_stdout(output):
+                    self.assertEqual(main(["history", "--workspace", directory]
+                                          + (["--full"] if full else [])), 0)
+                self.assertEqual(output.getvalue(), "assistant:\nbefore thinking\n"
+                                                   "思考:\nreadable reasoning\n"
+                                                   "assistant:\nafter thinking\n")
+                self.assertEqual(path.read_bytes(), original)
+
+    def test_thinking_stream_error_does_not_duplicate_partial_content(self):
+        output = Output()
+        renderer = ConsoleRenderer(output, full=True)
+        renderer({"type": "thinking_delta", "text": "received thought"})
+        renderer({"type": "error", "message": "Interrupted", "partial_content": [
+            {"type": "thinking", "thinking": "received thought", "signature": "PRIVATE_SIGNATURE"},
+        ]})
+        self.assertEqual(output.getvalue(), "思考:\nreceived thought\nerror: Interrupted\n")
+
+    def test_named_tool_result_uses_its_call_name_and_failure_status(self):
+        output = Output()
+        renderer = ConsoleRenderer(output)
+        renderer(message("assistant", [], tool_calls=[{
+            "id": "shell-1", "name": "shell", "arguments": json.dumps({
+                "name": "运行测试", "summary": "旧名字", "command": "PRIVATE_COMMAND",
+            }),
+        }]))
+        renderer(message("tool", '{"exit_code":3,"stdout":"","stderr":"PRIVATE_ERROR"}',
+                         name="shell", tool_call_id="shell-1"))
+        self.assertEqual(output.getvalue(), "· shell「运行测试」：执行中\n"
+                                           "· shell「运行测试」：失败（退出码 3），输出 1 行\n")
+
+    def test_named_subagent_call_and_report_never_show_task_or_internal_content(self):
+        call = {"id": "child-1", "name": "subagent", "arguments": json.dumps({
+            "name": "查找历史决策", "task": "PRIVATE_TASK", "mode": "history",
+        })}
+        events = [
+            tool_delta(name="subagent", arguments=call["arguments"]),
+            message("assistant", [], tool_calls=[call], streamed=True),
+            {"type": "subagent_summary", "name": "查找历史决策", "status": "completed",
+             "report": "PRIVATE_REPORT"},
+            message("tool", '{"report":"PRIVATE_REPORT"}', name="subagent", tool_call_id="child-1"),
+        ]
+        for full in (False, True):
+            output = Output()
+            renderer = ConsoleRenderer(output, full=full)
+            for event in events:
+                renderer(event)
+            self.assertEqual(output.getvalue(), "· sub-agent「查找历史决策」：处理中\n"
+                                               "· sub-agent「查找历史决策」：已返回报告\n")
 
     def test_user_echo_setting_keeps_attachments_and_renderer_state_is_local(self):
         live, benchmark = Output(), Output()

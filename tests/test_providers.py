@@ -8,8 +8,12 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
-from skills_agent.context import ContextBuilder
-from skills_agent.providers import AnthropicProvider, OpenAIProvider, ProviderError, create_provider
+from skills_agent.providers import AnthropicProvider, OpenAIProvider as NativeOpenAIProvider, ProviderError, create_provider
+
+
+class OpenAIProvider(NativeOpenAIProvider):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, api_format="chat", **kwargs)
 
 
 TOOLS = [{"name": "shell", "description": "Run a command", "parameters": {
@@ -167,7 +171,8 @@ class ProviderTests(unittest.TestCase):
              "tool_calls": [{"id": "a", "name": "shell", "arguments": "{}"}]},
             {"role": "tool", "tool_call_id": "a", "name": "shell", "content": "x" * 4000},
         ]
-        selected = ContextBuilder(350).build(messages)
+        selected = deepcopy(messages)
+        selected[1]["content"] = [{"type": "text", "text": ""}]
         self.assertEqual(selected[1]["content"], [{"type": "text", "text": ""}])
         with patch("skills_agent.providers.anthropic.post_stream", return_value=response_events(anthropic_response())) as send:
             AnthropicProvider("model", "key").complete("", selected, TOOLS)
@@ -303,7 +308,10 @@ class ProviderTests(unittest.TestCase):
             with self.subTest(provider=kind), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 session = Session(root, "s")
-                agent = Agent(cls("model", "key"), session, SkillRegistry([]), root)
+                provider = cls("model", "key")
+                provider.count_tokens = lambda *_args: 10
+                provider.count_text = lambda _text: 1
+                agent = Agent(provider, session, SkillRegistry([]), root)
                 with patch(f"skills_agent.providers.{kind}.post_stream", return_value=response_events(raw)), patch.object(
                     agent.tools, "execute",
                 ) as execute, self.assertRaises(ProviderError):
@@ -362,7 +370,7 @@ class ProviderTests(unittest.TestCase):
             OpenAIProvider("model", "secret").complete("", [], [])
 
     def test_factory(self):
-        self.assertIsInstance(create_provider("openai", "model", "key"), OpenAIProvider)
+        self.assertIsInstance(create_provider("openai", "model", "key"), NativeOpenAIProvider)
         self.assertIsInstance(create_provider("anthropic", "model", "key"), AnthropicProvider)
         with self.assertRaises(ValueError):
             create_provider("unknown", "model", "key")

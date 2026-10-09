@@ -1,6 +1,6 @@
 ---
 name: workspace
-description: Read and search text attachments or workspace files, and retrieve public session history.
+description: Read and search text attachments or workspace files with scripts.
 ---
 
 Read the source of [scripts/workspace.py](scripts/workspace.py) through `shell` to learn its file-reading and search methods. Resolve its path relative to this SKILL.md. Adapt the relevant code or write your own script for the current task, then execute it through `shell` and revise it based on the result. Use inline code or a file in the workspace; no tool registration or fixed script interface is needed.
@@ -9,10 +9,6 @@ For UTF-8 text, stream lines and select the relevant ranges instead of loading a
 
 For PDF, office documents, archives, or other binary attachments, use a suitable installed reader or write a task-specific parser. Extract relevant content before reasoning about it; do not interpret binary data as text.
 
-Retrieve earlier public interactions using only `history` with the main session's `events.jsonl` path supplied in the system context:
+For original session evidence, use the `history` skill and a named history subagent. Its source-linked helper indexes complete main-session messages, including the delegated tasks and final reports the main agent received. Do not read independent subagent, compaction, or report sessions. Keep general workspace file searches outside session directories.
 
-```sh
-python3 "<skill-directory>/scripts/workspace.py" history "<events.jsonl>" --start 1 --end 200
-```
-
-Ranges use original event line numbers and default to 200 lines. This history helper preserves public messages and subagent goal summaries while omitting hidden subagent calls, results, and raw provider payloads. Request further ranges as needed; process or search its output with your own code. Do not use `read`, `search`, or other raw-file commands on session logs or child sessions. Keep file searches outside session directories.
+Your script's output should answer its stated purpose: include exact source paths and line ranges, relevant observations, and execution status. Return code or precise data unchanged when that is what the task needs. Choose `result_mode: direct` for source ranges that must retain exact text; use `auto` for ordinary output or `report` for long evidence that needs a focused conclusion.

@@ -9,8 +9,49 @@ def frame(value):
     return f"data: {data}\n\n".encode("utf-8")
 
 
+def responses_from_chat(response):
+    """Translate a simple scripted fixture to a native Responses envelope."""
+    choice = response["choices"][0]
+    message = choice["message"]
+    output = []
+    if message.get("reasoning_content"):
+        output.append({"type": "reasoning", "id": "reasoning", "encrypted_content": "opaque",
+                       "summary": [{"type": "summary_text", "text": message["reasoning_content"]}]})
+    if message.get("content"):
+        output.append({"type": "message", "id": "message", "role": "assistant", "status": "completed",
+                       "content": [{"type": "output_text", "text": message["content"], "annotations": []}]})
+    for call in message.get("tool_calls", []):
+        output.append({"type": "function_call", "id": "fc_" + call["id"], "call_id": call["id"],
+                       "name": call["function"]["name"], "arguments": call["function"]["arguments"],
+                       "status": "completed"})
+    result = {"id": "response", "status": "completed", "output": output,
+              "usage": {"input_tokens": response.get("usage", {}).get("prompt_tokens", 0),
+                        "output_tokens": response.get("usage", {}).get("completion_tokens", 0)}}
+    if choice["finish_reason"] == "length":
+        result.update(status="incomplete", incomplete_details={"reason": "max_output_tokens"})
+    return result
+
+
 def stream_response(response):
     response = copy.deepcopy(response)
+    if "output" in response:
+        result = frame({"type": "response.created", "response": {"id": response["id"], "status": "in_progress", "output": []}})
+        for index, item in enumerate(response["output"]):
+            initial = {**item, "arguments": ""} if item["type"] == "function_call" else item
+            result += frame({"type": "response.output_item.added", "output_index": index, "item": initial})
+            if item["type"] == "message":
+                for block_index, block in enumerate(item["content"]):
+                    result += frame({"type": "response.output_text.delta", "output_index": index,
+                                     "content_index": block_index, "delta": block["text"]})
+            elif item["type"] == "reasoning":
+                for block_index, block in enumerate(item["summary"]):
+                    result += frame({"type": "response.reasoning_summary_text.delta", "output_index": index,
+                                     "summary_index": block_index, "delta": block["text"]})
+            elif item["type"] == "function_call":
+                result += frame({"type": "response.function_call_arguments.delta", "output_index": index,
+                                 "delta": item["arguments"]})
+            result += frame({"type": "response.output_item.done", "output_index": index, "item": item})
+        return result + frame({"type": "response." + response["status"], "response": response})
     if "choices" in response:
         choice = response["choices"][0]
         delta = choice["message"]

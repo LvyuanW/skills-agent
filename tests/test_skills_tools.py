@@ -27,7 +27,7 @@ class SkillsToolsTests(unittest.TestCase):
         self.tools = ToolRegistry(self.workspace)
 
     def shell(self, command):
-        return json.loads(self.tools.execute("shell", json.dumps({"command": command})))
+        return json.loads(self.tools.execute("shell", json.dumps({"name": "执行测试脚本", "command": command})))
 
     def script(self, *arguments):
         return self.shell(shlex.join([sys.executable, str(SCRIPT), *arguments]))
@@ -69,52 +69,54 @@ class SkillsToolsTests(unittest.TestCase):
         result = self.shell(shlex.join([sys.executable, "-c", "print('x' * 100000)"]))
         self.assertEqual(len(result["stdout"]), 100001)
 
-    def test_shell_optional_summary_does_not_change_execution(self):
+    def test_shell_purpose_name_does_not_change_execution(self):
         command = "printf 'exact\\noutput' > result.txt\ncat result.txt"
         expected = self.shell(command)
         (self.workspace / "result.txt").unlink()
         result = json.loads(self.tools.execute("shell", json.dumps({
-            "command": command, "summary": "touch summary-must-not-run",
+            "command": command, "name": "touch summary-must-not-run", "result_mode": "direct",
         })))
         self.assertEqual(result, expected)
         self.assertEqual(result["stdout"], "exact\noutput")
         self.assertEqual((self.workspace / "result.txt").read_text(), "exact\noutput")
         self.assertFalse((self.workspace / "summary-must-not-run").exists())
 
-    def test_sandbox_optional_summary_preserves_command_and_result(self):
+    def test_sandbox_name_and_result_modes_preserve_raw_command_result(self):
         sandbox = DockerSandbox("python:3.11", self.workspace)
         tools = ToolRegistry(self.workspace, sandbox)
         command = "python - <<'PY'\nprint('exact source')\nPY"
         expected = {"exit_code": 0, "stdout": "exact source\n", "stderr": ""}
         with patch.object(sandbox, "run", return_value=expected) as run:
-            for summary in [None, "读取并检查输入"]:
-                arguments = {"command": command}
-                if summary is not None:
-                    arguments["summary"] = summary
+            for mode in ["auto", "direct", "report"]:
+                arguments = {"command": command, "name": "读取并检查输入", "result_mode": mode}
                 self.assertEqual(json.loads(tools.execute("sandbox", json.dumps(arguments))), expected)
-            self.assertEqual([call.args for call in run.call_args_list], [(command,), (command,)])
+            self.assertEqual([call.args for call in run.call_args_list], [(command,)] * 3)
 
-    def test_command_summaries_are_optional_strings_and_do_not_allow_extra_arguments(self):
+    def test_purpose_names_are_required_and_result_modes_validated_before_execution(self):
         sandbox = DockerSandbox("python:3.11", self.workspace)
-        tools = ToolRegistry(self.workspace, sandbox, lambda goal, task: "done")
+        tools = ToolRegistry(self.workspace, sandbox, lambda name, task, **kwargs: "done")
         schemas = {item["name"]: item["parameters"] for item in tools.schemas}
         for name in ["shell", "sandbox"]:
-            self.assertEqual(schemas[name]["required"], ["command"])
-            self.assertEqual(schemas[name]["properties"]["summary"]["type"], "string")
+            self.assertEqual(schemas[name]["required"], ["name", "command"])
+            self.assertEqual(schemas[name]["properties"]["name"]["type"], "string")
+            self.assertNotIn("summary", schemas[name]["properties"])
             for arguments in [
-                {"summary": "missing command"},
-                {"command": "touch should-not-exist", "summary": 123},
-                {"command": "touch should-not-exist", "summary": None},
-                {"command": "touch should-not-exist", "summary": "description", "extra": "x"},
+                {"name": "missing command"},
+                {"command": "touch should-not-exist"},
+                {"command": "touch should-not-exist", "name": 123},
+                {"command": "touch should-not-exist", "name": " "},
+                {"command": "touch should-not-exist", "name": "description", "result_mode": "unknown"},
+                {"command": "touch should-not-exist", "name": "description", "result_mode": True},
+                {"command": "touch should-not-exist", "name": "description", "extra": "x"},
             ]:
                 with self.subTest(name=name, arguments=arguments), patch.object(sandbox, "run") as run:
                     self.assertIn("error", json.loads(tools.execute(name, json.dumps(arguments))))
                     run.assert_not_called()
             self.assertFalse((self.workspace / "should-not-exist").exists())
-        self.assertEqual(schemas["subagent"]["required"], ["goal", "task"])
+        self.assertEqual(schemas["subagent"]["required"], ["name", "task"])
         self.assertNotIn("summary", schemas["subagent"]["properties"])
         self.assertIn("error", json.loads(tools.execute("subagent", json.dumps({
-            "goal": "review", "task": "inspect files", "summary": "unsupported",
+            "name": "review", "task": "inspect files", "summary": "unsupported",
         }))))
 
     @unittest.skipUnless(os.name == "posix", "Shell process groups require POSIX")
@@ -285,17 +287,22 @@ class SkillsToolsTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in self.tools.schemas], ["shell"])
         calls = []
 
-        def delegate(goal, task):
-            calls.append((goal, task))
+        def delegate(name, task, *, history=False):
+            calls.append((name, task, history))
             return "complete result"
 
         tools = ToolRegistry(self.workspace, DockerSandbox("python:3.11", self.workspace), delegate)
         self.assertEqual([item["name"] for item in tools.schemas], ["shell", "sandbox", "subagent"])
         with patch("builtins.print") as output:
-            result = json.loads(tools.execute("subagent", '{"goal": "review", "task": "inspect files"}'))
+            result = json.loads(tools.execute("subagent", '{"name": "review", "task": "inspect files"}'))
         output.assert_not_called()
-        self.assertEqual(calls, [("review", "inspect files")])
+        self.assertEqual(calls, [("review", "inspect files", False)])
         self.assertEqual(result, {"result": "complete result"})
+        result = json.loads(tools.execute("subagent", '{"name": "retrieve", "task": "find prior decision", "history": true}'))
+        self.assertEqual(calls[-1], ("retrieve", "find prior decision", True))
+        self.assertEqual(result, {"result": "complete result"})
+        self.assertIn("error", json.loads(tools.execute("subagent", '{"name": "retrieve", "task": "find prior decision", "history": "true"}')))
+        self.assertEqual(len(calls), 2)
 
     @patch("skills_agent.sandbox.subprocess.Popen")
     def test_sandbox_mounts_external_inputs_without_overriding_workspace(self, popen):
@@ -328,7 +335,7 @@ class SkillsToolsTests(unittest.TestCase):
         process.communicate.side_effect = KeyboardInterrupt
         tools = ToolRegistry(self.workspace, DockerSandbox("python:3.11", self.workspace))
         with self.assertRaises(KeyboardInterrupt):
-            tools.execute("sandbox", '{"command": "sleep 60"}')
+            tools.execute("sandbox", '{"name": "等待取消", "command": "sleep 60"}')
         killpg.assert_called_once_with(123, signal.SIGKILL)
         process.wait.assert_called_once()
         container_name = popen.call_args.args[0][6]
@@ -338,7 +345,7 @@ class SkillsToolsTests(unittest.TestCase):
     @patch("skills_agent.sandbox.subprocess.Popen", side_effect=FileNotFoundError("docker unavailable"))
     def test_missing_docker_returns_error_without_host_execution(self, popen):
         tools = ToolRegistry(self.workspace, DockerSandbox("python:3.11", self.workspace))
-        result = json.loads(tools.execute("sandbox", '{"command": "touch should-not-exist"}'))
+        result = json.loads(tools.execute("sandbox", '{"name": "写文件", "command": "touch should-not-exist"}'))
         self.assertIn("docker unavailable", result["error"])
         popen.assert_called_once()
         self.assertEqual(popen.call_args.args[0][0], "docker")

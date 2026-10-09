@@ -4,272 +4,251 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from skills_agent.context import ContextBudgetError, ContextBuilder
+from skills_agent.context import ContextBudgetError, WorkingContext, record_groups, working_message
 from skills_agent.session import Session
 
 
-def tool_pair(number, length=100):
-    call_id = f"call-{number}"
+class Counter:
+    """An explicit test tokenizer: one whitespace word is one synthetic token."""
+    model_context_window = None
+    max_output_tokens = 20
+
+    def __init__(self):
+        self.requests = []
+        self.compacted = []
+
+    def count_tokens(self, system, messages, tools):
+        self.requests.append(copy.deepcopy((system, messages, tools)))
+        return len(system.split()) + sum(self.count_text(json.dumps(m)) for m in messages) + self.count_text(json.dumps(tools))
+
+    def count_text(self, text):
+        return len(text.split())
+
+    def compact_messages(self, messages):
+        self.compacted.append(copy.deepcopy(messages))
+        return copy.deepcopy(messages)
+
+
+class Summarizer:
+    def __init__(self, result="verified summary"):
+        self.calls = []
+        self.result = result
+
+    def compress(self, previous, records, current_user):
+        self.calls.append(copy.deepcopy((previous, records, current_user)))
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
+
+
+def pair(index, result="selected result"):
     return [
-        {"role": "assistant", "content": "", "tool_calls": [{"id": call_id, "name": "shell", "arguments": '{"command":"ls"}'}]},
-        {"role": "tool", "tool_call_id": call_id, "name": "shell", "content": f"result-{number}:" + "x" * length + f":end-{number}"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": f"call-{index}", "name": "shell", "arguments": '{"name":"inspect","command":"ls"}'}]},
+        {"role": "tool", "name": "shell", "tool_call_id": f"call-{index}", "content": result},
     ]
 
 
-def assert_paired(test, messages):
-    outstanding = set()
-    for message in messages:
-        if message.get("tool_calls"):
-            test.assertFalse(outstanding)
-            outstanding = {call["id"] for call in message["tool_calls"]}
-        elif message["role"] == "tool":
-            test.assertIn(message["tool_call_id"], outstanding)
-            outstanding.remove(message["tool_call_id"])
-        else:
-            test.assertFalse(outstanding)
-    test.assertFalse(outstanding)
-
-
 class ContextTests(unittest.TestCase):
-    def test_reasoning_is_recovered_from_older_sessions_without_changing_log(self):
-        with tempfile.TemporaryDirectory() as directory:
-            session = Session(Path(directory), "reasoning")
-            messages = [{"role": "user", "content": "inspect"}, *tool_pair(1)]
-            reasoning = "  original reasoning\n中文\n"
-            messages[1]["_raw"] = {"choices": [{"message": {"reasoning_content": reasoning}}]}
-            messages.append({"role": "assistant", "content": "done", "_raw": {
-                "choices": [{"message": {"reasoning_content": ""}}],
-            }})
-            for message in messages:
-                session.append(message)
-            before = (session.path / "events.jsonl").read_bytes()
-            selected = ContextBuilder().build(session.messages())
-            self.assertEqual(selected[1]["reasoning_content"], reasoning)
-            self.assertEqual(selected[-1]["reasoning_content"], "")
-            self.assertTrue(all("_raw" not in message for message in selected))
-            self.assertEqual((session.path / "events.jsonl").read_bytes(), before)
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.session = Session(Path(self.directory.name), "test")
+        self.counter = Counter()
+        self.summary = Summarizer()
 
-    def test_older_stream_reasoning_is_recovered_even_after_null_overwrite(self):
-        messages = [{"role": "assistant", "content": "done", "_raw": {
-            "choices": [{"message": {"reasoning_content": None}}],
-            "stream_events": [
-                {"choices": [{"delta": {"reasoning_content": "  first\n"}}]},
-                {"choices": [{"delta": {"reasoning_content": None, "content": "done"}}]},
-                {"choices": [{"delta": {"reasoning_content": "中文  "}}]},
-                {"choices": []},
-            ],
-        }}]
-        original = copy.deepcopy(messages)
-        self.assertEqual(ContextBuilder().build(messages)[0]["reasoning_content"], "  first\n中文  ")
-        self.assertEqual(messages, original)
-        messages[0]["reasoning_content"] = "already normalized"
-        self.assertEqual(ContextBuilder().build(messages)[0]["reasoning_content"], "already normalized")
+    def context(self, **kwargs):
+        return WorkingContext(self.session, self.counter, self.summary, **kwargs)
 
-    def test_reasoning_is_counted_but_never_excerpted_during_compaction(self):
-        reasoning = "UNMODIFIED_REASONING\n" * 30
-        messages = [{"role": "user", "content": "inspect"}, *tool_pair(1, 12000)]
-        messages[1]["reasoning_content"] = reasoning
-        original = copy.deepcopy(messages)
-        builder = ContextBuilder(1500)
-        selected = builder.build(messages)
-        self.assertEqual(selected[1]["reasoning_content"], reasoning)
-        self.assertLess(len(selected[-1]["content"]), len(messages[-1]["content"]))
-        self.assertLessEqual(builder.size(selected), 1500)
-        with self.assertRaisesRegex(ContextBudgetError, "reasoning_content"):
-            ContextBuilder(400).build(messages)
-        self.assertEqual(messages, original)
+    def append(self, *messages):
+        for message in messages:
+            self.session.append(message)
 
-    def test_omitted_reasoning_is_not_added_to_extracted_summary(self):
-        messages = [{"role": "user", "content": "earlier"}, {
-            "role": "assistant", "content": "earlier answer", "reasoning_content": "PRIVATE_REASONING" * 1000,
-        }, {"role": "user", "content": "current"}]
-        selected = ContextBuilder(1000).build(messages)
-        self.assertNotIn("PRIVATE_REASONING", str(selected))
-        self.assertIn("earlier answer", str(selected))
+    def test_incremental_restore_reads_only_new_bytes_and_never_reselects(self):
+        self.append({"role": "user", "content": "task"}, *pair(0, "RAW_UNSELECTED"))
+        context = self.context()
+        selected = []
+        def select(record, call):
+            selected.append(call)
+            record["message"]["content"] = "selected report"
+            return record
+        context.sync(select)
+        cursor = context.state["cursor"]
+        raw = (self.session.path / "events.jsonl").read_bytes()
+        restored = self.context()
+        calls = []
+        original = self.session.iter_events
+        self.session.iter_events = lambda after=0: (calls.append(after) or original(after))
+        self.append({"role": "assistant", "content": "done"})
+        restored.sync(select)
+        self.assertEqual(calls, [cursor])
+        self.assertEqual(len(selected), 1)
+        self.assertEqual(restored.records[-2]["message"]["content"], "selected report")
+        self.assertTrue((self.session.path / "events.jsonl").read_bytes().startswith(raw))
 
-    def test_build_never_changes_original_history_or_file(self):
-        with tempfile.TemporaryDirectory() as directory:
-            session = Session(Path(directory), "s")
-            for index in range(15):
-                session.append({"role": "user", "content": f"question {index}"})
-                for message in tool_pair(index, 3000):
-                    message["_raw"] = {"provider": "unmodified", "payload": "原文" * 2000}
-                    session.append(message)
-            session.append({"role": "user", "content": "next question"})
-            before = (session.path / "events.jsonl").read_bytes()
-            messages = session.messages()
-            original = copy.deepcopy(messages)
-            builder = ContextBuilder(4000)
-            selected = builder.build(messages)
-            self.assertLessEqual(builder.size(selected), 4000)
-            self.assertEqual(messages, original)
-            self.assertEqual((session.path / "events.jsonl").read_bytes(), before)
-            self.assertTrue(all("_raw" not in message for message in selected))
-            assert_paired(self, selected)
+    def test_compaction_input_is_work_context_and_keeps_ten_complete_calls_and_user(self):
+        self.append({"role": "user", "content": "latest user original with attachments", "custom": ["image reference"]})
+        for index in range(14):
+            self.append(*pair(index, ("raw unique hidden output " * 80)))
+        context = self.context(max_tokens=1800)
+        def select(record, call):
+            record["message"]["content"] = "selected " * 110
+            return record
+        context.sync(select)
+        raw = (self.session.path / "events.jsonl").read_bytes()
+        before = copy.deepcopy(context.records)
+        system, messages = context.prepare("system", [])
+        self.assertEqual(len(self.summary.calls), 1)
+        previous, older, current = self.summary.calls[0]
+        self.assertEqual(previous, "")
+        self.assertEqual(len(older), 8)
+        self.assertNotIn("raw unique hidden", str(older))
+        self.assertIn("selected", str(older))
+        self.assertEqual(current, before[0]["message"])
+        self.assertEqual(context.records, [before[0], *before[-20:]])
+        self.assertEqual(sum(m["role"] == "assistant" for m in messages), 10)
+        self.assertEqual(sum(m["role"] == "tool" for m in messages), 10)
+        self.assertIn("Historical summary", system)
+        self.assertEqual((self.session.path / "events.jsonl").read_bytes(), raw)
+        context.prepare("system", [])
+        self.assertEqual(len(self.summary.calls), 1)
+        self.assertEqual(self.context(max_tokens=1800).state, context.state)
 
-    def test_long_current_tool_chain_remains_within_budget(self):
-        messages = [{"role": "user", "content": "Please inspect all files"}]
-        for index in range(120):
-            messages.extend(tool_pair(index, 4000))
-        builder = ContextBuilder(5000)
-        selected = builder.build(messages, "system instruction", [{"name": "shell", "description": "x" * 400}])
-        self.assertLessEqual(builder.size(selected, "system instruction", [{"name": "shell", "description": "x" * 400}]), 5000)
-        self.assertIn("result-119", str(selected))
-        self.assertIn("Please inspect all files", str(selected))
-        assert_paired(self, selected)
+    def test_exact_ninety_percent_threshold_uses_provider_count(self):
+        self.append({"role": "user", "content": "u"})
+        for index in range(11):
+            self.append({"role": "assistant", "content": str(index)})
+        context = self.context(max_tokens=1000)
+        context.sync()
+        counts = iter([899, 900, 100, 200])
+        self.counter.count_tokens = lambda *args: next(counts)
+        context.prepare("large system", [{"name": "tool"}])
+        self.assertFalse(self.summary.calls)
+        context.prepare("large system", [{"name": "tool"}])
+        self.assertEqual(len(self.summary.calls), 1)
+        self.assertEqual(context.state["token_count"], 200)
 
-    def test_completed_script_source_shrinks_without_changing_history_or_result(self):
-        with tempfile.TemporaryDirectory() as directory:
-            session = Session(Path(directory), "s")
-            messages = [{"role": "user", "content": "run this"}, *tool_pair(1)]
-            source = "python - <<'PY'\n" + 'print("你好\\n")\n' * 2000 + "PY"
-            messages[1]["tool_calls"][0]["arguments"] = json.dumps({"command": source})
-            for message in messages:
-                session.append(message)
-            before = (session.path / "events.jsonl").read_bytes()
-            messages = session.messages()
-            original = copy.deepcopy(messages)
+    def test_second_compaction_uses_old_summary_and_only_newly_displaced_records(self):
+        self.append({"role": "user", "content": "task"})
+        for index in range(11):
+            self.append({"role": "assistant", "content": "first " * 20})
+        context = self.context(max_tokens=260)
+        context.sync()
+        counts = iter([250, 100, 150])
+        self.counter.count_tokens = lambda *args: next(counts)
+        context.prepare("sys", [])
+        covered = set(context.state["covered_event_ids"])
+        self.append({"role": "assistant", "content": "second " * 60})
+        context.sync()
+        self.counter.count_tokens = lambda system, messages, tools: 250 if len(messages) > 11 else 150
+        context.prepare("sys", [])
+        previous, displaced, _ = self.summary.calls[-1]
+        self.assertEqual(previous, "verified summary")
+        self.assertTrue(covered.isdisjoint(r["event_id"] for r in displaced))
 
-            builder = ContextBuilder(2000)
-            selected = builder.build(messages)
+    def test_failed_summary_does_not_replace_old_context_or_recall_raw(self):
+        self.append({"role": "user", "content": "task"})
+        for index in range(11):
+            self.append({"role": "assistant", "content": "long " * 20})
+        context = self.context(max_tokens=280)
+        context.sync()
+        before = context.path.read_bytes()
+        self.summary.result = RuntimeError("quality check failed")
+        with self.assertRaisesRegex(RuntimeError, "quality"):
+            context.prepare("sys", [])
+        self.assertEqual(context.path.read_bytes(), before)
+        self.assertEqual(context.state["summary"], "")
 
-            self.assertLessEqual(builder.size(selected), 2000)
-            self.assertEqual(selected[0], original[0])
-            self.assertEqual(selected[-1], original[-1])
-            command = json.loads(selected[1]["tool_calls"][0]["arguments"])["command"]
-            self.assertIn("Already-executed command excerpt", command)
-            self.assertIn("full source: session tool call call-1", command)
-            self.assertLess(len(command), len(source))
-            self.assertEqual(messages, original)
-            self.assertEqual((session.path / "events.jsonl").read_bytes(), before)
-            assert_paired(self, selected)
+    def test_protected_user_and_calls_are_not_trimmed_on_overflow(self):
+        self.append({"role": "user", "content": "large " * 500})
+        context = self.context(max_tokens=100)
+        context.sync()
+        before = copy.deepcopy(context.records)
+        with self.assertRaises(ContextBudgetError):
+            context.prepare("system", [])
+        self.assertEqual(context.records, before)
+        self.assertFalse(self.summary.calls)
 
-    def test_multiple_shell_and_sandbox_scripts_keep_their_ids_and_results(self):
-        messages = [{"role": "user", "content": "run both scripts"}, {
-            "role": "assistant", "content": "", "tool_calls": [
-                {"id": "host", "name": "shell", "arguments": json.dumps({"command": "print('host')\n" * 2000})},
-                {"id": "container", "name": "sandbox", "arguments": json.dumps({"command": "print('container')\n" * 2000})},
-            ]},
-            {"role": "tool", "tool_call_id": "container", "content": "container done"},
-            {"role": "tool", "tool_call_id": "host", "content": "host done"},
-        ]
-        builder = ContextBuilder(2400)
-        selected = builder.build(messages)
-        self.assertLessEqual(builder.size(selected), 2400)
-        self.assertEqual(selected[0], messages[0])
-        self.assertEqual(selected[-2:], messages[-2:])
-        for call in selected[1]["tool_calls"]:
-            arguments = json.loads(call["arguments"])
-            self.assertEqual(set(arguments), {"command"})
-            self.assertIn(f"full source: session tool call {call['id']}", arguments["command"])
-        assert_paired(self, selected)
+    def test_direct_overflow_returns_original_source_without_report(self):
+        self.append({"role": "user", "content": "read"}, *pair(1, "exact " * 800))
+        context = self.context(max_tokens=500)
+        def select(record, call):
+            return {**record, "pending_direct": True,
+                    "source": {"event_id": record["event_id"], "start_line": 1, "end_line": 800}}
+        context.sync(select)
+        _, messages = context.prepare("sys", [])
+        result = json.loads(messages[-1]["content"])
+        self.assertEqual(result["source"]["end_line"], 800)
+        self.assertNotIn("report", result)
+        self.assertFalse(self.summary.calls)
+        self.assertIn("exact " * 800, self.session.messages()[-1]["content"])
 
-    def test_repeated_script_compaction_keeps_one_source_reference(self):
-        messages = [{"role": "user", "content": "run this"}, *tool_pair(1)]
-        messages[1]["tool_calls"][0]["arguments"] = json.dumps({"command": "x" * 20000})
-        selected = ContextBuilder(3000).build(messages)
-        original = copy.deepcopy(selected)
-        for budget in (600, 400):
-            with self.subTest(budget=budget):
-                tighter = ContextBuilder(budget)
-                selected_again = tighter.build(selected)
-                command = json.loads(selected_again[1]["tool_calls"][0]["arguments"])["command"]
-                self.assertEqual(command.count("Already-executed command excerpt"), 1)
-                self.assertEqual(command.count("full source: session tool call call-1"), 1)
-                self.assertLessEqual(tighter.size(selected_again), budget)
-                if budget == 400:
-                    self.assertEqual(command, "[Already-executed command excerpt; full source: session tool call call-1]\n")
-                assert_paired(self, selected_again)
-        self.assertEqual(selected, original)
+    def test_actual_model_window_also_reserves_output(self):
+        self.counter.model_context_window = 80
+        self.append({"role": "user", "content": "data " * 65})
+        context = self.context(max_tokens=272000)
+        context.sync()
+        with self.assertRaisesRegex(ContextBudgetError, "60"):
+            context.prepare("sys", [])
 
-    def test_short_and_non_shell_arguments_are_not_rewritten(self):
-        for name, arguments in (
-            ("shell", '{ "command": "ls" }'),
-            ("sandbox", '{ "command": "pwd" }'),
-            ("subagent", '{ "goal": "inspect", "task": "inspect all files" }'),
-        ):
-            with self.subTest(name=name):
-                messages = [{"role": "user", "content": "inspect"}, *tool_pair(1, 6000)]
-                messages[1]["tool_calls"][0].update(name=name, arguments=arguments)
-                selected = ContextBuilder(600).build(messages)
-                self.assertEqual(selected[1]["tool_calls"][0]["arguments"], arguments)
+    def test_thinking_tool_round_defers_compression_but_not_hard_budget(self):
+        self.append({"role": "user", "content": "task"})
+        for index in range(11):
+            self.append(*pair(index))
+        context = self.context(max_tokens=1000)
+        context.sync()
+        self.counter.can_compact = lambda messages: False
+        self.counter.count_tokens = lambda *args: 950
+        context.prepare("sys", [])
+        self.assertFalse(self.summary.calls)
+        before = copy.deepcopy(context.records)
+        self.counter.count_tokens = lambda *args: 1001
+        with self.assertRaises(ContextBudgetError):
+            context.prepare("sys", [])
+        self.assertEqual(context.records, before)
+        self.assertFalse(self.summary.calls)
 
-        messages = [{"role": "user", "content": "delegate"}, *tool_pair(1)]
-        messages[1]["tool_calls"][0].update(name="subagent", arguments=json.dumps({"task": "x" * 20000}))
-        with self.assertRaisesRegex(ContextBudgetError, "latest tool call"):
-            ContextBuilder(2000).build(messages)
+    def test_tool_groups_and_anthropic_compaction_copy(self):
+        self.append({"role": "user", "content": "u"})
+        for index in range(11):
+            self.append(*pair(index))
+        context = self.context(max_tokens=300)
+        context.sync()
+        self.counter.count_tokens = lambda system, messages, tools: 290 if len(messages) > 21 else 100
+        def compact(messages):
+            result = copy.deepcopy(messages)
+            for message in result:
+                message.pop("reasoning_content", None)
+            return result
+        self.counter.compact_messages = compact
+        context.records[-2]["message"]["reasoning_content"] = "signed old state"
+        context.prepare("sys", [])
+        self.assertNotIn("reasoning_content", context.records[-2]["message"])
+        groups = record_groups(context.records)
+        self.assertEqual([len(g) for g in groups], [1] + [2] * 10)
 
-    def test_text_attachment_can_shrink_while_path_and_source_remain(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            source = root / "large.txt"
-            source.write_text("line\n" * 10000)
-            session = Session(root / "sessions", "s")
-            message = session.make_user_message("read the attachment", [source])
-            original = copy.deepcopy(message)
-            builder = ContextBuilder(1800)
-            selected = builder.build([message])
-            self.assertLessEqual(builder.size(selected), 1800)
-            self.assertIn(message["content"][1]["path"], str(selected))
-            self.assertEqual(message, original)
-            self.assertEqual(Path(message["content"][1]["path"]).read_text(), "line\n" * 10000)
+    def test_missing_or_orphan_results_are_rejected_before_model_count_or_compression(self):
+        self.append({"role": "user", "content": "task"}, pair(1)[0])
+        context = self.context()
+        context.sync()
+        with self.assertRaisesRegex(ValueError, "unfinished"):
+            context.prepare("sys", [])
+        self.assertFalse(self.counter.requests)
+        self.assertFalse(self.summary.calls)
+        with self.assertRaisesRegex(ValueError, "Orphan"):
+            record_groups([{"event_id": "x", "message": pair(1)[1]}])
 
-    def test_image_and_pdf_blocks_survive_context_selection(self):
-        message = {"role": "user", "content": [
-            {"type": "text", "text": "read"},
-            {"type": "image", "path": "/tmp/image.png", "mime_type": "image/png"},
-            {"type": "file", "path": "/tmp/file.pdf", "mime_type": "application/pdf", "name": "file.pdf"},
-        ]}
-        self.assertEqual(ContextBuilder().build([message]), [message])
-
-    def test_multiple_parallel_tool_results_stay_paired(self):
-        messages = [{"role": "user", "content": "inspect"}, {
-            "role": "assistant", "content": "", "tool_calls": [
-                {"id": "a", "name": "shell", "arguments": "{}"},
-                {"id": "b", "name": "shell", "arguments": "{}"},
-            ]},
-            {"role": "tool", "tool_call_id": "b", "content": "b" * 6000},
-            {"role": "tool", "tool_call_id": "a", "content": "a" * 6000},
-        ]
-        selected = ContextBuilder(2200).build(messages)
-        assert_paired(self, selected)
-
-    def test_tight_budget_retains_the_latest_pair_even_with_empty_tool_text(self):
-        messages = [{"role": "user", "content": "inspect"}]
-        for index in range(5):
-            messages.extend(tool_pair(index, 5000))
-        builder = ContextBuilder(400)
-        selected = builder.build(messages)
-        self.assertLessEqual(builder.size(selected), 400)
-        self.assertEqual(selected[-1]["tool_call_id"], "call-4")
-        assert_paired(self, selected)
-
-    def test_json_escaping_and_system_instructions_count_in_budget(self):
-        messages = [{"role": "user", "content": "inspect"}, *tool_pair(1, 2000)]
-        messages[-1]["content"] = '\n"\\' * 4000
-        builder = ContextBuilder(1200)
-        selected = builder.build(messages, "instructions" * 20)
-        self.assertLessEqual(builder.size(selected, "instructions" * 20), 1200)
-        assert_paired(self, selected)
-
-    def test_interrupted_tool_units_are_filtered_only_in_model_context(self):
-        pending = tool_pair(1)[0]
-        pending["tool_calls"][0]["arguments"] = json.dumps({"command": "x" * 20000})
-        for messages in ([tool_pair(1)[1]], [pending]):
-            original = copy.deepcopy(messages)
-            self.assertEqual(ContextBuilder(2000).build(messages), [])
-            self.assertEqual(messages, original)
-        user = {"role": "user", "content": "continue after interruption"}
-        messages = [{"role": "user", "content": "first"}, tool_pair(1)[0], user, *tool_pair(2)]
-        selected = ContextBuilder().build(messages)
-        self.assertEqual(selected, [messages[0], user, *tool_pair(2)])
-        assert_paired(self, selected)
-
-    def test_large_user_text_and_schema_fail_explicitly(self):
-        with self.assertRaisesRegex(ContextBudgetError, "Current user"):
-            ContextBuilder(1000).build([{"role": "user", "content": "x" * 2000}])
-        with self.assertRaisesRegex(ContextBudgetError, "schemas"):
-            ContextBuilder(1000).build([], tools=[{"schema": "x" * 2000}])
+    def test_legacy_reasoning_and_native_state_survive_without_mutating_log(self):
+        message = {"role": "assistant", "content": "done", "_responses_output": [{"type": "reasoning"}],
+                   "_raw": {"stream_events": [{"choices": [{"delta": {"reasoning_content": "first "}}]},
+                                               {"choices": [{"delta": {"reasoning_content": None}}]},
+                                               {"choices": [{"delta": {"reasoning_content": "second"}}]}]}}
+        original = copy.deepcopy(message)
+        selected = working_message(message)
+        self.assertEqual(selected["reasoning_content"], "first second")
+        self.assertEqual(selected["_responses_output"], message["_responses_output"])
+        self.assertNotIn("_raw", selected)
+        self.assertEqual(message, original)
 
 
 if __name__ == "__main__":

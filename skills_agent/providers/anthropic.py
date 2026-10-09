@@ -3,7 +3,8 @@ from copy import deepcopy
 import json
 
 from .base import (
-    HTTPProvider, ProviderError, blocks, encoded_file, parse_arguments,
+    HTTPProvider, ProviderError, ProviderConnectionError, ProviderOutputLimitError,
+    blocks, encoded_file, parse_arguments, input_token_count, post_json,
     post_stream, received_text, validate_calls, validate_tool_pairs,
 )
 
@@ -22,6 +23,10 @@ def _content(content) -> list[dict]:
             }})
         elif kind == "file":
             result.append({"type": "text", "text": f"File: {block['path']}"})
+        elif kind in {"thinking", "redacted_thinking"}:
+            # Unsigned reasoning from another provider is not Claude state.
+            if kind == "redacted_thinking" or "signature" in block:
+                result.append(deepcopy(block))
         else:
             raise ProviderError(f"Unsupported content type: {kind}")
     return result
@@ -30,8 +35,45 @@ def _content(content) -> list[dict]:
 class AnthropicProvider(HTTPProvider):
     default_base_url = "https://api.anthropic.com/v1"
 
-    def complete(self, system: str, messages: list[dict], tools: list[dict], *,
-                 on_event=None) -> dict:
+    def __init__(self, model: str, api_key: str, base_url: str | None = None,
+                 max_output_tokens: int = 4096, *, api_format: str = "auto",
+                 token_counter: str = "auto", tokenizer_path=None, tokenizer_encoding=None,
+                 model_context_window: int | None = None):
+        super().__init__(model, api_key, base_url, max_output_tokens,
+                         model_context_window=model_context_window)
+        if api_format not in {"auto", "messages"} or token_counter not in {"auto", "official"}:
+            raise ValueError("Anthropic uses Messages and the official token counter")
+
+    def compact_messages(self, messages: list[dict]) -> list[dict]:
+        compacted = deepcopy(messages)
+        for message in compacted:
+            if message.get("role") != "assistant":
+                continue
+            for field in ("content", "_anthropic_content"):
+                if isinstance(message.get(field), list):
+                    message[field] = [b for b in message[field]
+                                      if b.get("type") not in {"thinking", "redacted_thinking"}]
+        return compacted
+
+    def can_compact(self, messages: list[dict]) -> bool:
+        # Locally collecting tool results does not finish Claude's assistant
+        # turn: that continuation must return its original thinking intact.
+        latest = next((message for message in reversed(messages)
+                       if message.get("role") == "assistant"), None)
+        if not latest or not latest.get("tool_calls"):
+            return True
+        content = latest.get("_anthropic_content", blocks(latest.get("content")))
+        return not any(block.get("type") in {"thinking", "redacted_thinking"}
+                       for block in content)
+
+    def count_tokens(self, system: str, messages: list[dict], tools: list[dict]) -> int:
+        return input_token_count(post_json(self.base_url + "/messages/count_tokens",
+                                           self._payload(system, messages, tools), self._headers()))
+
+    def _headers(self):
+        return {"x-api-key": self.api_key, "anthropic-version": "2023-06-01"}
+
+    def _payload(self, system: str, messages: list[dict], tools: list[dict]) -> dict:
         validate_tool_pairs(messages)
         converted = []
         for message in messages:
@@ -40,6 +82,8 @@ class AnthropicProvider(HTTPProvider):
                 role = "user"
                 content = [{"type": "tool_result", "tool_use_id": message["tool_call_id"],
                             "content": message["content"]}]
+            elif role == "assistant" and "_anthropic_content" in message:
+                content = deepcopy(message["_anthropic_content"])
             else:
                 content = _content(message.get("content"))
                 for call in message.get("tool_calls", []):
@@ -54,21 +98,27 @@ class AnthropicProvider(HTTPProvider):
                 converted[-1]["content"].extend(content)
             else:
                 converted.append({"role": role, "content": content})
-        payload = {"model": self.model, "max_tokens": self.max_output_tokens,
-                   "messages": converted, "stream": True}
+        payload = {"model": self.model, "messages": converted}
         if system:
             payload["system"] = system
         if tools:
             payload["tools"] = [{"name": tool["name"], "description": tool["description"],
                                  "input_schema": tool["parameters"]} for tool in tools]
+        return payload
+
+    def complete(self, system: str, messages: list[dict], tools: list[dict], *,
+                 on_event=None, max_output_tokens: int | None = None) -> dict:
+        payload = self._payload(system, messages, tools)
+        limit = self.max_output_tokens if max_output_tokens is None else max_output_tokens
+        if limit <= 0:
+            raise ValueError("max_output_tokens must be positive")
+        payload.update(max_tokens=limit, stream=True)
         raw = {"content": [], "stream_events": []}
         active = set()
         inputs = {}
         started = stopped = False
         try:
-            with closing(post_stream(self.base_url + "/messages", payload, {
-                "x-api-key": self.api_key, "anthropic-version": "2023-06-01",
-            })) as stream:
+            with closing(post_stream(self.base_url + "/messages", payload, self._headers())) as stream:
                 for event in stream:
                     if not isinstance(event, dict):
                         raise ProviderError("Invalid Anthropic stream event")
@@ -96,6 +146,11 @@ class AnthropicProvider(HTTPProvider):
                                     on_event({"type": "text_delta", "text": "\n"})
                                 if block["text"]:
                                     on_event({"type": "text_delta", "text": block["text"]})
+                        elif block["type"] == "thinking":
+                            if not isinstance(block.get("thinking"), str):
+                                raise ProviderError("Invalid Anthropic thinking")
+                            if block["thinking"] and on_event:
+                                on_event({"type": "thinking_delta", "text": block["thinking"]})
                         elif block["type"] == "tool_use":
                             inputs[index] = []
                             if on_event:
@@ -128,6 +183,8 @@ class AnthropicProvider(HTTPProvider):
                                 block[field] = block.get(field, "") + value
                                 if delta_kind == "text_delta" and value and on_event:
                                     on_event({"type": "text_delta", "text": value})
+                                elif delta_kind == "thinking_delta" and value and on_event:
+                                    on_event({"type": "thinking_delta", "text": value})
                     elif kind == "content_block_stop":
                         index = event["index"]
                         if index not in active:
@@ -150,8 +207,10 @@ class AnthropicProvider(HTTPProvider):
                         stopped = True
                         break
             if not stopped:
-                raise ProviderError("Anthropic stream ended before message_stop")
+                raise ProviderConnectionError("Anthropic stream ended before message_stop")
             reason = raw["stop_reason"]
+            if reason in {"max_tokens", "model_context_window_exceeded"}:
+                raise ProviderOutputLimitError(f"Anthropic response stopped: {reason}")
             if reason not in {"end_turn", "tool_use", "stop_sequence", "refusal"}:
                 raise ProviderError(f"Anthropic response stopped: {reason}")
             content, calls = [], []
@@ -161,12 +220,15 @@ class AnthropicProvider(HTTPProvider):
                 elif block["type"] == "tool_use":
                     calls.append({"id": block["id"], "name": block["name"],
                                   "arguments": json.dumps(block["input"], ensure_ascii=False)})
-                elif block["type"] not in {"thinking", "redacted_thinking"}:
+                elif block["type"] in {"thinking", "redacted_thinking"}:
+                    content.append(deepcopy(block))
+                else:
                     raise ProviderError("Unsupported Anthropic response content")
             if bool(calls) != (reason == "tool_use"):
                 raise ProviderError("Anthropic tool calls do not match stop_reason")
             validate_calls(calls)
-            result = {"role": "assistant", "content": content, "_raw": raw}
+            result = {"role": "assistant", "content": content, "_raw": raw,
+                      "_anthropic_content": deepcopy(raw["content"])}
             if calls:
                 result["tool_calls"] = calls
             return result

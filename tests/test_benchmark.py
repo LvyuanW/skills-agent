@@ -10,7 +10,7 @@ import threading
 import time
 import unittest
 
-from tests.sse import stream_response
+from tests.sse import stream_response, responses_from_chat
 
 from skills_agent.benchmark import main
 
@@ -25,8 +25,16 @@ class BenchmarkTests(unittest.TestCase):
 
             def do_POST(self):
                 payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                if self.path.endswith("/input_tokens"):
+                    body = b'{"input_tokens":128}'
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
                 requests.append(payload)
-                body = stream_response(reply(len(requests)))
+                body = stream_response(responses_from_chat(reply(len(requests))))
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Content-Length", str(len(body)))
@@ -44,13 +52,13 @@ class BenchmarkTests(unittest.TestCase):
     def command(self, root, endpoint):
         return [sys.executable, "-m", "skills_agent.benchmark", "--prompt-file", str(root / "prompt.txt"),
                 "--workspace", str(root / "workspace"), "--log-dir", str(root / "logs"),
-                "--model", "test-model", "--base-url", endpoint]
+                "--model", "test-model", "--base-url", endpoint, "--api-format", "responses"]
 
     def response(self, command=None, text="completed", reason=None):
         message = {"content": text}
         if command:
             message["tool_calls"] = [{"id": "task", "type": "function", "function": {
-                "name": "shell", "arguments": json.dumps({"command": command}),
+                "name": "shell", "arguments": json.dumps({"name": "完成任务脚本", "command": command}),
             }}]
         return {"choices": [{"finish_reason": reason or ("tool_calls" if command else "stop"),
                              "message": message}], "usage": {"prompt_tokens": 20, "completion_tokens": 10}}
@@ -66,7 +74,7 @@ class BenchmarkTests(unittest.TestCase):
             process = subprocess.run(self.command(root, endpoint), input="unused stdin", text=True, capture_output=True)
             self.assertEqual(process.returncode, 0, process.stderr + process.stdout)
             self.assertEqual(len(requests), 2)
-            self.assertEqual(requests[0]["messages"][-1]["content"][0]["text"], prompt)
+            self.assertEqual(requests[0]["input"][-1]["content"][0]["text"], prompt)
             self.assertEqual((root / "workspace/output/result.txt").read_text(), "task artifact")
             events = [json.loads(line) for line in (root / "logs/session/events.jsonl").read_text().splitlines()]
             self.assertEqual(events[0]["message"]["content"][0]["text"], prompt)
@@ -133,7 +141,7 @@ class BenchmarkTests(unittest.TestCase):
                 time.sleep(0.1)
                 self.assertEqual(heartbeat.stat().st_size, size)
                 events = [json.loads(line) for line in (root / "logs/session/events.jsonl").read_text().splitlines()]
-                self.assertEqual(events[-1], {"type": "error", "message": "Interrupted"})
+                self.assertEqual({k: events[-1][k] for k in ("type", "message")}, {"type": "error", "message": "Interrupted"})
             finally:
                 if process.poll() is None:
                     process.terminate()

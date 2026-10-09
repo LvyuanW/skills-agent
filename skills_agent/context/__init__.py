@@ -1,256 +1,192 @@
-"""Deterministic, character-budgeted model context; session data is never edited."""
+"""Persisted, incremental working context; raw history remains in Session."""
 
 from __future__ import annotations
 
-import copy
 import json
-import re
+from copy import deepcopy
 
 
-class ContextBudgetError(ValueError):
+class ContextBudgetError(RuntimeError):
     pass
 
 
-def _text(message: dict) -> str:
-    content = message.get("content", "")
-    if isinstance(content, str):
-        return content
-    return "\n".join(block.get("text", "") for block in content if block.get("type") == "text")
+def working_message(message):
+    """Remove transport logs, retaining the provider state needed for another request."""
+    message = deepcopy(message)
+    raw = message.pop("_raw", {})
+    if message.get("role") == "assistant" and "reasoning_content" not in message:
+        values = [choice.get("message", {}).get("reasoning_content")
+                  for choice in raw.get("choices", [])]
+        reasoning = next((value for value in values if isinstance(value, str)), None)
+        if reasoning is None:
+            chunks = [choice.get("delta", {}).get("reasoning_content")
+                      for event in raw.get("stream_events", [])
+                      for choice in event.get("choices", [])]
+            if any(isinstance(value, str) for value in chunks):
+                reasoning = "".join(value for value in chunks if isinstance(value, str))
+        if reasoning is not None:
+            message["reasoning_content"] = reasoning
+    return message
 
 
-def _excerpt(text: str, limit: int) -> str:
-    if len(text) <= limit:
-        return text
-    marker = "\n[… omitted …]\n"
-    if limit <= len(marker):
-        return text[:limit]
-    available = limit - len(marker)
-    head = available * 2 // 3
-    return text[:head] + marker + text[-(available - head):]
-
-
-def _groups(messages: list[dict]) -> list[list[dict]]:
-    """Keep each assistant tool call and every matching result together."""
-    groups = []
-    index = 0
-    while index < len(messages):
-        message = messages[index]
-        if message.get("role") == "tool":
+def record_groups(records):
+    """An assistant response and every matching result form one indivisible group."""
+    groups, index = [], 0
+    while index < len(records):
+        record = records[index]
+        message = record["message"]
+        if message["role"] == "tool":
+            raise ValueError("Orphan tool result in working context")
+        group = [record]
+        index += 1
+        calls = message.get("tool_calls", [])
+        pending = {call["id"] for call in calls}
+        if len(pending) != len(calls):
+            raise ValueError("Duplicate tool call IDs in an assistant response")
+        while pending and index < len(records):
+            result = records[index]["message"]
+            if result["role"] != "tool" or result.get("tool_call_id") not in pending:
+                break
+            pending.remove(result["tool_call_id"])
+            group.append(records[index])
             index += 1
-            continue
-        calls = message.get("tool_calls") or []
-        if not calls:
-            groups.append([message])
-            index += 1
-            continue
-        ids = [call["id"] for call in calls]
-        if message.get("role") != "assistant" or len(set(ids)) != len(ids):
-            raise ValueError("Invalid assistant tool call IDs")
-        end = index + 1
-        while end < len(messages) and messages[end].get("role") == "tool":
-            end += 1
-        results = messages[index + 1:end]
-        result_ids = [result.get("tool_call_id") for result in results]
-        if (len(results) != len(calls) or any(result.get("role") != "tool" for result in results)
-                or set(result_ids) != set(ids) or len(set(result_ids)) != len(result_ids)):
-            # A stopped run may have persisted a call before every result arrived.
-            index = end
-            continue
-        groups.append([message, *results])
-        index = end
+        if pending:
+            raise ValueError("Cannot send or compress an unfinished tool call group")
+        groups.append(group)
     return groups
 
 
-def _flatten(groups: list[list[dict]]) -> list[dict]:
-    return [message for group in groups for message in group]
+class WorkingContext:
+    def __init__(self, session, model, auxiliary, *, max_tokens=272000, keep_calls=10):
+        if max_tokens <= 0 or keep_calls < 1:
+            raise ValueError("Context token budget and kept calls must be positive")
+        self.session, self.model, self.auxiliary = session, model, auxiliary
+        self.max_tokens, self.keep_calls = max_tokens, keep_calls
+        self.path = session.path / "context.json"
+        self.state = json.loads(self.path.read_text()) if self.path.exists() else {
+            "version": 1, "cursor": 0, "summary": "", "covered_event_ids": [],
+            "records": [], "token_count": None,
+        }
+        if self.state.get("version") != 1:
+            raise ValueError("Unsupported working context version")
 
+    @property
+    def records(self):
+        return self.state["records"]
 
-def _compact_commands(message: dict, limit: int) -> None:
-    """Excerpt completed commands in a context copy, never executable input."""
-    for call in message.get("tool_calls", []):
-        if call["name"] not in {"shell", "sandbox"}:
-            continue
-        try:
-            arguments = json.loads(call["arguments"])
-        except (TypeError, ValueError):
-            continue
-        command = arguments.get("command") if isinstance(arguments, dict) else None
-        if not isinstance(command, str):
-            continue
-        marker = f"[Already-executed command excerpt; full source: session tool call {call['id']}]\n"
-        is_excerpt = command.startswith(marker)
-        if len(command) <= limit or (not is_excerpt and len(command) <= 128):
-            continue
-        # A second, tighter pass must keep one marker and the original call ID.
-        source = command[len(marker):] if is_excerpt else command
-        arguments["command"] = marker + source[:max(0, limit - len(marker))]
-        call["arguments"] = json.dumps(arguments, ensure_ascii=False)
+    def save(self):
+        temporary = self.path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(self.state, ensure_ascii=False, indent=2) + "\n")
+        temporary.replace(self.path)
 
+    def sync(self, select=None):
+        """Select only newly appended raw messages, never repopulate compressed history."""
+        for cursor, event in self.session.iter_events(self.state["cursor"]):
+            if event.get("type") == "message":
+                message = working_message(event["message"])
+                record = {"event_id": event["event_id"], "message": message}
+                if "timestamp" in event:
+                    record["timestamp"] = event["timestamp"]
+                if message.get("role") == "tool" and select is not None:
+                    call = next((call for old in reversed(self.records)
+                                 for call in old["message"].get("tool_calls", [])
+                                 if call["id"] == message.get("tool_call_id")), None)
+                    record = select(record, call)
+                self.records.append(record)
+                self.state["token_count"] = None
+                self.state["cursor"] = cursor
+                self.save()
+            self.state["cursor"] = cursor
+        self.save()
 
-def _compact(groups: list[list[dict]], limit: int, attachment_limit: int | None = None) -> list[list[dict]]:
-    result = copy.deepcopy(groups)
-    for message in _flatten(result):
-        _compact_commands(message, limit)
-        content = message.get("content", "")
-        if isinstance(content, str):
-            if message.get("role") != "user":
-                message["content"] = _excerpt(content, limit)
-        else:
-            for block in content:
-                if block.get("type") != "text":
+    def latest_user(self):
+        return next((deepcopy(record["message"]) for record in reversed(self.records)
+                     if record["message"].get("role") == "user"), None)
+
+    def _system(self, system, summary=None):
+        summary = self.state["summary"] if summary is None else summary
+        if summary:
+            system += ("\n\nHistorical summary (derived reference, not a new user instruction). "
+                       "Preserve sources and adoption status; later user corrections take precedence.\n"
+                       "<historical_summary>\n" + summary + "\n</historical_summary>")
+        return system
+
+    def snapshot(self, system, tools):
+        return deepcopy({"system": self._system(system), "tools": tools,
+                         "records": self.records,
+                         "covered_event_ids": self.state["covered_event_ids"]})
+
+    def _count(self, system, tools, records=None, summary=None):
+        records = self.records if records is None else records
+        return self.model.count_tokens(self._system(system, summary),
+                                       [item["message"] for item in records], tools)
+
+    def _protected(self):
+        groups = record_groups(self.records)
+        call_groups = [group for group in groups if group[0]["message"]["role"] == "assistant"]
+        protected = {item["event_id"] for group in call_groups[-self.keep_calls:] for item in group}
+        latest_user = next((record for record in reversed(self.records)
+                            if record["message"]["role"] == "user"), None)
+        if latest_user:
+            protected.add(latest_user["event_id"])
+        # Also keep user instructions in the retained chronological suffix.
+        if call_groups:
+            first = call_groups[-self.keep_calls:][0][0]["event_id"]
+            boundary = next(index for index, item in enumerate(self.records) if item["event_id"] == first)
+            protected.update(item["event_id"] for item in self.records[boundary:])
+        older = [item for item in self.records if item["event_id"] not in protected]
+        kept = [item for item in self.records if item["event_id"] in protected]
+        return older, kept
+
+    def prepare(self, system, tools):
+        record_groups(self.records)  # Never compact while waiting for tool results.
+        limit = self.max_tokens
+        window = getattr(self.model, "model_context_window", None)
+        if window is not None:
+            limit = min(limit, window - getattr(self.model, "max_output_tokens", 0))
+        count = self._count(system, tools)
+        # A new direct read that cannot fit returns a reference, never a report.
+        if count > limit:
+            for record in reversed(self.records):
+                if not record.get("pending_direct"):
                     continue
-                if message.get("role") != "user":
-                    block["text"] = _excerpt(block.get("text", ""), limit)
-                elif block.get("attachment"):
-                    # Path remains available even if the attachment's text is omitted.
-                    label = f"Attachment: {block.get('name', '')}\nPath: {block['path']}\n"
-                    original = block.get("text", "")
-                    body = original[len(label):].lstrip("\n") if original.startswith(label) else original
-                    block["text"] = label + "\n" + _excerpt(body, limit if attachment_limit is None else attachment_limit)
-    return result
+                record["message"]["content"] = json.dumps({
+                    "notice": "Requested original result does not fit the active context. Read a narrower range.",
+                    "source": record["source"],
+                }, ensure_ascii=False)
+                record.pop("pending_direct", None)
+                count = self._count(system, tools)
+                if count <= limit:
+                    break
+        trigger = min(self.max_tokens * 0.9, limit)
+        can_compact = getattr(self.model, "can_compact", lambda messages: True)
+        if count >= trigger and can_compact([record["message"] for record in self.records]):
+            older, kept = self._protected()
+            if older:
+                compacted = self.model.compact_messages([record["message"] for record in kept])
+                candidate = [{**record, "message": message} for record, message in zip(kept, compacted)]
+                if self._count(system, tools, candidate, summary="") > limit:
+                    self.save()
+                    raise ContextBudgetError("Protected context (latest user and 10 model calls) exceeds the token budget")
+                summary = self.auxiliary.compress(self.state["summary"], older, self.latest_user())
+                count = self._count(system, tools, candidate, summary)
+                if count > limit:
+                    self.save()
+                    raise ContextBudgetError("Verified summary and protected context exceed the token budget")
+                self.state["summary"] = summary
+                self.state["covered_event_ids"].extend(record["event_id"] for record in older)
+                self.state["records"] = candidate
+        self.state["token_count"] = count
+        if count > limit:
+            self.save()
+            raise ContextBudgetError(f"Working context needs {count} input tokens; available budget is {limit}. "
+                                     "Protected messages were not shortened.")
+        for record in self.records:
+            record.pop("pending_direct", None)
+        self.state["system"] = self._system(system)
+        self.state["tools"] = deepcopy(tools)
+        self.save()
+        return self._system(system), [deepcopy(record["message"]) for record in self.records]
 
 
-def _keywords(text: str) -> set[str]:
-    words = set(re.findall(r"[a-z0-9_]{3,}", text.lower()))
-    for run in re.findall(r"[\u3400-\u9fff]+", text):
-        words.update(run[index:index + 2] for index in range(len(run) - 1))
-    return words
-
-
-def _summary(groups: list[list[dict]]) -> str:
-    lines = []
-    for message in _flatten(groups):
-        role = message.get("role", "")
-        if message.get("tool_calls"):
-            names = ", ".join(f"{call['name']}({_excerpt(call['arguments'], 180)})" for call in message["tool_calls"])
-            lines.append(f"assistant tools: {names}")
-        text = _text(message).strip()
-        if text:
-            label = message.get("name") or role
-            lines.append(f"{label}: {_excerpt(text, 260)}")
-    return "Extracted earlier context:\n" + "\n".join(lines)
-
-
-class ContextBuilder:
-    def __init__(self, max_chars: int = 48000):
-        if max_chars <= 0:
-            raise ValueError("max_chars must be positive")
-        self.max_chars = max_chars
-
-    @staticmethod
-    def size(messages: list[dict], system: str = "", tools: list[dict] | None = None) -> int:
-        """Count JSON characters, including instructions and schemas, not model tokens.
-
-        Image/PDF blocks count as metadata; this cannot measure native media tokens.
-        """
-        return len(json.dumps({"system": system, "tools": tools or [], "messages": messages},
-                              ensure_ascii=False, separators=(",", ":")))
-
-    def build(self, messages: list[dict], system: str = "", tools: list[dict] | None = None) -> list[dict]:
-        clean = []
-        for message in messages:
-            item = {key: copy.deepcopy(value) for key, value in message.items() if key != "_raw"}
-            if item.get("role") == "assistant" and "reasoning_content" not in item:
-                # Sessions saved before reasoning round-trip support kept it only in _raw.
-                raw = message.get("_raw") or {}
-                choices = raw.get("choices") or []
-                source = choices[0].get("message", {}) if choices else {}
-                reasoning = source.get("reasoning_content")
-                # Older stream assembly could overwrite earlier fragments with null.
-                parts = [choice.get("delta", {}).get("reasoning_content")
-                         for event in raw.get("stream_events", [])
-                         for choice in event.get("choices", []) if choice.get("index", 0) == 0]
-                parts = [part for part in parts if isinstance(part, str)]
-                if parts:
-                    reasoning = "".join(parts)
-                if isinstance(reasoning, str):
-                    item["reasoning_content"] = reasoning
-            clean.append(item)
-        groups = _groups(clean)
-        clean = _flatten(groups)
-        measure = lambda selected: self.size(selected, system, tools)
-        if measure([]) > self.max_chars:
-            raise ContextBudgetError("System instructions and tool schemas exceed max_chars")
-        if measure(clean) <= self.max_chars:
-            return clean
-
-        turns: list[list[list[dict]]] = []
-        for group in groups:
-            if not turns or group[0].get("role") == "user":
-                turns.append([])
-            turns[-1].append(group)
-        if not turns:
-            return []
-
-        current = turns[-1]
-        has_user = current[0][0].get("role") == "user"
-        user_groups = current[:1] if has_user else []
-        minimum_user = _flatten(_compact(user_groups, 0))
-        minimum_cost = measure(minimum_user)
-        if minimum_cost > self.max_chars:
-            raise ContextBudgetError("Current user text and attachment metadata exceed max_chars; shorten the text or increase the budget")
-        reserve = min(2000, self.max_chars // 8, (self.max_chars - minimum_cost) // 4)
-        target = self.max_chars - reserve
-        compacted = copy.deepcopy(current)
-        for limit in (8000, 4000, 2000, 1000, 500, 256, 128):
-            if measure(_flatten(compacted)) <= target:
-                break
-            compacted = _compact(current, limit)
-        if measure(_flatten(compacted)) > target:
-            compacted = _compact(current, 128, attachment_limit=0)
-
-        required = {0} if has_user else set()
-        tool_groups = [index for index, group in enumerate(current) if group[0].get("tool_calls")]
-        if tool_groups:
-            required.add(tool_groups[-1])
-        retained = list(range(len(current)))
-        dropped_current = []
-        while measure(_flatten(compacted)) > target:
-            removable = next((index for index, original_index in enumerate(retained) if original_index not in required), None)
-            if removable is None:
-                break
-            dropped_current.append(current[retained.pop(removable)])
-            del compacted[removable]
-        if measure(_flatten(compacted)) > target:
-            compacted = _compact(compacted, 0)
-        if measure(_flatten(compacted)) > target:
-            minimum_cost = measure(_flatten(compacted))
-            if minimum_cost > self.max_chars:
-                raise ContextBudgetError("Current user message and latest tool call metadata (including reasoning_content) exceed max_chars")
-            target = minimum_cost
-            reserve = self.max_chars - minimum_cost
-
-        query = _keywords(_text(current[0][0]))
-        history = turns[:-1]
-        # Recent turns first; remaining turns are ranked by lexical overlap.
-        recent = list(range(max(0, len(history) - 2), len(history)))[::-1]
-        relevant = sorted(range(max(0, len(history) - 2)),
-                          key=lambda index: (len(query & _keywords(_text(history[index][0][0]))), index), reverse=True)
-        selected: dict[int, list[list[dict]]] = {}
-        for index in recent + relevant:
-            candidate = _compact(history[index], 1000)
-            proposed = {**selected, index: candidate}
-            ordered = [group for key in sorted(proposed) for group in proposed[key]] + compacted
-            if measure(_flatten(ordered)) <= target:
-                selected[index] = candidate
-
-        ordered = [group for key in sorted(selected) for group in selected[key]] + compacted
-        result = _flatten(ordered)
-        omitted = [group for index, turn in enumerate(history) if index not in selected for group in turn]
-        omitted.extend(dropped_current)
-        if omitted:
-            summary = _summary(omitted)
-            low, high = 0, min(len(summary), reserve)
-            while low < high:
-                middle = (low + high + 1) // 2
-                memory = {"role": "user", "content": [{"type": "text", "text": _excerpt(summary, middle)}]}
-                if measure([memory, *result]) <= self.max_chars:
-                    low = middle
-                else:
-                    high = middle - 1
-            if low:
-                result.insert(0, {"role": "user", "content": [{"type": "text", "text": _excerpt(summary, low)}]})
-        return result
-
-
-__all__ = ["ContextBuilder", "ContextBudgetError"]
+__all__ = ["WorkingContext", "ContextBudgetError", "working_message", "record_groups"]

@@ -33,9 +33,17 @@ export OPENAI_API_KEY='你的密钥'
 | 字段 | 默认值 / 用途 |
 | --- | --- |
 | `workspace` | ALE 的 `sandbox.task_data_root`，作为脚本当前目录 |
-| `context_chars` | `48000` |
+| `context_tokens` | `272000`；完整工作上下文的 token 预算，达到 90% 时压缩 |
+| `api_format` | `auto`；OpenAI 协议可选择 `responses` 或 `chat` |
+| `token_counter` | `auto`；使用官方接口 `official` 或 DeepSeek 本地计量 `deepseek` |
+| `tokenizer_path` | 未设置；DeepSeek tokenizer 文件的容器内路径 |
+| `tokenizer_encoding` | 未设置；匹配实际 DeepSeek 模型的 `v4` 或 `v41` 编码器 |
+| `model_context_window` | 未设置；实际模型窗口上限，用于校验输入与输出额度之和 |
 | `max_output_tokens` | `4096` |
+| `summary_output_tokens` | `32768`；辅助生成额度，摘要目标篇幅另为 `8192` tokens |
 | `skill_dirs` | `[]`；额外技能目录，必须已在任务容器内可见 |
+
+OpenAI 和 Anthropic 使用官方请求前计量接口；OpenAI 网关需要支持 Responses 及其计量接口，并设置 `api_format: responses`。DeepSeek 使用匹配实际模型的本地 tokenizer 和消息模板。使用 DeepSeek 时，在配置中设置 `api_format: chat`、`token_counter: deepseek`、`tokenizer_path` 和对应的 `tokenizer_encoding`；安装包需要包含 `deepseek` 可选依赖，tokenizer 文件必须已在任务容器内可用，宿主机路径不会自动传入。
 
 ## 运行一题
 
@@ -64,6 +72,8 @@ prompt.txt                  原始任务文本
 transcript.log              主会话显示记录（正文流式显示，工具为摘要）
 stderr.log                  进程错误输出
 session/events.jsonl        原始会话事件与模型响应
+session/context.json        增量维护、按阈值压缩的工作上下文
+session/history.sqlite      按需创建和增量更新的原始历史索引
 session/subagents/*/        独立子会话日志
 ```
 
