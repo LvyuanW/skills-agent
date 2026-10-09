@@ -237,6 +237,9 @@ class CLIInteractionTests(unittest.TestCase):
             self.assertIn("first turn", json.dumps(model.messages))
             self.assertIn("second turn", json.dumps(model.messages))
             self.assertEqual(output.count("assistant:\nresponse"), 2)
+            self.assertNotIn("user:", output)
+            self.assertNotIn("first turn", output)
+            self.assertNotIn("second turn", output)
 
     def test_files_and_images_are_queued_for_only_the_next_turn(self):
         class Model:
@@ -436,8 +439,13 @@ class CLIProtocolTests(unittest.TestCase):
                         capture_output=True, text=True,
                     )
                     self.assertEqual(history.returncode, 0, history.stderr)
-                    self.assertTrue(second.stdout.startswith(first.stdout))
-                    self.assertEqual(history.stdout, second.stdout)
+                    self.assertNotIn("create result", first.stdout)
+                    self.assertNotIn("follow up", first.stdout)
+                    self.assertIn("create result", second.stdout)
+                    self.assertIn("follow up", second.stdout)
+                    self.assertNotIn("continue via stdin", second.stdout)
+                    self.assertIn("continue via stdin", history.stdout)
+                    self.assertNotIn("\033[", first.stdout + second.stdout + history.stdout)
                     recorded = session_log.read_bytes()
                     full_history = subprocess.run(
                         [sys.executable, "-m", "skills_agent", "history", "--full", "--workspace", directory],

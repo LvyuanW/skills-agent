@@ -27,6 +27,32 @@ class DisplayTests(unittest.TestCase):
             render_event(event, output, **options)
         return output.getvalue()
 
+    def test_terminal_roles_have_distinct_colors_and_plain_output_has_none(self):
+        class TTY(io.StringIO):
+            def isatty(self):
+                return True
+
+        events = [
+            message("user", "user text"),
+            message("assistant", "first line\nsecond line"),
+            message("assistant", "", tool_calls=[call(arguments={"command": "pwd", "summary": "检查目录"})]),
+            message("tool", '{"exit_code":0,"stdout":"","stderr":""}', name="shell", tool_call_id="c1"),
+            {"type": "subagent_summary", "goal": "统计文件", "status": "completed"},
+        ]
+        original = copy.deepcopy(events)
+        for full in (False, True):
+            with self.subTest(full=full):
+                terminal = TTY()
+                for event in events:
+                    render_event(event, terminal, full=full)
+                text = terminal.getvalue()
+                self.assertIn("\033[97;40muser text\033[0m\n", text)
+                self.assertIn("\033[30;107mfirst line\033[0m\n\033[30;107msecond line\033[0m\n", text)
+                self.assertIn("\033[34;107msub-agent 处理了：统计文件\033[0m\n", text)
+                self.assertIn("\033[34;107m" + ("tool_call shell:" if full else "· shell：检查目录"), text)
+                self.assertNotIn("\033[", self.render(events, full=full))
+        self.assertEqual(events, original)
+
     def test_compact_replay_preserves_event_objects_and_original_log_bytes(self):
         command = "cat > generated.py <<'PY'\n" + "print('RAW_SOURCE')\n" * 500 + "PY"
         stdout = "RAW_OUTPUT\n" * 500

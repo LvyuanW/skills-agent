@@ -8,19 +8,43 @@ from .runtime import add_agent_arguments, create_agent
 from .session import Session
 
 
+_COLORS = {"user": "\033[97;40m", "assistant": "\033[30;107m", "tool": "\033[34;107m"}
+_RESET = "\033[0m"
+
+
+def _print(text, role, output):
+    if output.isatty():
+        color = _COLORS[role]
+        text = color + text.replace("\n", _RESET + "\n" + color) + _RESET
+    print(text, file=output, flush=True)
+
+
+def _read_input():
+    colored = sys.stdin.isatty() and sys.stdout.isatty()
+    if colored:
+        sys.stdout.write(_COLORS["user"])
+        sys.stdout.flush()
+    try:
+        return input("> " if sys.stdin.isatty() else "")
+    finally:
+        if colored:
+            sys.stdout.write(_RESET)
+            sys.stdout.flush()
+
+
 def _render_full_event(event, output):
     """Render original public content; child calls/results stay in the session log."""
     output = output or sys.stdout
     kind = event.get("type")
     if kind == "subagent_summary":
         action = "处理了" if event["status"] == "completed" else "未完成"
-        print(f"sub-agent {action}：{event['goal']}", file=output, flush=True)
+        _print(f"sub-agent {action}：{event['goal']}", "tool", output)
     elif kind == "error":
         if event.get("partial_content"):
             _render_full_event({"type": "message", "message": {
                 "role": "assistant", "content": event["partial_content"],
             }}, output)
-        print(f"error: {event['message']}", file=output, flush=True)
+        _print(f"error: {event['message']}", "assistant", output)
     elif kind == "message":
         message = event["message"]
         role = message["role"]
@@ -30,15 +54,15 @@ def _render_full_event(event, output):
         blocks = [{"type": "text", "text": content}] if isinstance(content, str) else content
         if blocks:
             label = f"tool {message['name']}" if role == "tool" else role
-            print(f"{label}:", file=output)
+            _print(f"{label}:", role, output)
             for block in blocks:
                 if block["type"] == "text":
-                    print(block["text"], file=output)
+                    _print(block["text"], role, output)
                 else:
-                    print(f"[{block['type']}] {block['path']}", file=output)
+                    _print(f"[{block['type']}] {block['path']}", role, output)
         for call in message.get("tool_calls", []):
             if call["name"] != "subagent":
-                print(f"tool_call {call['name']}: {call['arguments']}", file=output)
+                _print(f"tool_call {call['name']}: {call['arguments']}", "tool", output)
         output.flush()
 
 
@@ -62,12 +86,12 @@ def render_event(event, output=None, *, full=False, echo_user=True):
         return _render_full_event(event, output)
     if kind == "subagent_summary":
         action = "处理了" if event["status"] == "completed" else "未完成"
-        print(f"sub-agent {action}：{_brief(event['goal'])}", file=output, flush=True)
+        _print(f"sub-agent {action}：{_brief(event['goal'])}", "tool", output)
     elif kind == "error":
         if event.get("partial_content"):
             count = len(_text(event["partial_content"]))
-            print(f"· 回答未完成，已保存 {count} 字符", file=output)
-        print(f"error: {_brief(event['message'])}", file=output, flush=True)
+            _print(f"· 回答未完成，已保存 {count} 字符", "assistant", output)
+        _print(f"error: {_brief(event['message'])}", "assistant", output)
     elif kind == "message":
         message = event["message"]
         role = message["role"]
@@ -88,7 +112,7 @@ def render_event(event, output=None, *, full=False, echo_user=True):
                     lines = sum(len(str(result.get(key, "")).splitlines()) for key in ("stdout", "stderr"))
                     if lines:
                         status += f"，输出 {lines} 行"
-            print(f"· {message['name']}：{status}", file=output, flush=True)
+            _print(f"· {message['name']}：{status}", "tool", output)
         elif role == "assistant" and message.get("tool_calls"):
             for call in message["tool_calls"]:
                 if call["name"] == "subagent":
@@ -99,7 +123,7 @@ def render_event(event, output=None, *, full=False, echo_user=True):
                     arguments = {}
                 summary = arguments.get("summary") if isinstance(arguments, dict) else None
                 summary = summary if isinstance(summary, str) and summary.strip() else "执行脚本"
-                print(f"· {call['name']}：{_brief(summary)}", file=output, flush=True)
+                _print(f"· {call['name']}：{_brief(summary)}", "tool", output)
         elif role == "user":
             content = message.get("content", [])
             blocks = [{"type": "text", "text": content}] if isinstance(content, str) else content
@@ -108,7 +132,7 @@ def render_event(event, output=None, *, full=False, echo_user=True):
                 _render_full_event({"type": "message", "message": {"role": "user", "content": text}}, output)
             for block in blocks:
                 if block.get("attachment") or block["type"] in {"image", "file"}:
-                    print(f"[附件] {_brief(block.get('name') or block['path'])}", file=output, flush=True)
+                    _print(f"[附件] {_brief(block.get('name') or block['path'])}", "user", output)
         else:
             _render_full_event(event, output)
 
@@ -142,10 +166,10 @@ def interact(agent, files):
         try:
             pending_files.append(attachment_path(path, agent.workspace))
         except (ValueError, OSError) as exc:
-            print(f"error: {exc}", file=sys.stderr)
+            _print(f"error: {exc}", "assistant", sys.stderr)
     while True:
         try:
-            prompt = input("> " if sys.stdin.isatty() else "")
+            prompt = _read_input()
         except EOFError:
             return 0
         except KeyboardInterrupt:
@@ -161,7 +185,7 @@ def interact(agent, files):
                     raise ValueError("用法：/file PATH；路径包含空格时使用引号")
                 pending_files.append(attachment_path(parts[1], agent.workspace))
             except (ValueError, OSError) as exc:
-                print(f"error: {exc}", file=sys.stderr)
+                _print(f"error: {exc}", "assistant", sys.stderr)
             continue
         if not command and not pending_files:
             continue
@@ -169,7 +193,7 @@ def interact(agent, files):
         try:
             user_message = agent.session.make_user_message(prompt, attachments)
         except (ValueError, OSError) as exc:
-            print(f"error: {exc}", file=sys.stderr)
+            _print(f"error: {exc}", "assistant", sys.stderr)
             continue
         try:
             agent.run(user_message)
@@ -195,11 +219,11 @@ def main(argv=None):
         if args.command == "history":
             return 0
         agent = create_agent(args, session, on_event=lambda event: render_event(
-            event, echo_user=not sys.stdin.isatty(),
+            event, echo_user=False,
         ))
         return interact(agent, args.file)
     except (ValueError, OSError, RuntimeError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        _print(f"error: {exc}", "assistant", sys.stderr)
         return 1
     except KeyboardInterrupt:
         return 130
