@@ -50,6 +50,14 @@ OpenAI 兼容接口返回的 `reasoning_content` 会完整保存，并随保留�
 
 ## 图片和文件
 
+macOS 下在输入行按 **Ctrl-V** 粘贴剪贴板中的图片或已复制的文件，文字则直接插入光标处。附件用简短标记表示：
+
+```text
+> 分析 [图片1]，参考 [文件2:报告.pdf]
+```
+
+删除标记即可取消该附件，按 Enter 与文字一起发送。图片在粘贴时保存临时副本，发送后与文件一样复制到会话目录；退出时清理临时副本。普通的 Cmd-V 仍由终端处理文字粘贴。
+
 ```sh
 .venv/bin/skills-agent run --session files \
   --file ./image.png --file ./report.pdf --file ./data.csv
@@ -81,6 +89,8 @@ OpenAI 兼容接口返回的 `reasoning_content` 会完整保存，并随保留�
 ```text
 skills_agent/
   cli.py             命令行输入、摘要显示与完整记录回放
+  input.py           输入行的剪贴板快捷键与附件标记
+  clipboard.py       macOS 剪贴板读取
   markdown.py        终端 Markdown 渲染与流式预览
   benchmark.py       从任务文件运行一次并退出
   runtime.py         两个入口共用的参数与 Agent 构造

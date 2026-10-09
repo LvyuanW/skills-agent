@@ -3,11 +3,13 @@ import json
 from pathlib import Path
 import shlex
 import sys
+from tempfile import TemporaryDirectory
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.styles import Style
 
 from .runtime import add_agent_arguments, create_agent
+from .input import ClipboardDraft
 from .markdown import MarkdownStream, print_markdown
 from .session import Session
 
@@ -126,6 +128,8 @@ def render_event(event, output=None, *, full=False, echo_user=True):
                 _render_full_event({"type": "message", "message": {"role": "user", "content": text}}, output)
             for block in blocks:
                 if block.get("attachment") or block["type"] in {"image", "file"}:
+                    if block.get("marker") and block["marker"] in _text(text):
+                        continue
                     _print(f"[附件] {_brief(block.get('name') or block['path'])}", "user", output)
         else:
             _render_full_event(event, output)
@@ -255,10 +259,20 @@ def attachment_path(value, workspace):
 
 
 def interact(agent, files):
+    with TemporaryDirectory(prefix="skills-agent-clipboard-") as directory:
+        draft = ClipboardDraft(
+            Path(directory),
+            on_error=lambda message: _print(f"error: {message}", "assistant", sys.stderr),
+        )
+        return _interact(agent, files, draft)
+
+
+def _interact(agent, files, draft):
     if sys.stdin.isatty() and sys.stdout.isatty():
         read_input = PromptSession(
             "> ", erase_when_done=True,
             style=Style.from_dict({"": "ansiwhite bg:ansiblack"}),
+            key_bindings=draft.bindings,
         ).prompt
     else:
         read_input = lambda: input("> " if sys.stdin.isatty() else "")
@@ -290,9 +304,15 @@ def interact(agent, files):
             continue
         if not command and not pending_files:
             continue
-        attachments, pending_files = pending_files, []
+        pasted = draft.attachments(prompt)
+        attachments = [path for _, path in pasted] + pending_files
+        pending_files = []
         try:
             user_message = agent.session.make_user_message(prompt, attachments)
+            blocks = [block for block in user_message["content"]
+                      if block.get("attachment") or block["type"] in {"image", "file"}]
+            for (marker, _), block in zip(pasted, blocks):
+                block["marker"] = marker
         except (ValueError, OSError) as exc:
             _print(f"error: {exc}", "assistant", sys.stderr)
             continue
