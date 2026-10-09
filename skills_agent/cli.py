@@ -64,14 +64,15 @@ def _purpose(arguments, *keys):
     return None
 
 
-def _tool_start(name, arguments):
+def _tool_call_summary(name, arguments):
+    """Describe the model's call; receiving arguments does not start execution."""
     purpose = _purpose(arguments, "name")
     if name == "subagent":
         purpose = purpose or _purpose(arguments, "goal")
-        return f"· sub-agent「{purpose}」：处理中" if purpose else "· sub-agent：接收调用"
+        return f"· sub-agent「{purpose}」：调用" if purpose else "· sub-agent：接收调用"
     if purpose:
-        return f"· {name}「{purpose}」：执行中"
-    return f"· {name}：{_purpose(arguments, 'summary') or '执行脚本'}"
+        return f"· {name}「{purpose}」：调用"
+    return f"· {name}：{_purpose(arguments, 'summary') or '接收调用'}"
 
 
 def _subagent_summary(event, output):
@@ -115,7 +116,7 @@ def _render_full_event(event, output):
                     _print(f"[{block['type']}] {block['path']}", role, output)
         for call in message.get("tool_calls", []):
             if call["name"] == "subagent":
-                _print(_tool_start(call["name"], _arguments(call)), "tool", output)
+                _print(_tool_call_summary(call["name"], _arguments(call)), "tool", output)
             else:
                 _print(f"tool_call {call['name']}: {call['arguments']}", "tool", output)
         output.flush()
@@ -172,7 +173,7 @@ def render_event(event, output=None, *, full=False, echo_user=True, tool_names=N
         elif role == "assistant":
             _assistant_content(message, output)
             for call in message.get("tool_calls", []):
-                _print(_tool_start(call["name"], _arguments(call)), "tool", output)
+                _print(_tool_call_summary(call["name"], _arguments(call)), "tool", output)
         elif role == "user":
             content = message.get("content", [])
             blocks = [{"type": "text", "text": content}] if isinstance(content, str) else content
@@ -230,6 +231,8 @@ class ConsoleRenderer:
             call[key] += event.get(key) or ""
         if call["name"] not in {"shell", "sandbox", "subagent"}:
             return
+        label = "sub-agent" if call["name"] == "subagent" else call["name"]
+        receiving = f"· {label}：接收调用"
         try:
             arguments = json.loads(call["arguments"])
         except ValueError:
@@ -239,11 +242,12 @@ class ConsoleRenderer:
             if self.full and call["name"] != "subagent":
                 display = f"tool_call {call['name']}: {call['arguments']}"
             else:
-                display = _tool_start(call["name"], arguments)
+                display = _tool_call_summary(call["name"], arguments)
+                if display == receiving and call["announced"]:
+                    display = None
             call["shown"] = True
         elif not call["announced"]:
-            label = "sub-agent" if call["name"] == "subagent" else call["name"]
-            display = f"· {label}：接收调用"
+            display = receiving
         if display is not None:
             self._finish_stream()
             _print(display, "tool", self.output)

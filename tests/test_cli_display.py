@@ -100,7 +100,7 @@ class DisplayTests(unittest.TestCase):
         event = message("assistant", [{"type": "text", "text": text}], tool_calls=[call(), call(identifier="c2")],
                         _raw={"reasoning_content": "PRIVATE_REASONING", "thinking": "PRIVATE_THINKING"})
         output = self.render([event])
-        self.assertEqual(output, "assistant:\n" + text + "\n" + "· shell：执行脚本\n" * 2)
+        self.assertEqual(output, "assistant:\n" + text + "\n" + "· shell：接收调用\n" * 2)
         self.assertNotIn("RAW_COMMAND", output)
         self.assertNotIn("PRIVATE_", output)
         detailed = self.render([event], full=True)
@@ -114,9 +114,9 @@ class DisplayTests(unittest.TestCase):
                 tool_call = call()
                 tool_call["arguments"] = arguments
                 event = message("assistant", "Read inputs", tool_calls=[tool_call])
-                self.assertEqual(self.render([event]), "assistant:\nRead inputs\n· shell：执行脚本\n")
+                self.assertEqual(self.render([event]), "assistant:\nRead inputs\n· shell：接收调用\n")
         self.assertEqual(self.render([message("assistant", [], tool_calls=[call()])]),
-                         "· shell：执行脚本\n")
+                         "· shell：接收调用\n")
 
     def test_failure_status_is_visible_without_dumping_tool_output(self):
         cases = [

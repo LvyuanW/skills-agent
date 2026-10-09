@@ -302,7 +302,7 @@ class StreamDisplayTests(unittest.TestCase):
             renderer.close()
             outputs.append(output.getvalue())
         expected = ("思考:\n先核对文件。\nassistant:\n开始检查。\n"
-                    "· shell「核对文件」：执行中\n思考:\n等待结果。\n"
+                    "· shell「核对文件」：调用\n思考:\n等待结果。\n"
                     "· shell「核对文件」：完成，输出 1 行\n")
         self.assertEqual(outputs, [expected, expected])
         self.assertEqual(events, original)
@@ -384,7 +384,7 @@ class StreamDisplayTests(unittest.TestCase):
         }]))
         renderer(message("tool", '{"exit_code":3,"stdout":"","stderr":"PRIVATE_ERROR"}',
                          name="shell", tool_call_id="shell-1"))
-        self.assertEqual(output.getvalue(), "· shell「运行测试」：执行中\n"
+        self.assertEqual(output.getvalue(), "· shell「运行测试」：调用\n"
                                            "· shell「运行测试」：失败（退出码 3），输出 1 行\n")
 
     def test_named_subagent_call_and_report_never_show_task_or_internal_content(self):
@@ -403,7 +403,7 @@ class StreamDisplayTests(unittest.TestCase):
             renderer = ConsoleRenderer(output, full=full)
             for event in events:
                 renderer(event)
-            self.assertEqual(output.getvalue(), "· sub-agent「查找历史决策」：处理中\n"
+            self.assertEqual(output.getvalue(), "· sub-agent「查找历史决策」：调用\n"
                                                "· sub-agent「查找历史决策」：已返回报告\n")
 
     def test_user_echo_setting_keeps_attachments_and_renderer_state_is_local(self):

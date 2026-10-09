@@ -47,6 +47,44 @@ def call(name, values, identifier="c1"):
 
 
 class AgentTests(unittest.TestCase):
+    def test_invalid_tool_arguments_never_display_execution_or_run_a_process(self):
+        for streamed in (False, True):
+            for values in ({"command": "touch should-not-exist"},
+                           {"name": "检查文件", "command": 42}):
+                with self.subTest(streamed=streamed, values=values), TemporaryDirectory() as directory:
+                    path = Path(directory)
+                    session = Session(path, "invalid-call")
+                    output = io.StringIO()
+                    invalid = call("shell", values)
+
+                    class Model(FakeCounter):
+                        def complete(self, system, messages, tools, *, on_event=None):
+                            if messages[-1]["role"] == "tool":
+                                assert "error" in json.loads(messages[-1]["content"])
+                                return answer("done")
+                            if streamed:
+                                on_event({"type": "tool_call_delta", "index": 0, "name": "shell"})
+                                on_event({"type": "tool_call_delta", "index": 0,
+                                          "arguments": invalid["arguments"]})
+                            return answer("", [invalid])
+
+                    agent = Agent(Model(), session, SkillRegistry([]), path,
+                                  on_event=ConsoleRenderer(output))
+                    with patch("skills_agent.tools.subprocess.Popen") as process:
+                        self.assertEqual(agent.run(session.make_user_message("task", [])), "done")
+                        process.assert_not_called()
+                    live = output.getvalue()
+                    self.assertIn("失败：", live)
+                    self.assertLess(live.index("调用"), live.index("失败："))
+                    self.assertEqual(live.count("接收调用"), int(streamed or "name" not in values))
+                    self.assertNotIn("执行", live)
+                    self.assertNotIn("touch should-not-exist", live)
+                    replay = io.StringIO()
+                    renderer = ConsoleRenderer(replay, live=False)
+                    for event in session.events():
+                        renderer(event)
+                    self.assertEqual(replay.getvalue(), live)
+
     def test_empty_response_is_recorded_but_does_not_report_success(self):
         class Model(FakeCounter):
             def complete(self, *args, **kwargs):

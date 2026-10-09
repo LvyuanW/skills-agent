@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from skills_agent.context import ContextBudgetError, WorkingContext, record_groups, working_message
 from skills_agent.session import Session
@@ -63,6 +64,55 @@ class ContextTests(unittest.TestCase):
     def append(self, *messages):
         for message in messages:
             self.session.append(message)
+
+    def test_sync_saves_each_new_message_once_and_skips_unchanged_context(self):
+        context = self.context()
+        with patch.object(context, "save", wraps=context.save) as save:
+            context.sync()
+            save.assert_not_called()
+            self.assertFalse(context.path.exists())
+            self.append({"role": "user", "content": "task"}, *pair(0))
+            context.sync()
+            self.assertEqual(save.call_count, 3)
+            self.assertEqual(self.context().state, context.state)
+            context.sync()
+            self.assertEqual(save.call_count, 3)
+
+    def test_sync_checkpoints_trailing_stream_events_without_invalidating_tokens(self):
+        self.append({"role": "user", "content": "task"})
+        context = self.context()
+        context.sync()
+        context.state["token_count"] = 12
+        context.save()
+        self.session.append_event({"type": "text_delta", "text": "partial reply"})
+        with patch.object(context, "save", wraps=context.save) as save:
+            context.sync()
+            save.assert_called_once()
+            context.sync()
+            save.assert_called_once()
+        self.assertEqual(len(context.records), 1)
+        self.assertEqual(context.state["token_count"], 12)
+        self.assertEqual(context.state["cursor"], (self.session.path / "events.jsonl").stat().st_size)
+        self.assertEqual(self.context().state, context.state)
+
+    def test_interrupted_selection_preserves_completed_report_for_resume(self):
+        self.append({"role": "user", "content": "task"}, *pair(0), *pair(1))
+        selected = []
+        def select(record, call):
+            selected.append(call["id"])
+            if selected == ["call-0", "call-1"]:
+                raise KeyboardInterrupt
+            record["message"]["content"] = f"report for {call['id']}"
+            return record
+        context = self.context()
+        with self.assertRaises(KeyboardInterrupt):
+            context.sync(select)
+        restored = self.context()
+        self.assertEqual(restored.records[2]["message"]["content"], "report for call-0")
+        restored.sync(select)
+        self.assertEqual(selected, ["call-0", "call-1", "call-1"])
+        self.assertEqual(restored.records[-1]["message"]["content"], "report for call-1")
+        self.assertEqual(self.context().state, restored.state)
 
     def test_incremental_restore_reads_only_new_bytes_and_never_reselects(self):
         self.append({"role": "user", "content": "task"}, *pair(0, "RAW_UNSELECTED"))

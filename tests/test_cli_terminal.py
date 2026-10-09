@@ -250,7 +250,7 @@ class TerminalTests(unittest.TestCase):
         self.assertNotIn("`SECOND_FINAL`", plain)
         self.assert_color(text, first, USER_COLOR)
         self.assert_color(text, second, USER_COLOR)
-        self.assert_color(text, "shell「运行测试脚本」：执行中", TOOL_COLOR)
+        self.assert_color(text, "shell「运行测试脚本」：调用", TOOL_COLOR)
         self.assert_color(text, "shell「运行测试脚本」：完成", TOOL_COLOR)
         self.assert_color(text, "FIRST_FINAL", ASSISTANT_COLOR)
         self.assert_color(text, "SECOND_FINAL", ASSISTANT_COLOR)

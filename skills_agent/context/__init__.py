@@ -81,6 +81,7 @@ class WorkingContext:
 
     def sync(self, select=None):
         """Select only newly appended raw messages, never repopulate compressed history."""
+        saved_cursor = self.state["cursor"]
         for cursor, event in self.session.iter_events(self.state["cursor"]):
             if event.get("type") == "message":
                 message = working_message(event["message"])
@@ -96,8 +97,10 @@ class WorkingContext:
                 self.state["token_count"] = None
                 self.state["cursor"] = cursor
                 self.save()
+                saved_cursor = cursor
             self.state["cursor"] = cursor
-        self.save()
+        if self.state["cursor"] != saved_cursor:
+            self.save()
 
     def latest_user(self):
         return next((deepcopy(record["message"]) for record in reversed(self.records)

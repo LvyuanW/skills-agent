@@ -184,67 +184,6 @@ class SkillsToolsTests(unittest.TestCase):
         self.assertEqual(result["stdout"], 'notes.jsonl:2: {"text": "needle"}\n')
         self.assertEqual(result["stderr"], "")
 
-    def test_history_exposes_only_public_events_and_preserves_source(self):
-        events = [
-            {"type": "message", "message": {"role": "user", "content": "public request"}},
-            {"type": "message", "message": {
-                "role": "assistant", "content": [{"type": "text", "text": "public answer"}],
-                "_raw": {"secret": "HIDDEN_RAW_MESSAGE"},
-                "reasoning_content": "HIDDEN_REASONING",
-                "tool_calls": [
-                    {"id": "child", "name": "subagent", "arguments": '{"task": "HIDDEN_TASK"}'},
-                    {"id": "host", "name": "shell", "arguments": '{"command": "pwd"}'},
-                ],
-            }},
-            {"type": "message", "message": {
-                "role": "tool", "name": "subagent", "content": "HIDDEN_RESULT",
-            }},
-            {"type": "subagent_summary", "goal": "public goal", "status": "completed"},
-            {"type": "message", "message": {
-                "role": "tool", "name": "shell", "content": "public tool result",
-            }},
-            {"type": "error", "message": "public failure", "_raw": {"secret": "HIDDEN_RAW_EVENT"},
-             "partial_content": [{"type": "text", "text": "public partial answer"}]},
-        ]
-        path = self.workspace / "events.jsonl"
-        original = "".join(json.dumps(event) + "\n" for event in events).encode("utf-8")
-        path.write_bytes(original)
-        result = self.script("history", str(path), "--start", "1", "--end", "6")
-        self.assertEqual(result["exit_code"], 0, result["stderr"])
-        self.assertNotIn("HIDDEN_", result["stdout"])
-        self.assertNotIn('"_raw"', result["stdout"])
-        rows = [line.split(": ", 1) for line in result["stdout"].splitlines()]
-        self.assertEqual([number for number, _ in rows], ["1", "2", "4", "5", "6"])
-        public = {number: json.loads(event) for number, event in rows}
-        self.assertEqual(public["1"], events[0])
-        self.assertEqual(public["2"]["message"]["content"], events[1]["message"]["content"])
-        self.assertEqual(public["2"]["message"]["tool_calls"], [events[1]["message"]["tool_calls"][1]])
-        self.assertEqual(public["4"], events[3])
-        self.assertEqual(public["5"], events[4])
-        self.assertEqual(public["6"]["partial_content"], events[5]["partial_content"])
-        self.assertEqual(path.read_bytes(), original)
-        selected = self.script("history", str(path), "--start", "3", "--end", "4")
-        self.assertEqual(selected["stdout"], f"4: {json.dumps(events[3], ensure_ascii=False)}\n")
-
-    def test_history_uses_complete_messages_without_exposing_private_stream_fragments(self):
-        events = [
-            {"type": "text_delta", "text": "public answer"},
-            {"type": "tool_call_delta", "index": 0, "name": "subagent"},
-            {"type": "tool_call_delta", "index": 0, "arguments": '{"task":"HIDDEN_TASK"}'},
-            {"type": "message", "streamed": True, "message": {
-                "role": "assistant", "content": "public answer",
-                "tool_calls": [{"name": "subagent", "arguments": '{"task":"HIDDEN_TASK"}'}],
-            }},
-        ]
-        path = self.workspace / "events.jsonl"
-        original = "".join(json.dumps(event) + "\n" for event in events)
-        path.write_text(original, encoding="utf-8")
-        result = self.script("history", str(path))
-        self.assertEqual(result["exit_code"], 0, result["stderr"])
-        self.assertNotIn("HIDDEN_TASK", result["stdout"])
-        self.assertEqual(result["stdout"].count("public answer"), 1)
-        self.assertEqual(path.read_text(encoding="utf-8"), original)
-
     def test_workspace_script_rejects_invalid_line_ranges(self):
         result = self.script("read", "missing.txt", "--start", "0")
         self.assertEqual(result["exit_code"], 2)

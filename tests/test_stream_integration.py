@@ -164,6 +164,9 @@ class StreamIntegrationTests(unittest.TestCase):
                     self.assertFalse(completed.is_set())
                     self.assertIsNone(process.poll())
                     self.assertFalse((workspace / "result.txt").exists())
+                    self.assertIn(f"· shell「{SUMMARY}」：调用", seen.decode())
+                    self.assertNotIn("执行中", seen.decode())
+                    self.assertNotIn("执行脚本", seen.decode())
                     log = workspace / ".agent/sessions/gated/events.jsonl"
                     pending = [json.loads(line) for line in log.read_text().splitlines()]
                     self.assertEqual({k: pending[-1][k] for k in ("type", "text")}, {"type": "text_delta", "text": FIRST_BODY})
