@@ -34,6 +34,8 @@ export OPENAI_MODEL='支持工具调用的模型名称'
 
 stdin 每行作为一轮输入，EOF 退出。需要将多行任务作为一次输入并执行到结束时，使用下方的 benchmark 入口。
 
+终端输入使用 Python 的 readline，支持方向键移动光标、编辑文字和上下键切换本次运行中的输入历史。
+
 Anthropic：
 
 ```sh

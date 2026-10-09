@@ -222,6 +222,45 @@ class TerminalTests(unittest.TestCase):
         self.assertIn(USER_COLOR, finished)
         self.assertTrue(finished.rstrip().endswith(RESET))
 
+    def test_input_edits_with_cursor_keys_and_submits_only_edited_text(self):
+        terminal, requests = self.terminal(
+            lambda payload, count: self.response(f"**EDIT_DONE_{count}**"))
+        edits = [
+            ("ac\x1b[Db\x1b[Cd", "abcd"),
+            ("abXYc\x1b[D\x1b[D\x1b[3~\x7f", "abc"),
+            ("middle\x01start \x05 end", "start middle end"),
+            ("你X好界\x1b[D\x1b[D\x1b[D\x1b[3~\x1b[C世\x1b[C", "你好世界"),
+        ]
+        for count, (keys, expected) in enumerate(edits, 1):
+            with self.subTest(expected=expected):
+                terminal.send(keys + "\n")
+                terminal.wait_for(lambda output: f"EDIT_DONE_{count}" in output
+                                  and output.endswith("> "))
+                self.assertEqual(len(requests), count)
+                self.assertEqual(requests[-1]["messages"][-1]["content"],
+                                 [{"type": "text", "text": expected}])
+        users = [event["message"]["content"][0]["text"] for event in self.events()
+                 if event.get("type") == "message" and event["message"]["role"] == "user"]
+        self.assertEqual(users, [expected for _, expected in edits])
+        self.assertNotIn("^[[", terminal.text)
+
+    def test_up_history_is_editable_after_markdown_reply(self):
+        terminal, requests = self.terminal(
+            lambda payload, count: self.response(f"**HISTORY_DONE_{count}**\n\n- `ready`"))
+        terminal.send("previous request\n")
+        terminal.wait_for(lambda output: "HISTORY_DONE_1" in output
+                          and output.endswith("> "))
+        terminal.send("\x1b[A\x01edited \x05 again\n")
+        text = terminal.wait_for(lambda output: "HISTORY_DONE_2" in output
+                                 and output.endswith("> "))
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(requests[-1]["messages"][-1]["content"],
+                         [{"type": "text", "text": "edited previous request again"}])
+        self.assertNotIn("**HISTORY_DONE_1**", terminal_text(text))
+        self.assertNotIn("^[[", text)
+        self.assert_color(text, "edited previous request again", USER_COLOR)
+        self.assert_color(text, "HISTORY_DONE_2", ASSISTANT_COLOR)
+
     def test_ctrl_c_resets_colors_cancels_script_and_keeps_conversation_open(self):
         script = (
             "from pathlib import Path\nimport time\n"

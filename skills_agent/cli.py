@@ -23,6 +23,8 @@ def _print(text, role, output):
 def _read_input():
     colored = sys.stdin.isatty() and sys.stdout.isatty()
     if colored:
+        import readline  # Enable native line editing and in-process history for input().
+
         sys.stdout.write(_COLORS["user"])
         sys.stdout.flush()
     try:
