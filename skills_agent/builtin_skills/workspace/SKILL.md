@@ -9,6 +9,6 @@ For UTF-8 text, stream lines and select the relevant ranges instead of loading a
 
 For PDF, office documents, archives, or other binary attachments, use a suitable installed reader or write a task-specific parser. Extract relevant content before reasoning about it; do not interpret binary data as text.
 
-For original session evidence, use the `history` skill and a named history subagent. Its source-linked helper indexes complete main-session messages, including the delegated tasks and final reports the main agent received. Do not read independent subagent, compaction, or report sessions. Keep general workspace file searches outside session directories.
+The main agent obtains original conversation evidence by delegating a named `subagent` with `history: true` and a concrete question, rather than searching session logs itself. Ordinary subagents report missing historical input to the parent agent. A dedicated history retrieval subagent follows its assigned retrieval instructions. Keep general workspace file searches outside session directories.
 
 Your script's output should answer its stated purpose: include exact source paths and line ranges, relevant observations, and execution status. Return code or precise data unchanged when that is what the task needs. Choose `result_mode: direct` for source ranges that must retain exact text; use `auto` for ordinary output or `report` for long evidence that needs a focused conclusion.

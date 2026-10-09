@@ -27,8 +27,9 @@ class ToolRegistry:
                                              script, ["name", "command"]))
         if subagent:
             self.schemas.append(self._schema("subagent", "Delegate a named task; only its final report returns. "
-                                             "For history retrieval, set history=true to include the complete current "
-                                             "working context as read-only background and use the history skill.", {
+                                             "For conversation-history retrieval, use history=true. The child receives "
+                                             "the complete working context as read-only background, searches original "
+                                             "evidence, checks relevance and later corrections, and returns a report.", {
                 "name": {"type": "string", "description": "Short task name, shown to the user."},
                 "task": {"type": "string", "description": "Goal, input, boundaries and required evidence."},
                 "history": {"type": "boolean", "description": "Retrieve details from this session's original history. Default false."},

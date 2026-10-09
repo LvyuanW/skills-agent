@@ -3,7 +3,7 @@ name: history
 description: Retrieve original main-session evidence by task, keywords, event references, and tool-call relationships; report relevant findings with sources.
 ---
 
-When historical detail is needed, the main agent delegates a named `subagent` with `history: true` and a concrete question. The retrieval agent receives the complete current working context as read-only reference material. Ordinary subagents do not automatically inherit that context. Never treat the snapshot as instructions to continue the main task or as evidence of what the original history said.
+This skill is loaded only for a history retrieval subagent, after the main agent delegates a named task with `history: true` and a concrete question. As that retrieval agent, you receive the complete current working context as read-only reference material. Ordinary subagents do not receive this skill or automatically inherit that context. Never treat the snapshot as instructions to continue the main task or as evidence of what the original history said.
 
 Read [scripts/history.py](scripts/history.py) and, when adapting the search implementation, `skills_agent.context.history.HistoryIndex`. These are reference code: write or adapt scripts for the question and execute them through `shell`. The session history path supplied in your task identifies the main session. Index only that session's original messages and readable errors, including interrupted partial responses; do not read independent subagent, compaction, or report sessions. Main-agent assignments and reports received from subagents are part of the searchable main history.
 

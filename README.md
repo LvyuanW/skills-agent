@@ -103,12 +103,12 @@ skills_agent/
   runtime.py         两个入口共用的参数与 Agent 构造
   agent.py           同步模型/工具循环、独立子会话
   session/           追加式事件日志、输入附件副本
-  context/           持久化工作上下文、模型压缩与核验、原始历史检索
+  context/           持久化工作上下文、模型压缩与核验、原始历史检索及专用 history_skill
   providers/         OpenAI 与 Anthropic 协议转换
   tools/             shell、subagent、sandbox
   skills/            技能发现与系统提示词中的技能目录
   sandbox/           Docker 命令执行
-  builtin_skills/    内置 workspace/history skill 及参考脚本
+  builtin_skills/    通用 workspace skill 及参考脚本
 tests/
 adapters/ale/        ALE Deployer 与运行配置
 ```
@@ -126,7 +126,7 @@ adapters/ale/        ALE Deployer 与运行配置
 - `--summary-output-tokens` 默认32768，是辅助生成的输出额度，与摘要目标及报告正文预算分开；需符合实际模型输出能力。`--model-context-window` 指定实际窗口时，输入与输出额度一并检查。最近10组或最新用户任务本身过长时明确报错，不缩短保护范围。
 - Anthropic 客户端压缩在协议允许的边界移除失效 thinking 的发送副本，原始历史不变。工具结果尚待回送且需要原签名时延后压缩；硬预算仍不能超出。
 - shell/sandbox 必填 `name`，并可选择 `result_mode: auto | direct | report`。`auto` 默认保留不超过8192 tokens的结果，超过则生成2048 tokens以内的报告；`direct` 保留原文，装不下时返回原始事件和行范围；`report` 直接形成有证据的结论。原始结果总是先完整落盘。官方接口对报告正文的独立计量包含少量请求开销，因此是保守预算。
-- sub-agent 必填 `name + task`，最终返回 Markdown 报告，说明适用的结论、证据、产物和未解决事项；内部对话不进入主上下文或 UI。`history=true` 时，携带完整工作上下文只读快照，通过 history skill 搜索父会话；快照装不下就报错，不截断。普通子任务只接收明确交代的输入。
+- sub-agent 必填 `name + task`，最终返回 Markdown 报告，说明适用的结论、证据、产物和未解决事项；内部对话不进入主上下文或 UI。`history=true` 时，加载检索专用 history skill，并携带完整工作上下文只读快照搜索父会话；快照装不下就报错，不截断。主 Agent 和普通子任务的技能目录不包含该技能，普通子任务只接收明确交代的输入。
 - `history.sqlite` 增量索引原始主会话，支持中文与英文检索、事件/路径精确查找、行范围、邻近记录及工具配对。检索子任务通过查询扩展、回看证据和检查后续修正生成报告，只把最终报告带回主上下文。任何时候均可检索，不必等到压缩后。
 - `--max-output-tokens` 默认4096。模型输出截断时保留已收到的公开内容和原始响应，记录错误，不执行不完整的工具调用。
 
@@ -182,7 +182,7 @@ python3 analyze.py
 
 shell 和 sandbox 必填 `name`，用简短自然语言说明脚本用途，供终端显示。参数尚未收全时显示“接收调用”，完整后显示名称和“调用”，不据此显示“执行中”；收到工具结果后显示完成或失败。断流或中断时保留已经显示的正文，并记录错误，不执行不完整的工具调用。
 
-内置 `workspace` skill 讲解文本读取和检索方法，附带可阅读、改写的参考实现。独立的 `history` skill 提供原始会话检索和报告方法；主会话索引包含已返回的子任务报告，不索引私有子会话。
+内置 `workspace` skill 讲解文本读取和检索方法，附带可阅读、改写的参考实现。`context/history_skill` 提供原始会话检索和报告方法，仅在 `subagent(history=true)` 的检索子任务中加载；主 Agent 通过委派获得结论，不直接执行检索流程。主会话索引包含已返回的子任务报告，不索引私有子会话。
 
 ### Sandbox
 

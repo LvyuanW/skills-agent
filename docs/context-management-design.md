@@ -468,6 +468,8 @@ result_mode = auto | direct | report
 
 采用本地 SQLite FTS5 索引，复用现有 sub-agent、shell 和 history skill。默认检索当前主会话。
 
+history skill 位于检索专用目录，仅为 `subagent(history=true)` 创建的子 Agent 加载。主 Agent 和普通子 Agent 的技能目录不暴露该技能；主 Agent 只派发检索问题，普通子 Agent 遇到历史信息缺口时向主 Agent 报告。检索子 Agent 负责查找、判断相关性、核对后续修正和形成报告。这是技能分发与职责约定，不是文件权限隔离；任意 shell 能力仍保留。
+
 原文必须可检索，不能只有压缩摘要。按完整轮次组织；长工具结果按段落或代码行分块，并保留所属轮次和调用关系。流式 delta 不重复索引。
 
 主 Agent 派发给 sub-agent 的任务和收到的最终报告可以检索；不需要把子 Agent 内部对话加入主会话索引。

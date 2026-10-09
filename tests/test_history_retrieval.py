@@ -166,7 +166,7 @@ class HistoryRetrievalTests(unittest.TestCase):
     def test_reference_script_reads_range_from_any_working_directory(self):
         event = self.append({"role": "assistant", "content": "first\nsecond\nthird"})
         project = Path(__file__).resolve().parents[1]
-        script = project / "skills_agent/builtin_skills/history/scripts/history.py"
+        script = project / "skills_agent/context/history_skill/scripts/history.py"
         completed = subprocess.run(
             [sys.executable, str(script), str(self.path), "read", event, "--start", "2", "--end", "2"],
             cwd=self.path, env={**os.environ, "PYTHONPATH": str(project)}, text=True, capture_output=True,
