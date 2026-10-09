@@ -67,6 +67,41 @@ class ProviderTests(unittest.TestCase):
         if "usage" in expected:
             self.assertEqual(actual["usage"], expected["usage"])
 
+    def test_output_limits_reach_each_api_with_per_call_overrides(self):
+        responses_events = [{"type": "response.completed", "response": {
+            "status": "completed", "output": [{"type": "message", "role": "assistant", "content": [
+                {"type": "output_text", "text": "done", "annotations": []},
+            ]}],
+        }}]
+        cases = [
+            ("chat", NativeOpenAIProvider, {"api_format": "chat"}, "openai",
+             list(response_events(openai_response())), "max_completion_tokens"),
+            ("responses", NativeOpenAIProvider, {}, "responses", responses_events, "max_output_tokens"),
+            ("deepseek", NativeOpenAIProvider, {"base_url": "https://api.deepseek.com/v1"}, "openai",
+             list(response_events(openai_response())), "max_tokens"),
+            ("anthropic", AnthropicProvider, {}, "anthropic",
+             list(response_events(anthropic_response())), "max_tokens"),
+        ]
+        for name, cls, settings, module, events, output_key in cases:
+            for configured_limit in (None, 8192):
+                settings = dict(settings)
+                if configured_limit is not None:
+                    settings["max_output_tokens"] = configured_limit
+                provider = cls("test-model", "secret", **settings)
+                # A one-call override must not replace the provider's configured default.
+                for override in (None, 16384, None):
+                    with self.subTest(api=name, configured=configured_limit, override=override), patch(
+                        f"skills_agent.providers.{module}.post_stream",
+                        return_value=(deepcopy(event) for event in events),
+                    ) as send:
+                        provider.complete("system", [{"role": "user", "content": "hello"}], TOOLS,
+                                          max_output_tokens=override)
+                        payload = send.call_args.args[1]
+                        self.assertEqual(payload[output_key], override or configured_limit or 32768)
+                        for other_key in {"max_tokens", "max_completion_tokens", "max_output_tokens"} - {output_key}:
+                            self.assertNotIn(other_key, payload)
+                        send.assert_called_once()
+
     def test_openai_request_and_raw_response(self):
         raw = openai_response()
         with patch("skills_agent.providers.base.request.urlopen", return_value=response_stream(raw)) as send:
@@ -372,6 +407,10 @@ class ProviderTests(unittest.TestCase):
     def test_factory(self):
         self.assertIsInstance(create_provider("openai", "model", "key"), NativeOpenAIProvider)
         self.assertIsInstance(create_provider("anthropic", "model", "key"), AnthropicProvider)
+        for name in ("openai", "anthropic"):
+            with self.subTest(provider=name):
+                self.assertEqual(create_provider(name, "model", "key").max_output_tokens, 32768)
+                self.assertEqual(create_provider(name, "model", "key", max_output_tokens=8192).max_output_tokens, 8192)
         with self.assertRaises(ValueError):
             create_provider("unknown", "model", "key")
 

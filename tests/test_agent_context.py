@@ -70,7 +70,7 @@ class AgentContextTests(unittest.TestCase):
                     self.assertEqual(agent.context.max_tokens, expected)
                     self.assertEqual(agent.auxiliary.window, min(expected, window or expected))
                     self.assertEqual(factory.call_args.kwargs["model_context_window"], window)
-                    self.assertEqual(factory.call_args.kwargs["max_output_tokens"], 4096)
+                    self.assertEqual(factory.call_args.kwargs["max_output_tokens"], 32768)
 
     def test_activity_uses_current_listener_and_does_not_log_or_expose_child_work(self):
         model = ScriptedModel([

@@ -7,6 +7,9 @@ from typing import Protocol
 from urllib import error, request
 
 
+DEFAULT_MAX_OUTPUT_TOKENS = 32768
+
+
 class ProviderError(RuntimeError):
     def __init__(self, message: str, raw: dict | None = None,
                  partial_content: list[dict] | None = None):
@@ -178,7 +181,7 @@ class HTTPProvider:
     default_base_url: str
 
     def __init__(self, model: str, api_key: str, base_url: str | None = None,
-                 max_output_tokens: int = 4096, *, model_context_window: int | None = None):
+                 max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS, *, model_context_window: int | None = None):
         if not model or max_output_tokens <= 0:
             raise ValueError("model and positive max_output_tokens are required")
         self.model = model

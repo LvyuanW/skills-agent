@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .base import (
-    HTTPProvider, ProviderError, ProviderConnectionError, ProviderOutputLimitError,
+    DEFAULT_MAX_OUTPUT_TOKENS, HTTPProvider, ProviderError, ProviderConnectionError, ProviderOutputLimitError,
     blocks, encoded_file, parse_arguments, input_token_count, post_json,
     post_stream, validate_calls, validate_tool_pairs,
 )
@@ -39,7 +39,7 @@ class OpenAIProvider(ResponsesMixin, HTTPProvider):
     default_base_url = "https://api.openai.com/v1"
 
     def __init__(self, model: str, api_key: str, base_url: str | None = None,
-                 max_output_tokens: int = 4096, *, api_format: str = "auto",
+                 max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS, *, api_format: str = "auto",
                  token_counter: str = "auto", tokenizer_path: str | None = None,
                  tokenizer_encoding: str | None = None, model_context_window: int | None = None):
         super().__init__(model, api_key, base_url, max_output_tokens,

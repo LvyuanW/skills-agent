@@ -28,14 +28,29 @@ export OPENAI_MODEL='支持工具调用的模型名称'
 
 也可以使用 `.venv/bin/python -m skills_agent`。`run --session demo` 创建或恢复名为 `demo` 的会话，先按时间顺序回放主会话，再等待输入，回答后继续留在会话中。启动命令不接受消息参数。Ctrl-C 中断当前任务并停止正在运行的脚本，随后可继续输入。
 
-工作上下文默认预算为 **1M（1000000 tokens）**，启动时可用 `--context-tokens` 设置任意正整数。`--model-context-window` 独立指定所用模型的实际总窗口；设置 Agent 预算不会扩大服务端能力。例如，模型实际窗口为 1M 时：
+`run` 和 `benchmark` 自动读取所选工作目录下的 `skills-agent.toml`，没有该文件时使用环境变量及内置默认值。项目根目录已提供：
 
-```sh
-uv run --env-file .env skills-agent run --session demo \
-  --context-tokens 1000000 --model-context-window 1000000
+```toml
+context_tokens = 1000000
+model_context_window = 1000000
+max_output_tokens = 32768
+summary_output_tokens = 32768
 ```
 
-有效输入预算取 `min(context_tokens, model_context_window - max_output_tokens)`；不指定实际窗口时使用 `context_tokens`，仍需自行确认服务端限制。上例在默认输出额度 4096 下，输入预算为 995904 tokens。调整工作上下文预算不会改变单次输出额度。
+四项依次是工作上下文预算、模型实际总窗口、单次输出额度（含思考）、辅助生成输出额度。修改文件后启动即可：
+
+```sh
+uv run --env-file .env skills-agent run --session demo
+
+# Override one value for this run.
+uv run --env-file .env skills-agent run --session demo --max-output-tokens 65536
+```
+
+优先级为 **显式命令行参数 > 配置文件 > 已支持的环境变量 > 内置默认值**。`--config /path/to/agent.toml` 可指定另一份文件，只读取这一份，不合并多份配置。相对 `--config` 路径按启动目录解析。会话名、工作目录和输入附件仍通过启动参数指定。
+
+配置文件还可填写 `provider`、`model`、`base_url`、`api_format`、`token_counter`、`tokenizer_path`、`tokenizer_encoding`、`skill_dirs` 和 `sandbox_image`。文件中的 `tokenizer_path` 和 `skill_dirs` 相对配置文件所在目录解析；命令行及环境变量中的路径仍相对启动目录。`--skill-dir` 覆盖文件中的额外技能目录列表。API key 只从环境变量读取，可继续放在 `.env` 中，不写入 TOML。
+
+工作上下文默认预算为 **1M（1000000 tokens）**，各项 token 额度均可独立设置为正整数。有效输入预算取 `min(context_tokens, model_context_window - max_output_tokens)`；未设置实际窗口时使用 `context_tokens`。项目配置下，输入预算为 **967232 tokens**，在 **900000 tokens** 触发压缩。配置数值仍需符合所用模型的实际能力。
 
 两种 API 均使用流式接收。正文收到即显示；正文和工具调用按到达顺序记录、渲染，历史回放保持相同顺序。工具调用显示名称及完成状态、失败退出码和输出行数，不展开命令源码或工具 JSON；可读思考标记为“思考”，按到达顺序显示，签名和加密内容不显示。终端输入时显示 `>`，发送后清除临时输入区，显示一次与历史回放相同的 `user:` 消息块；附件只列名称。用户消息的黑底铺满整行，Agent 回复为白底黑字，段落空行同样填充白底；工具摘要为蓝字、终端默认背景。颜色只用于终端，重定向输出及原始日志不含新增的颜色控制码。`history` 使用相同的摘要显示；`history --full` 展开完整公开记录，不调用模型。原始日志始终完整保存，显示摘要不调用模型；工作上下文的压缩与长工具结果报告另有独立模型调用。
 
@@ -63,7 +78,7 @@ export ANTHROPIC_MODEL='支持工具调用的模型名称'
 .venv/bin/skills-agent run --provider anthropic --session claude
 ```
 
-`--model` 优先于对应的 `OPENAI_MODEL` / `ANTHROPIC_MODEL`。`--base-url` 优先于对应的 `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`，值为包含 API 前缀的根地址，例如 `http://localhost:8000/v1`。OpenAI 官方接入默认使用 `/v1/responses`，并以 `/v1/responses/input_tokens` 计量同一份输入；Anthropic 使用 `/v1/messages` 和 `/v1/messages/count_tokens`。本地兼容服务可以不设置密钥。网关可通过 `--api-format responses` 使用对应接口；Chat 协议需配置与模型匹配的计量方式，不能用 Responses 的计数冒充 Chat 请求计数。
+未在命令行或配置文件指定时，模型名称读取对应的 `OPENAI_MODEL` / `ANTHROPIC_MODEL`，API 地址读取 `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`。`base_url` 为包含 API 前缀的根地址，例如 `http://localhost:8000/v1`。OpenAI 官方接入默认使用 `/v1/responses`，并以 `/v1/responses/input_tokens` 计量同一份输入；Anthropic 使用 `/v1/messages` 和 `/v1/messages/count_tokens`。本地兼容服务可以不设置密钥。网关可通过 `api_format = "responses"` 使用对应接口；Chat 协议需配置与模型匹配的计量方式，不能用 Responses 的计数冒充 Chat 请求计数。
 
 OpenAI 兼容接口返回的 `reasoning_content` 会完整保存，并随保留的助手消息回传，包括未调用工具的回答，以支持 [DeepSeek 思考模式](https://api-docs.deepseek.com/guides/thinking_mode/)。可读内容在终端显示为思考；必要的协议状态随保留消息回传。
 
@@ -99,7 +114,7 @@ macOS 下在输入行按 **Ctrl-V** 粘贴剪贴板中的图片或已复制的�
   --log-dir /path/to/run-logs
 ```
 
-完整任务从 UTF-8 文件读取，执行到模型返回最终回答后退出。模型、技能和附件参数与 `run` 相同。每次运行使用独立的 `<log-dir>/session`，已存在时直接报错。退出码为成功 `0`、失败 `1`、中断 `130`。接到 SIGTERM 时停止当前脚本并退出。
+完整任务从 UTF-8 文件读取，执行到模型返回最终回答后退出。配置文件的读取规则、模型、技能和附件参数与 `run` 相同。每次运行使用独立的 `<log-dir>/session`，已存在时直接报错。退出码为成功 `0`、失败 `1`、中断 `130`。接到 SIGTERM 时停止当前脚本并退出。
 
 [ALE 接入说明](adapters/ale/README.md) 包含可复制到 ALE 仓库的 Deployer、Agent 配置及单任务 smoke 配置。适配器在 ALE 的任务 sandbox 内安装并运行本项目，产物由 Agent 按题目指定路径写入，日志写入 ALE 的 `executor.work_dir`。
 
@@ -113,6 +128,7 @@ skills_agent/
   clipboard.py       macOS 剪贴板读取
   markdown.py        终端 Markdown 渲染与流式预览
   benchmark.py       从任务文件运行一次并退出
+  config.py          TOML 配置读取、校验与参数优先级
   runtime.py         两个入口共用的参数与 Agent 构造
   agent.py           同步模型/工具循环、独立子会话
   session/           追加式事件日志、输入附件副本
@@ -142,7 +158,7 @@ adapters/ale/        ALE Deployer 与运行配置
 - sub-agent 必填 `name + task`，最终返回 Markdown 报告，说明适用的结论、证据、产物和未解决事项；内部对话不进入主上下文或 UI。`history=true` 时，加载检索专用 history skill，并携带完整工作上下文只读快照搜索父会话；快照装不下就报错，不截断。主 Agent 和普通子任务的技能目录不包含该技能，普通子任务只接收明确交代的输入。
 - 普通子任务和历史检索子任务均继承主 Agent 的上下文预算配置。普通子任务不继承主对话，`task` 须交代目标、相关约束、必要材料、操作边界和预期交付。主 Agent 根据报告中的证据、执行结果和未解决事项继续工作，定点核验关键或矛盾之处，不盲信完成声明，也不重做整个子任务。
 - `history.sqlite` 增量索引原始主会话，支持中文与英文检索、事件/路径精确查找、行范围、邻近记录及工具配对。检索子任务通过查询扩展、回看证据和检查后续修正生成报告，只把最终报告带回主上下文。任何时候均可检索，不必等到压缩后。
-- `--max-output-tokens` 默认4096。模型输出截断时保留已收到的公开内容和原始响应，记录错误，不执行不完整的工具调用。
+- `max_output_tokens` / `--max-output-tokens` 默认32768，包含思考和回答。模型输出截断时保留已收到的公开内容和原始响应，记录错误，不执行不完整的工具调用。
 
 DeepSeek 使用官方请求编码器与匹配的 tokenizer：
 

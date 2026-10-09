@@ -87,9 +87,11 @@ class AdapterConfigTests(unittest.TestCase):
         self.assertEqual(config.context_tokens, 1_000_000)
         self.assertEqual(config.api_format, "auto")
         self.assertEqual(config.token_counter, "auto")
+        self.assertEqual(config.max_output_tokens, 32768)
         self.assertEqual(config.summary_output_tokens, 32768)
+        self.assertEqual(LocalConfig(package="unused", model="test", max_output_tokens=8192).max_output_tokens, 8192)
         for setting in ({"context_tokens": 0}, {"model_context_window": -1},
-                        {"summary_output_tokens": 0},
+                        {"max_output_tokens": 0}, {"summary_output_tokens": 0},
                         {"api_format": "invalid"}, {"token_counter": "characters"}):
             with self.subTest(setting=setting), self.assertRaises(ValueError):
                 LocalConfig(package="unused", model="test", **setting)

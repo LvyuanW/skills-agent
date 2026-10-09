@@ -18,7 +18,7 @@ class SkillsAgentConfig:
     tokenizer_path: str | None = None
     tokenizer_encoding: str | None = None
     model_context_window: int | None = None
-    max_output_tokens: int = 4096
+    max_output_tokens: int = 32768
     summary_output_tokens: int = 32768
     skill_dirs: list[str] = field(default_factory=list)
 

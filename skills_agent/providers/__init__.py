@@ -1,5 +1,5 @@
 from .anthropic import AnthropicProvider
-from .base import Provider, ProviderError, ProviderConnectionError, ProviderOutputLimitError
+from .base import DEFAULT_MAX_OUTPUT_TOKENS, Provider, ProviderError, ProviderConnectionError, ProviderOutputLimitError
 from .openai import OpenAIProvider
 
 __all__ = ["Provider", "ProviderError", "ProviderConnectionError", "ProviderOutputLimitError",
@@ -7,7 +7,7 @@ __all__ = ["Provider", "ProviderError", "ProviderConnectionError", "ProviderOutp
 
 
 def create_provider(provider: str, model: str, api_key: str,
-                    base_url: str | None = None, max_output_tokens: int = 4096, *,
+                    base_url: str | None = None, max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS, *,
                     api_format: str = "auto", token_counter: str = "auto",
                     tokenizer_path: str | None = None, tokenizer_encoding: str | None = None,
                     model_context_window: int | None = None) -> Provider:

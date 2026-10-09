@@ -1,0 +1,18 @@
+# CLI options override this file. API keys stay in the environment or .env.
+context_tokens = 1000000
+model_context_window = 1000000
+max_output_tokens = 32768
+summary_output_tokens = 32768
+
+# Optional connection settings; omitted values use the existing environment.
+# provider = "openai"
+# model = "deepseek-flash"
+# base_url = "https://api.deepseek.com"
+# api_format = "auto"
+# token_counter = "auto"
+# tokenizer_path = ".agent/tokenizers/deepseek/tokenizer.json"
+# tokenizer_encoding = "v41"
+
+# Paths in this file are relative to this file's directory.
+# skill_dirs = ["extra-skills"]
+# sandbox_image = "your-sandbox-image"

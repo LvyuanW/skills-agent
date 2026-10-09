@@ -102,6 +102,27 @@ class BenchmarkTests(unittest.TestCase):
             self.assertEqual(events[-1]["partial_content"], [{"type": "text", "text": "original partial"}])
             self.assertIn("_raw", events[-1])
 
+    def test_config_only_model_settings_reach_the_request(self):
+        endpoint, requests = self.run_server(lambda count: self.response())
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            (root / "prompt.txt").write_text("task")
+            (workspace / "skills-agent.toml").write_text(
+                f'model = "from-config"\nbase_url = "{endpoint}"\napi_format = "responses"\n'
+                'max_output_tokens = 64000\nmodel_context_window = 1000000\n')
+            command = [sys.executable, "-m", "skills_agent.benchmark",
+                       "--workspace", str(workspace), "--prompt-file", str(root / "prompt.txt"),
+                       "--log-dir", str(root / "logs")]
+            process = subprocess.run(command, text=True, capture_output=True)
+            self.assertEqual(process.returncode, 0, process.stderr + process.stdout)
+            self.assertEqual(len(requests), 1)
+            self.assertEqual(requests[0]["model"], "from-config")
+            self.assertEqual(requests[0]["max_output_tokens"], 64000)
+            context = json.loads((root / "logs/session/context.json").read_text())
+            self.assertEqual(context["last_usage"]["limit"], 936000)
+
     def test_empty_prompt_has_no_session_or_model_request(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
