@@ -10,7 +10,7 @@ from prompt_toolkit.application import Application
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.filters import Condition
-from prompt_toolkit.formatted_text import ANSI, fragment_list_to_text, to_formatted_text
+from prompt_toolkit.formatted_text import ANSI, fragment_list_to_text, fragment_list_width, to_formatted_text
 from prompt_toolkit.formatted_text.utils import split_lines
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import ConditionalKeyBindings, KeyBindings, merge_key_bindings
@@ -26,6 +26,7 @@ from .markdown import _Body
 
 _STYLES = {"user": "bright_white on black", "assistant": "black on bright_white",
            "tool": "blue on bright_white"}
+_THINKING_LINE_STYLE = "fg:ansibrightblack bg:default"
 
 
 class _Transcript(UIControl):
@@ -185,7 +186,8 @@ class TerminalView:
             output = StringIO()
             console = Console(file=output, width=width, height=1, force_terminal=True,
                               color_system="standard", no_color=False, highlight=False)
-            renderable = Text(block["text"], style=_STYLES[block["role"]]) if block["kind"] == "line" else _Body(block["text"])
+            renderable = (Text(block["text"], style=_STYLES[block["role"]]) if block["kind"] == "line"
+                          else _Body(block["text"], thinking=block["kind"] == "thinking"))
             console.print(renderable)
             lines = list(split_lines(to_formatted_text(ANSI(output.getvalue()))))
             if lines and not fragment_list_to_text(lines[-1]):
@@ -200,10 +202,14 @@ class TerminalView:
         for block in self.blocks:
             if block["kind"] == "thinking":
                 self._headers[len(lines)] = block
-                lines.append([("fg:ansiblack bg:ansiwhite", "▼ 思考" if block["expanded"] else "▶ 思考")])
-                if not block["expanded"]:
-                    continue
-            elif block["kind"] == "text":
+                rows = [[(_THINKING_LINE_STYLE, "▼ 思考" if block["expanded"] else "▶ 思考")]]
+                if block["expanded"]:
+                    rows.extend(self._render(block, max(1, width)))
+                # Clear the inherited white background, including blank lines and row tails.
+                lines.extend([*row, (_THINKING_LINE_STYLE, " " * max(0, width - fragment_list_width(row)))]
+                             for row in rows)
+                continue
+            if block["kind"] == "text":
                 lines.append([("fg:ansiblack bg:ansiwhite", "assistant:")])
             lines.extend(self._render(block, max(1, width)))
         return lines or [[]]

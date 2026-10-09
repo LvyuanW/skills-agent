@@ -11,7 +11,8 @@ from .markdown import MarkdownStream, print_markdown
 from .session import Session
 
 
-_COLORS = {"user": "\033[97;40m", "assistant": "\033[30;107m", "tool": "\033[34;107m"}
+_COLORS = {"user": "\033[97;40m", "assistant": "\033[30;107m", "tool": "\033[34;107m",
+           "thinking": "\033[90;49m"}
 _RESET = "\033[0m"
 
 
@@ -42,12 +43,13 @@ def _assistant_content(message, output):
         if hasattr(output, "append_body"):
             output.append_body(text, channel=kind)
             continue
+        role = "thinking" if kind == "thinking" else "assistant"
         if kind != previous:
-            _print("思考:" if kind == "thinking" else "assistant:", "assistant", output)
+            _print("思考:" if kind == "thinking" else "assistant:", role, output)
         if output.isatty():
-            print_markdown(text, output)
+            print_markdown(text, output, thinking=kind == "thinking")
         else:
-            _print(text, "assistant", output)
+            _print(text, role, output)
         previous = kind
 
 
@@ -218,11 +220,12 @@ class ConsoleRenderer:
         if self._channel != channel:
             self._finish_stream()
         if not self._streaming:
-            _print("思考:" if channel == "thinking" else "assistant:", "assistant", self.output)
+            role = "thinking" if channel == "thinking" else "assistant"
+            _print("思考:" if channel == "thinking" else "assistant:", role, self.output)
             self._streaming = True
             self._channel = channel
             if self.output.isatty():
-                self._markdown = MarkdownStream(self.output, live=self.live)
+                self._markdown = MarkdownStream(self.output, live=self.live, thinking=channel == "thinking")
         if self._markdown:
             self._markdown.write(text)
         else:

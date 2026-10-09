@@ -307,7 +307,7 @@ class StreamDisplayTests(unittest.TestCase):
         self.assertEqual(outputs, [expected, expected])
         self.assertEqual(events, original)
 
-    def test_thinking_only_response_is_visible_once_and_uses_assistant_colors(self):
+    def test_thinking_only_response_is_visible_once_and_uses_gray_on_default_background(self):
         output = Output(tty=True)
         renderer = ConsoleRenderer(output, live=False)
         renderer({"type": "thinking_delta", "text": "**检查**约束"})
@@ -318,7 +318,7 @@ class StreamDisplayTests(unittest.TestCase):
         self.assertNotIn("PRIVATE", output.getvalue())
         screen = terminal_screen(output.getvalue())
         self.assertEqual((screen.buffer[1][0].fg, screen.buffer[1][0].bg),
-                         ("black", "brightwhite"))
+                         ("brightblack", "default"))
 
     def test_nonstream_thinking_blocks_preserve_content_order_and_hide_signatures(self):
         event = message("assistant", [
