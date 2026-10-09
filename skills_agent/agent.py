@@ -35,7 +35,9 @@ class Agent:
 
     def _system(self):
         return (
-            "Complete the user's task by writing and running code. Skills provide methods "
+            "Answer directly when the available information is sufficient. Use tools when the task "
+            "requires reading, verifying, changing, or executing something. Reuse relevant results "
+            "already available; repeat a check only when it can provide new information. Skills provide methods "
             "and constraints; their scripts are reference source to learn from, adapt, or reuse. "
             "When relevant, read SKILL.md and needed source with shell result_mode=direct. "
             "Resolve relative resources against SKILL.md's directory. Write arbitrary task-specific "
