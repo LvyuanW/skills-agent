@@ -180,6 +180,7 @@ class WorkingContext:
                 self.state["covered_event_ids"].extend(record["event_id"] for record in older)
                 self.state["records"] = candidate
         self.state["token_count"] = count
+        self.state["last_usage"] = {"tokens": count, "limit": limit}
         if count > limit:
             self.save()
             raise ContextBudgetError(f"Working context needs {count} input tokens; available budget is {limit}. "

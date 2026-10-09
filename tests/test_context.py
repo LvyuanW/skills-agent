@@ -177,6 +177,11 @@ class ContextTests(unittest.TestCase):
         context.prepare("large system", [{"name": "tool"}])
         self.assertEqual(len(self.summary.calls), 1)
         self.assertEqual(context.state["token_count"], 200)
+        self.assertEqual(context.state["last_usage"], {"tokens": 200, "limit": 1000})
+        self.append({"role": "assistant", "content": "new reply"})
+        context.sync()
+        self.assertIsNone(context.state["token_count"])
+        self.assertEqual(self.context().state["last_usage"], {"tokens": 200, "limit": 1000})
 
     def test_second_compaction_uses_old_summary_and_only_newly_displaced_records(self):
         self.append({"role": "user", "content": "task"})

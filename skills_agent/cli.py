@@ -358,7 +358,8 @@ def interact(agent, files):
         if sys.stdin.isatty() and sys.stdout.isatty():
             from .terminal import TerminalView
 
-            view = TerminalView(key_bindings=draft.bindings)
+            view = TerminalView(key_bindings=draft.bindings,
+                                context_usage=lambda: agent.context.state.get("last_usage"))
             draft.on_error = lambda message: _print(f"error: {message}", "assistant", view)
             replay = ConsoleRenderer(view, live=False)
             for event in agent.session.events():

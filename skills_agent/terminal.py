@@ -15,7 +15,7 @@ from prompt_toolkit.formatted_text import ANSI, fragment_list_to_text, fragment_
 from prompt_toolkit.formatted_text.utils import split_lines
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import ConditionalKeyBindings, KeyBindings, merge_key_bindings
-from prompt_toolkit.layout import HSplit, Layout, Window
+from prompt_toolkit.layout import HSplit, Layout, VSplit, Window, WindowAlign
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl, UIContent, UIControl
 from prompt_toolkit.layout.processors import BeforeInput
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
@@ -71,7 +71,7 @@ class _Transcript(UIControl):
 
 
 class TerminalView:
-    def __init__(self, key_bindings=None, *, input=None, output=None):
+    def __init__(self, key_bindings=None, *, context_usage=None, input=None, output=None):
         self.blocks = []
         self._lock = RLock()
         self._stream = None
@@ -86,6 +86,8 @@ class TerminalView:
         self._ready = Event()
         self._thread = None
         self._failure = None
+        self._context_usage = context_usage or (lambda: None)
+        self._last_usage = None
 
         self.buffer = Buffer(multiline=False, history=InMemoryHistory(),
                              read_only=Condition(lambda: self._busy or self._selecting),
@@ -99,6 +101,9 @@ class TerminalView:
         hint = Window(FormattedTextControl(
             lambda: "选择文本（F2 返回）" if self._selecting else "按 F2 选中文本"
         ), height=1, style="fg:ansibrightblack bg:default")
+        usage = Window(FormattedTextControl(self._context_status), height=1,
+                       dont_extend_width=True, align=WindowAlign.RIGHT,
+                       style="fg:ansibrightblack bg:default")
         bindings = KeyBindings()
 
         @bindings.add("f2")
@@ -153,13 +158,21 @@ class TerminalView:
         self.app = Application(
             layout=Layout(HSplit([
                 self.window, Window(height=1, style="bg:default"),
-                editor, Window(height=1, style="bg:default"), hint,
+                editor, Window(height=1, style="bg:default"), VSplit([hint, usage], height=1),
             ]), focused_element=editor),
             key_bindings=merge_key_bindings(merged), full_screen=True,
             mouse_support=Condition(lambda: not self._selecting),
             after_render=set_input_cursor,
             input=input, output=output, min_redraw_interval=0.03,
         )
+
+    def _context_status(self):
+        if not self._selecting:
+            self._last_usage = self._context_usage()
+        usage = self._last_usage
+        if not usage or usage["limit"] <= 0:
+            return "上下文窗口 —"
+        return f"上下文窗口 {usage['tokens'] / usage['limit'] * 100:.1f}%"
 
     def _submit(self, buffer):
         if not self._busy and not self._selecting:
