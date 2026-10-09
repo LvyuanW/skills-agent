@@ -4,6 +4,9 @@ from pathlib import Path
 import shlex
 import sys
 
+from prompt_toolkit import PromptSession
+from prompt_toolkit.styles import Style
+
 from .runtime import add_agent_arguments, create_agent
 from .markdown import MarkdownStream, print_markdown
 from .session import Session
@@ -18,21 +21,6 @@ def _print(text, role, output):
         color = _COLORS[role]
         text = color + text.replace("\n", _RESET + "\n" + color) + _RESET
     print(text, file=output, flush=True)
-
-
-def _read_input():
-    colored = sys.stdin.isatty() and sys.stdout.isatty()
-    if colored:
-        import readline  # Enable native line editing and in-process history for input().
-
-        sys.stdout.write(_COLORS["user"])
-        sys.stdout.flush()
-    try:
-        return input("> " if sys.stdin.isatty() else "")
-    finally:
-        if colored:
-            sys.stdout.write(_RESET)
-            sys.stdout.flush()
 
 
 def _render_full_event(event, output):
@@ -267,6 +255,13 @@ def attachment_path(value, workspace):
 
 
 def interact(agent, files):
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        read_input = PromptSession(
+            "> ", erase_when_done=True,
+            style=Style.from_dict({"": "ansiwhite bg:ansiblack"}),
+        ).prompt
+    else:
+        read_input = lambda: input("> " if sys.stdin.isatty() else "")
     pending_files = []
     for path in files:
         try:
@@ -275,7 +270,7 @@ def interact(agent, files):
             _print(f"error: {exc}", "assistant", sys.stderr)
     while True:
         try:
-            prompt = _read_input()
+            prompt = read_input()
         except EOFError:
             return 0
         except KeyboardInterrupt:
@@ -326,7 +321,9 @@ def main(argv=None):
         replay.close()
         if args.command == "history":
             return 0
-        agent = create_agent(args, session, on_event=ConsoleRenderer(echo_user=False))
+        agent = create_agent(args, session, on_event=ConsoleRenderer(
+            echo_user=sys.stdin.isatty() and sys.stdout.isatty(),
+        ))
         return interact(agent, args.file)
     except (ValueError, OSError, RuntimeError) as exc:
         _print(f"error: {exc}", "assistant", sys.stderr)

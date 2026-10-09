@@ -1,9 +1,9 @@
+import codecs
 import errno
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
-import re
 import select
 import shlex
 import signal
@@ -14,9 +14,13 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
+import pyte
+
+from skills_agent.cli import ConsoleRenderer
 from tests.sse import stream_response
-from tests.test_markdown import terminal_screen, terminal_text
+from tests.test_markdown import Output
 
 if os.name == "posix":
     import fcntl
@@ -28,8 +32,34 @@ USER_COLOR = "\x1b[97;40m"
 ASSISTANT_COLOR = "\x1b[30;107m"
 TOOL_COLOR = "\x1b[34;107m"
 RESET = "\x1b[0m"
-ANSI = re.compile(r"\x1b\[[0-9;]*m")
 PROJECT = Path(__file__).resolve().parents[1]
+
+
+class TerminalScreen(pyte.HistoryScreen):
+    def index(self):
+        bottom = self.margins.bottom if self.margins else self.lines - 1
+        scroll = self.cursor.y == bottom
+        super().index()
+        if scroll:
+            # Real terminals use the active background for newly scrolled rows.
+            # pyte defaults them, hiding residual input colors in unused cells.
+            blank = self.default_char._replace(bg=self.cursor.attrs.bg)
+            self.buffer[bottom].update({x: blank for x in range(self.columns)})
+
+
+def terminal_screen(text):
+    screen = TerminalScreen(80, 24, history=10000)
+    pyte.Stream(screen).feed(text.replace("\r\n", "\n").replace("\n", "\r\n"))
+    return screen
+
+
+def terminal_rows(screen):
+    return [*screen.history.top, *(screen.buffer[y] for y in range(screen.lines))]
+
+
+def terminal_text(text):
+    return "\n".join("".join(row[x].data for x in range(80)).rstrip()
+                     for row in terminal_rows(terminal_screen(text))).rstrip()
 
 
 def terminal_owner():
@@ -41,6 +71,10 @@ class Terminal:
         self.master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
         self.output = b""
+        self.screen = TerminalScreen(80, 24, history=10000)
+        self.screen.write_process_input = self.send
+        self.stream = pyte.Stream(self.screen)
+        self.decoder = codecs.getincrementaldecoder("utf-8")("replace")
         try:
             self.process = subprocess.Popen(
                 [sys.executable, "-m", "skills_agent", "run", "--workspace", str(workspace),
@@ -69,6 +103,7 @@ class Terminal:
                 return False
             raise
         self.output += chunk
+        self.stream.feed(self.decoder.decode(chunk))
         return bool(chunk)
 
     def wait_for(self, predicate, timeout=5):
@@ -79,7 +114,11 @@ class Terminal:
         return self.text
 
     def prompt(self, count):
-        return self.wait_for(lambda output: ANSI.sub("", output).count("> ") >= count)
+        def ready(output):
+            row = self.screen.buffer[self.screen.cursor.y]
+            line = "".join(row[x].data for x in range(self.screen.columns)).rstrip()
+            return output.count("\x1b[?2004h") >= count and line == ">"
+        return self.wait_for(ready)
 
     def wait_exit(self):
         deadline = time.monotonic() + 5
@@ -173,6 +212,11 @@ class TerminalTests(unittest.TestCase):
         self.assertNotIn("\\u001b", raw)
         return [json.loads(line) for line in raw.splitlines()]
 
+    def assert_reset(self, text):
+        cursor = terminal_screen(text).cursor
+        self.assertEqual((cursor.attrs.fg, cursor.attrs.bg), ("default", "default"))
+        self.assertFalse(cursor.hidden)
+
     def test_real_tty_shows_each_request_once_with_colors_and_resets(self):
         def respond(payload, count):
             if count == 1:
@@ -189,7 +233,9 @@ class TerminalTests(unittest.TestCase):
         plain = terminal_text(text)
         self.assertEqual(plain.count(first), 1)
         self.assertEqual(plain.count(second), 1)
-        self.assertNotIn("user:", plain)
+        self.assertEqual(plain.count("user:"), 2)
+        self.assertNotIn("> " + first, plain)
+        self.assertNotIn("> " + second, plain)
         self.assertNotIn("RAW_TERMINAL_OUTPUT", plain)
         self.assertEqual(plain.count("FIRST_FINAL"), 1)
         self.assertEqual(plain.count("SECOND_FINAL"), 1)
@@ -207,7 +253,7 @@ class TerminalTests(unittest.TestCase):
         terminal.send("/exit\n")
         finished = terminal.wait_exit()
         self.assertEqual(terminal.process.returncode, 0)
-        self.assertTrue(finished.rstrip().endswith(RESET))
+        self.assert_reset(finished)
         self.assertEqual(len(requests), 3)
         users = [event["message"] for event in self.events()
                  if event.get("type") == "message" and event["message"]["role"] == "user"]
@@ -215,12 +261,12 @@ class TerminalTests(unittest.TestCase):
 
     def test_ctrl_d_exits_without_model_call_and_resets_prompt_color(self):
         terminal, requests = self.terminal(lambda payload, count: self.response("unexpected"))
+        self.assert_color(terminal.text, ">", USER_COLOR)
         terminal.send("\x04")
         finished = terminal.wait_exit()
         self.assertEqual(terminal.process.returncode, 0)
         self.assertEqual(requests, [])
-        self.assertIn(USER_COLOR, finished)
-        self.assertTrue(finished.rstrip().endswith(RESET))
+        self.assert_reset(finished)
 
     def test_input_edits_with_cursor_keys_and_submits_only_edited_text(self):
         terminal, requests = self.terminal(
@@ -234,8 +280,7 @@ class TerminalTests(unittest.TestCase):
         for count, (keys, expected) in enumerate(edits, 1):
             with self.subTest(expected=expected):
                 terminal.send(keys + "\n")
-                terminal.wait_for(lambda output: f"EDIT_DONE_{count}" in output
-                                  and output.endswith("> "))
+                terminal.prompt(count + 1)
                 self.assertEqual(len(requests), count)
                 self.assertEqual(requests[-1]["messages"][-1]["content"],
                                  [{"type": "text", "text": expected}])
@@ -248,11 +293,9 @@ class TerminalTests(unittest.TestCase):
         terminal, requests = self.terminal(
             lambda payload, count: self.response(f"**HISTORY_DONE_{count}**\n\n- `ready`"))
         terminal.send("previous request\n")
-        terminal.wait_for(lambda output: "HISTORY_DONE_1" in output
-                          and output.endswith("> "))
+        terminal.prompt(2)
         terminal.send("\x1b[A\x01edited \x05 again\n")
-        text = terminal.wait_for(lambda output: "HISTORY_DONE_2" in output
-                                 and output.endswith("> "))
+        text = terminal.prompt(3)
         self.assertEqual(len(requests), 2)
         self.assertEqual(requests[-1]["messages"][-1]["content"],
                          [{"type": "text", "text": "edited previous request again"}])
@@ -297,13 +340,49 @@ class TerminalTests(unittest.TestCase):
         plain = terminal_text(continued)
         self.assertEqual(plain.count(instruction), 1)
         self.assertEqual(plain.count("continue after interrupt"), 1)
-        self.assertNotIn("user:", plain)
+        self.assertEqual(plain.count("user:"), 2)
         terminal.send("/exit\n")
-        self.assertTrue(terminal.wait_exit().rstrip().endswith(RESET))
+        self.assert_reset(terminal.wait_exit())
         self.assertEqual(terminal.process.returncode, 0)
         self.assertEqual(len(requests), 2)
         self.assertTrue(any(event.get("type") == "error" and event["message"] == "Interrupted"
                             for event in self.events()))
+
+    def test_live_messages_match_replay_including_unused_background_cells(self):
+        terminal, requests = self.terminal(lambda payload, count: self.response(
+            "\n\n".join(f"paragraph {index}" for index in range(20)) if count == 1
+            else "**REPLIED** with `Markdown`"))
+        terminal.send("fill terminal\n")
+        terminal.prompt(2)
+        message = "长行中文测试" * 300 + "\n粘贴的第二行"
+        terminal.send("\x1b[200~" + message + "\x1b[201~")
+        terminal.wait_for(lambda output: "粘贴的第二行" in output)
+        terminal.send("\n")
+        live = terminal.prompt(3)
+        self.assertEqual(requests[-1]["messages"][-1]["content"],
+                         [{"type": "text", "text": message}])
+        replay = Output()
+        with patch.dict(os.environ, {"COLUMNS": "80", "LINES": "24"}):
+            renderer = ConsoleRenderer(replay, live=False)
+            for event in self.events():
+                renderer(event)
+            renderer.close()
+
+        def message_rows(text):
+            rows = []
+            for row in terminal_rows(terminal_screen(text)):
+                cells = [row[x] for x in range(80)]
+                line = "".join(cell.data for cell in cells).rstrip()
+                rows.append((line, [(cell.fg, cell.bg) for cell in cells]))
+            messages = [index for index, (line, _) in enumerate(rows) if line and line != ">"]
+            return rows[messages[0]:messages[-1] + 1]
+
+        self.assertEqual(message_rows(live), message_rows(replay.getvalue()))
+        text = terminal_text(live)
+        self.assertEqual(text.count("user:"), 2)
+        self.assertEqual(text.count("粘贴的第二行"), 1)
+        self.assertNotIn("> fill terminal", text)
+        self.assertNotIn("> 长行", text)
 
 
 if __name__ == "__main__":
