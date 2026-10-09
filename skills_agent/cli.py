@@ -1,4 +1,5 @@
 import argparse
+import json
 from pathlib import Path
 import shlex
 import sys
@@ -7,7 +8,7 @@ from .runtime import add_agent_arguments, create_agent
 from .session import Session
 
 
-def render_event(event, output=None):
+def _render_full_event(event, output):
     """Render original public content; child calls/results stay in the session log."""
     output = output or sys.stdout
     kind = event.get("type")
@@ -16,7 +17,7 @@ def render_event(event, output=None):
         print(f"sub-agent {action}：{event['goal']}", file=output, flush=True)
     elif kind == "error":
         if event.get("partial_content"):
-            render_event({"type": "message", "message": {
+            _render_full_event({"type": "message", "message": {
                 "role": "assistant", "content": event["partial_content"],
             }}, output)
         print(f"error: {event['message']}", file=output, flush=True)
@@ -41,11 +42,83 @@ def render_event(event, output=None):
         output.flush()
 
 
+def _brief(text, limit=100):
+    text = " ".join(str(text).split())
+    text = "".join(character for character in text if character.isprintable())
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
+def _text(content):
+    if isinstance(content, str):
+        return content
+    return "\n".join(block["text"] for block in content or [] if block["type"] == "text")
+
+
+def render_event(event, output=None, *, full=False, echo_user=True):
+    """Summarize intermediate work without changing the stored events."""
+    output = output or sys.stdout
+    kind = event.get("type")
+    if full:
+        return _render_full_event(event, output)
+    if kind == "subagent_summary":
+        action = "处理了" if event["status"] == "completed" else "未完成"
+        print(f"sub-agent {action}：{_brief(event['goal'])}", file=output, flush=True)
+    elif kind == "error":
+        if event.get("partial_content"):
+            count = len(_text(event["partial_content"]))
+            print(f"· 回答未完成，已保存 {count} 字符", file=output)
+        print(f"error: {_brief(event['message'])}", file=output, flush=True)
+    elif kind == "message":
+        message = event["message"]
+        role = message["role"]
+        if role == "tool":
+            if message.get("name") == "subagent":
+                return
+            try:
+                result = json.loads(message["content"])
+            except (ValueError, TypeError):
+                result = None
+            status = "结果已记录"
+            if isinstance(result, dict):
+                if result.get("error"):
+                    status = f"失败：{_brief(result['error'])}"
+                elif "exit_code" in result:
+                    code = result["exit_code"]
+                    status = "完成" if code == 0 else f"失败（退出码 {code}）"
+                    lines = sum(len(str(result.get(key, "")).splitlines()) for key in ("stdout", "stderr"))
+                    if lines:
+                        status += f"，输出 {lines} 行"
+            print(f"· {message['name']}：{status}", file=output, flush=True)
+        elif role == "assistant" and message.get("tool_calls"):
+            for call in message["tool_calls"]:
+                if call["name"] == "subagent":
+                    continue
+                try:
+                    arguments = json.loads(call["arguments"])
+                except (ValueError, TypeError):
+                    arguments = {}
+                summary = arguments.get("summary") if isinstance(arguments, dict) else None
+                summary = summary if isinstance(summary, str) and summary.strip() else "执行脚本"
+                print(f"· {call['name']}：{_brief(summary)}", file=output, flush=True)
+        elif role == "user":
+            content = message.get("content", [])
+            blocks = [{"type": "text", "text": content}] if isinstance(content, str) else content
+            text = [block for block in blocks if block["type"] == "text" and not block.get("attachment")]
+            if echo_user and text:
+                _render_full_event({"type": "message", "message": {"role": "user", "content": text}}, output)
+            for block in blocks:
+                if block.get("attachment") or block["type"] in {"image", "file"}:
+                    print(f"[附件] {_brief(block.get('name') or block['path'])}", file=output, flush=True)
+        else:
+            _render_full_event(event, output)
+
+
 def parser():
     result = argparse.ArgumentParser(prog="skills-agent")
     commands = result.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="进入会话并进行多轮交互")
-    history = commands.add_parser("history", help="显示完整主会话记录")
+    history = commands.add_parser("history", help="回放主会话记录")
+    history.add_argument("--full", action="store_true", help="展开完整公开消息、命令和工具输出")
     for command in (run, history):
         command.add_argument("--workspace", type=Path, default=Path.cwd())
         command.add_argument("--sessions-dir", type=Path)
@@ -118,10 +191,12 @@ def main(argv=None):
             raise ValueError(f"会话不存在：{args.session}")
         session = Session(root, args.session)
         for event in session.events():
-            render_event(event)
+            render_event(event, full=args.command == "history" and args.full)
         if args.command == "history":
             return 0
-        agent = create_agent(args, session, on_event=render_event)
+        agent = create_agent(args, session, on_event=lambda event: render_event(
+            event, echo_user=not sys.stdin.isatty(),
+        ))
         return interact(agent, args.file)
     except (ValueError, OSError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)

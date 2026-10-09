@@ -59,13 +59,13 @@ ALE 传入的题目文本完整写入 `prompt.txt`，适配器启动 `python -m 
 ```text
 install.log                 包安装输出
 prompt.txt                  原始任务文本
-transcript.log              主会话可见记录
+transcript.log              主会话显示记录（中间过程为摘要）
 stderr.log                  进程错误输出
 session/events.jsonl        原始会话事件与模型响应
 session/subagents/*/        独立子会话日志
 ```
 
-`parse_artifacts()` 将模型回答、工具调用、工具结果和 token usage 转为 ALE 轨迹，子会话转为嵌套轨迹；主会话终端仍只展示 sub-agent 的目标摘要。截断或未完成的日志会在轨迹中标记。
+`parse_artifacts()` 从原始事件日志将完整模型回答、工具调用、工具结果和 token usage 转为 ALE 轨迹，不受终端摘要显示影响。子会话转为嵌套轨迹；主会话终端仍只展示 sub-agent 的目标摘要。截断或未完成的日志会在轨迹中标记。
 
 适配器收到异步取消或 SIGTERM 时终止并回收启动的进程；benchmark 随之清理当前脚本。上述 ALE 版本的外层 executor 超时可能不向容器内进程发送信号，smoke 使用 `cleanup_mode: delete`，由 ALE 删除任务容器。适配器无法处理没有传递到自身的取消。
 

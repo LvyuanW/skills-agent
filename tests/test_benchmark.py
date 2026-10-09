@@ -85,9 +85,11 @@ class BenchmarkTests(unittest.TestCase):
             (root / "prompt.txt").write_text("task")
             process = subprocess.run(self.command(root, endpoint), text=True, capture_output=True)
             self.assertEqual(process.returncode, 1)
-            self.assertIn("original partial", process.stdout)
+            self.assertNotIn("original partial", process.stdout)
+            self.assertIn("回答未完成", process.stdout)
             events = [json.loads(line) for line in (root / "logs/session/events.jsonl").read_text().splitlines()]
             self.assertEqual(events[-1]["type"], "error")
+            self.assertEqual(events[-1]["partial_content"], [{"type": "text", "text": "original partial"}])
             self.assertIn("_raw", events[-1])
 
     def test_empty_prompt_has_no_session_or_model_request(self):

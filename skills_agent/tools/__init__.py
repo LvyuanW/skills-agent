@@ -49,6 +49,12 @@ class ToolRegistry:
             }
             for name, description, properties in definitions
         ]
+        for schema in self.schemas:
+            if schema["name"] in {"shell", "sandbox"}:
+                schema["parameters"]["properties"]["summary"] = {
+                    "type": "string",
+                    "description": "Brief user-facing description of the action, in the user's language; no code or detailed reasoning.",
+                }
 
     def execute(self, name: str, arguments: str) -> str:
         try:
@@ -57,7 +63,8 @@ class ToolRegistry:
                 raise ValueError(f"Unknown tool: {name}")
             values = json.loads(arguments)
             expected = schema["parameters"]["required"]
-            if not isinstance(values, dict) or set(values) != set(expected):
+            allowed = schema["parameters"]["properties"]
+            if not isinstance(values, dict) or not set(expected) <= set(values) <= set(allowed):
                 raise ValueError(f"Expected arguments: {', '.join(expected)}")
             for key, value in values.items():
                 if not isinstance(value, str):

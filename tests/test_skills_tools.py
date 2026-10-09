@@ -69,6 +69,54 @@ class SkillsToolsTests(unittest.TestCase):
         result = self.shell(shlex.join([sys.executable, "-c", "print('x' * 100000)"]))
         self.assertEqual(len(result["stdout"]), 100001)
 
+    def test_shell_optional_summary_does_not_change_execution(self):
+        command = "printf 'exact\\noutput' > result.txt\ncat result.txt"
+        expected = self.shell(command)
+        (self.workspace / "result.txt").unlink()
+        result = json.loads(self.tools.execute("shell", json.dumps({
+            "command": command, "summary": "touch summary-must-not-run",
+        })))
+        self.assertEqual(result, expected)
+        self.assertEqual(result["stdout"], "exact\noutput")
+        self.assertEqual((self.workspace / "result.txt").read_text(), "exact\noutput")
+        self.assertFalse((self.workspace / "summary-must-not-run").exists())
+
+    def test_sandbox_optional_summary_preserves_command_and_result(self):
+        sandbox = DockerSandbox("python:3.11", self.workspace)
+        tools = ToolRegistry(self.workspace, sandbox)
+        command = "python - <<'PY'\nprint('exact source')\nPY"
+        expected = {"exit_code": 0, "stdout": "exact source\n", "stderr": ""}
+        with patch.object(sandbox, "run", return_value=expected) as run:
+            for summary in [None, "读取并检查输入"]:
+                arguments = {"command": command}
+                if summary is not None:
+                    arguments["summary"] = summary
+                self.assertEqual(json.loads(tools.execute("sandbox", json.dumps(arguments))), expected)
+            self.assertEqual([call.args for call in run.call_args_list], [(command,), (command,)])
+
+    def test_command_summaries_are_optional_strings_and_do_not_allow_extra_arguments(self):
+        sandbox = DockerSandbox("python:3.11", self.workspace)
+        tools = ToolRegistry(self.workspace, sandbox, lambda goal, task: "done")
+        schemas = {item["name"]: item["parameters"] for item in tools.schemas}
+        for name in ["shell", "sandbox"]:
+            self.assertEqual(schemas[name]["required"], ["command"])
+            self.assertEqual(schemas[name]["properties"]["summary"]["type"], "string")
+            for arguments in [
+                {"summary": "missing command"},
+                {"command": "touch should-not-exist", "summary": 123},
+                {"command": "touch should-not-exist", "summary": None},
+                {"command": "touch should-not-exist", "summary": "description", "extra": "x"},
+            ]:
+                with self.subTest(name=name, arguments=arguments), patch.object(sandbox, "run") as run:
+                    self.assertIn("error", json.loads(tools.execute(name, json.dumps(arguments))))
+                    run.assert_not_called()
+            self.assertFalse((self.workspace / "should-not-exist").exists())
+        self.assertEqual(schemas["subagent"]["required"], ["goal", "task"])
+        self.assertNotIn("summary", schemas["subagent"]["properties"])
+        self.assertIn("error", json.loads(tools.execute("subagent", json.dumps({
+            "goal": "review", "task": "inspect files", "summary": "unsupported",
+        }))))
+
     @unittest.skipUnless(os.name == "posix", "Shell process groups require POSIX")
     def test_shell_interrupt_kills_descendants_and_propagates(self):
         child_file = self.workspace / "child.pid"

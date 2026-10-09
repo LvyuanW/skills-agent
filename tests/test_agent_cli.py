@@ -64,7 +64,7 @@ class AgentTests(unittest.TestCase):
             session = Session(path, "main")
             output = io.StringIO()
             agent = Agent(Model(), session, SkillRegistry([]), path,
-                          on_event=lambda event: render_event(event, output))
+                          on_event=lambda event: render_event(event, output, full=True))
             self.assertEqual(agent.run(session.make_user_message("original user", [])), "done")
             live = output.getvalue()
             self.assertIn("main text", live)
@@ -74,7 +74,7 @@ class AgentTests(unittest.TestCase):
                 self.assertNotIn(secret, live)
             replay = io.StringIO()
             for event in session.events():
-                render_event(event, replay)
+                render_event(event, replay, full=True)
             self.assertEqual(live, replay.getvalue())
             child_logs = list((session.path / "subagents").glob("*/events.jsonl"))
             self.assertEqual(len(child_logs), 1)
@@ -97,7 +97,7 @@ class AgentTests(unittest.TestCase):
             output = io.StringIO()
             model = Model()
             agent = Agent(model, session, SkillRegistry([]), path, context_chars=7000,
-                          on_event=lambda event: render_event(event, output))
+                          on_event=lambda event: render_event(event, output, full=True))
             agent.run(session.make_user_message("read output", []))
             self.assertIn("x" * 15000, output.getvalue())
             saved_tool = next(message for message in session.messages() if message["role"] == "tool")
@@ -127,7 +127,7 @@ class AgentTests(unittest.TestCase):
             output = io.StringIO()
             model = Model()
             agent = Agent(model, session, SkillRegistry([]), path, context_chars=9000,
-                          on_event=lambda event: render_event(event, output))
+                          on_event=lambda event: render_event(event, output, full=True))
             self.assertEqual(agent.run(session.make_user_message("write and run a script", [])), "done")
             self.assertEqual((path / "generated.py").read_text(), source)
             self.assertEqual((path / "runs.txt").read_text(), "executed once\n")
@@ -142,7 +142,7 @@ class AgentTests(unittest.TestCase):
             self.assertIn(saved_call["tool_calls"][0]["arguments"], output.getvalue())
             replay = io.StringIO()
             for event in session.events():
-                render_event(event, replay)
+                render_event(event, replay, full=True)
             self.assertEqual(output.getvalue(), replay.getvalue())
 
     def test_failed_provider_response_is_recorded_without_executing_tools(self):
@@ -173,7 +173,7 @@ class AgentTests(unittest.TestCase):
             session = Session(path, "partial")
             output = io.StringIO()
             agent = Agent(Model(), session, SkillRegistry([]), path,
-                          on_event=lambda event: render_event(event, output))
+                          on_event=lambda event: render_event(event, output, full=True))
             with self.assertRaises(ProviderError):
                 agent.run(session.make_user_message("task", []))
             self.assertIn("  original partial\n", output.getvalue())
@@ -181,7 +181,7 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(len(session.messages()), 1)
             replay = io.StringIO()
             for event in session.events():
-                render_event(event, replay)
+                render_event(event, replay, full=True)
             self.assertEqual(output.getvalue(), replay.getvalue())
 
     def test_history_does_not_require_model_credentials(self):
@@ -346,6 +346,7 @@ class CLIProtocolTests(unittest.TestCase):
                     "cat > task.py <<'PY'\n" + broken_source + "PY\npython3 task.py",
                     "cat > task.py <<'PY'\n" + fixed_source + "PY\npython3 task.py",
                 ]
+                summaries = ["读取技能参考", "编写计算脚本", "修复数据字段"]
                 self.assertFalse((workspace / "task.py").exists())
 
                 class Handler(BaseHTTPRequestHandler):
@@ -356,7 +357,8 @@ class CLIProtocolTests(unittest.TestCase):
                         data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                         requests.append((self.path, data))
                         if len(requests) <= len(commands):
-                            arguments = {"command": commands[len(requests) - 1]}
+                            arguments = {"command": commands[len(requests) - 1],
+                                         "summary": summaries[len(requests) - 1]}
                             identifier = f"shell{len(requests)}"
                             if provider == "openai":
                                 response = {"choices": [{"finish_reason": "tool_calls", "message": {
@@ -390,8 +392,14 @@ class CLIProtocolTests(unittest.TestCase):
                     self.assertEqual(first.returncode, 0, first.stderr + first.stdout)
                     self.assertEqual((workspace / "result.txt").read_text(), "10")
                     self.assertEqual((workspace / "task.py").read_text(), fixed_source)
-                    self.assertIn("KeyError", first.stdout)
-                    self.assertIn("total=10", first.stdout)
+                    self.assertNotIn("KeyError", first.stdout)
+                    self.assertNotIn("total=10", first.stdout)
+                    self.assertNotIn("tool_call", first.stdout)
+                    self.assertNotIn("cat > task.py", first.stdout)
+                    for summary in summaries:
+                        self.assertIn(summary, first.stdout)
+                    self.assertIn("shell：失败（退出码 1）", first.stdout)
+                    self.assertIn("shell：完成", first.stdout)
                     self.assertIn("completed", first.stdout)
                     session = Session(workspace / ".agent" / "sessions", "default")
                     messages = session.messages()
@@ -430,6 +438,18 @@ class CLIProtocolTests(unittest.TestCase):
                     self.assertEqual(history.returncode, 0, history.stderr)
                     self.assertTrue(second.stdout.startswith(first.stdout))
                     self.assertEqual(history.stdout, second.stdout)
+                    recorded = session_log.read_bytes()
+                    full_history = subprocess.run(
+                        [sys.executable, "-m", "skills_agent", "history", "--full", "--workspace", directory],
+                        capture_output=True, text=True,
+                    )
+                    self.assertEqual(full_history.returncode, 0, full_history.stderr)
+                    self.assertIn("KeyError", full_history.stdout)
+                    self.assertIn("total=10", full_history.stdout)
+                    for message in session.messages():
+                        for tool_call in message.get("tool_calls", []):
+                            self.assertIn(tool_call["arguments"], full_history.stdout)
+                    self.assertEqual(session_log.read_bytes(), recorded)
                     expected = "/v1/chat/completions" if provider == "openai" else "/v1/messages"
                     self.assertTrue(all(path == expected for path, _ in requests))
                 finally:
