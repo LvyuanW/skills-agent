@@ -14,13 +14,10 @@ import tempfile
 import threading
 import time
 import unittest
-from unittest.mock import patch
 
 import pyte
 
-from skills_agent.cli import ConsoleRenderer
 from tests.sse import stream_response, responses_from_chat
-from tests.test_markdown import Output
 
 if os.name == "posix":
     import fcntl
@@ -31,7 +28,6 @@ if os.name == "posix":
 USER_COLOR = "\x1b[97;40m"
 ASSISTANT_COLOR = "\x1b[30;107m"
 TOOL_COLOR = "\x1b[34;107m"
-RESET = "\x1b[0m"
 PROJECT = Path(__file__).resolve().parents[1]
 
 
@@ -53,13 +49,9 @@ def terminal_screen(text):
     return screen
 
 
-def terminal_rows(screen):
-    return [*screen.history.top, *(screen.buffer[y] for y in range(screen.lines))]
-
-
 def terminal_text(text):
-    return "\n".join("".join(row[x].data for x in range(80)).rstrip()
-                     for row in terminal_rows(terminal_screen(text))).rstrip()
+    screen = terminal_screen(text)
+    return "\n".join(screen.display).rstrip()
 
 
 def terminal_owner():
@@ -71,6 +63,8 @@ class Terminal:
         self.master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
         self.output = b""
+        self.endpoint = endpoint
+        self._prompt_output = 0
         self.screen = TerminalScreen(80, 24, history=10000)
         self.screen.write_process_input = self.send
         self.stream = pyte.Stream(self.screen)
@@ -114,12 +108,30 @@ class Terminal:
                 raise AssertionError(f"Expected terminal output did not arrive:\n{self.text}")
         return self.text
 
-    def prompt(self, count):
+    @property
+    def visible(self):
+        return "\n".join(self.screen.display).rstrip()
+
+    def prompt(self, expected=None):
+        if expected is not None:
+            self.wait_for(lambda output: expected in self.visible)
+        # A full-screen application enables bracketed paste once, rather than
+        # once per submitted message. Check the freshly rendered input instead.
         def ready(output):
             row = self.screen.buffer[self.screen.cursor.y]
             line = "".join(row[x].data for x in range(self.screen.columns)).rstrip()
-            return output.count("\x1b[?2004h") >= count and line == ">"
-        return self.wait_for(ready)
+            return len(output) > self._prompt_output and line == ">"
+        result = self.wait_for(ready)
+        self._prompt_output = len(result)
+        return result
+
+    def click(self, marker):
+        for y, line in enumerate(self.screen.display):
+            if marker in line:
+                x = line.index(marker) + 1
+                self.send(f"\x1b[<0;{x};{y + 1}M\x1b[<0;{x};{y + 1}m")
+                return
+        raise AssertionError(f"Clickable marker {marker!r} is not visible:\n{self.visible}")
 
     def wait_exit(self):
         deadline = time.monotonic() + 5
@@ -195,12 +207,12 @@ class TerminalTests(unittest.TestCase):
         endpoint, requests = self.server(respond)
         terminal = Terminal(self.workspace, endpoint)
         self.addCleanup(terminal.close)
-        terminal.prompt(1)
+        terminal.prompt()
         return terminal, requests
 
     def assert_color(self, text, marker, expected):
         screen = terminal_screen(text)
-        rows = [*screen.history.top, *(screen.buffer[y] for y in range(screen.lines))]
+        rows = [screen.buffer[y] for y in range(screen.lines)]
         colors = {USER_COLOR: ("brightwhite", "black"),
                   ASSISTANT_COLOR: ("black", "brightwhite"),
                   TOOL_COLOR: ("blue", "brightwhite")}
@@ -233,10 +245,10 @@ class TerminalTests(unittest.TestCase):
         terminal, requests = self.terminal(respond)
         first = "first unique terminal request"
         terminal.send(first + "\n")
-        terminal.prompt(2)
+        terminal.prompt("FIRST_FINAL")
         second = "second unique terminal request"
         terminal.send(second + "\n")
-        text = terminal.prompt(3)
+        text = terminal.prompt("SECOND_FINAL")
         plain = terminal_text(text)
         self.assertEqual(plain.count(first), 1)
         self.assertEqual(plain.count(second), 1)
@@ -254,9 +266,6 @@ class TerminalTests(unittest.TestCase):
         self.assert_color(text, "shell「运行测试脚本」：完成", TOOL_COLOR)
         self.assert_color(text, "FIRST_FINAL", ASSISTANT_COLOR)
         self.assert_color(text, "SECOND_FINAL", ASSISTANT_COLOR)
-        for marker in ("FIRST_FINAL", "SECOND_FINAL"):
-            following = text[text.index(marker) + len(marker):]
-            self.assertIn(RESET, following[:following.index("> ")])
         terminal.send("/exit\n")
         finished = terminal.wait_exit()
         self.assertEqual(terminal.process.returncode, 0)
@@ -287,7 +296,7 @@ class TerminalTests(unittest.TestCase):
         for count, (keys, expected) in enumerate(edits, 1):
             with self.subTest(expected=expected):
                 terminal.send(keys + "\n")
-                terminal.prompt(count + 1)
+                terminal.prompt(f"EDIT_DONE_{count}")
                 self.assertEqual(len(requests), count)
                 self.assertEqual(requests[-1]["input"][-1]["content"],
                                  [{"type": "input_text", "text": expected}])
@@ -300,9 +309,9 @@ class TerminalTests(unittest.TestCase):
         terminal, requests = self.terminal(
             lambda payload, count: self.response(f"**HISTORY_DONE_{count}**\n\n- `ready`"))
         terminal.send("previous request\n")
-        terminal.prompt(2)
+        terminal.prompt("HISTORY_DONE_1")
         terminal.send("\x1b[A\x01edited \x05 again\n")
-        text = terminal.prompt(3)
+        text = terminal.prompt("HISTORY_DONE_2")
         self.assertEqual(len(requests), 2)
         self.assertEqual(requests[-1]["input"][-1]["content"],
                          [{"type": "input_text", "text": "edited previous request again"}])
@@ -325,9 +334,11 @@ class TerminalTests(unittest.TestCase):
                     else self.response("AFTER_INTERRUPT"))
 
         terminal, requests = self.terminal(respond)
+        terminal.send("cancel this draft")
+        terminal.wait_for(lambda output: "cancel this draft" in terminal.visible)
         terminal.send("\x03")
-        idle = terminal.prompt(2)
-        self.assertIn(RESET, idle[idle.index("> ") + 2:idle.rindex("> ")])
+        terminal.prompt()
+        self.assertNotIn("cancel this draft", terminal.visible)
         instruction = "cancel running terminal script"
         terminal.send(instruction + "\n")
         heartbeat = self.workspace / "heartbeat"
@@ -336,13 +347,13 @@ class TerminalTests(unittest.TestCase):
             terminal.read()
         self.assertTrue(heartbeat.exists())
         terminal.send("\x03")
-        interrupted = terminal.prompt(3)
+        interrupted = terminal.prompt("Interrupted")
         self.assertIn("Interrupted", interrupted)
         size = heartbeat.stat().st_size
         time.sleep(0.1)
         self.assertEqual(heartbeat.stat().st_size, size)
         terminal.send("continue after interrupt\n")
-        continued = terminal.prompt(4)
+        continued = terminal.prompt("AFTER_INTERRUPT")
         self.assert_color(continued, "AFTER_INTERRUPT", ASSISTANT_COLOR)
         plain = terminal_text(continued)
         self.assertEqual(plain.count(instruction), 1)
@@ -360,36 +371,32 @@ class TerminalTests(unittest.TestCase):
             "\n\n".join(f"paragraph {index}" for index in range(20)) if count == 1
             else "**REPLIED** with `Markdown`"))
         terminal.send("fill terminal\n")
-        terminal.prompt(2)
+        terminal.prompt("paragraph 19")
         message = "长行中文测试" * 300 + "\n粘贴的第二行"
         terminal.send("\x1b[200~" + message + "\x1b[201~")
         terminal.wait_for(lambda output: "粘贴的第二行" in output)
         terminal.send("\n")
-        live = terminal.prompt(3)
+        terminal.prompt("REPLIED")
         self.assertEqual(requests[-1]["input"][-1]["content"],
                          [{"type": "input_text", "text": message}])
-        replay = Output()
-        with patch.dict(os.environ, {"COLUMNS": "80", "LINES": "24"}):
-            renderer = ConsoleRenderer(replay, live=False)
-            for event in self.events():
-                renderer(event)
-            renderer.close()
+        def viewport(terminal):
+            return [[(terminal.screen.buffer[y][x].data,
+                      terminal.screen.buffer[y][x].fg,
+                      terminal.screen.buffer[y][x].bg)
+                     for x in range(terminal.screen.columns)]
+                    for y in range(terminal.screen.lines)]
 
-        def message_rows(text):
-            rows = []
-            for row in terminal_rows(terminal_screen(text)):
-                cells = [row[x] for x in range(80)]
-                line = "".join(cell.data for cell in cells).rstrip()
-                rows.append((line, [(cell.fg, cell.bg) for cell in cells]))
-            messages = [index for index, (line, _) in enumerate(rows) if line and line != ">"]
-            return rows[messages[0]:messages[-1] + 1]
-
-        self.assertEqual(message_rows(live), message_rows(replay.getvalue()))
-        text = terminal_text(live)
-        self.assertEqual(text.count("user:"), 2)
-        self.assertEqual(text.count("粘贴的第二行"), 1)
-        self.assertNotIn("> fill terminal", text)
-        self.assertNotIn("> 长行", text)
+        live_view = viewport(terminal)
+        self.assertIn("粘贴的第二行", terminal.visible)
+        self.assertIn("REPLIED", terminal.visible)
+        self.assertNotIn("> 长行", terminal.visible)
+        terminal.send("/exit\n")
+        terminal.wait_exit()
+        replay = Terminal(self.workspace, terminal.endpoint)
+        self.addCleanup(replay.close)
+        replay.prompt()
+        self.assertEqual(live_view, viewport(replay))
+        self.assertEqual(replay.visible.count("粘贴的第二行"), 1)
 
 
 if __name__ == "__main__":

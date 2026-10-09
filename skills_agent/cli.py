@@ -5,9 +5,6 @@ import shlex
 import sys
 from tempfile import TemporaryDirectory
 
-from prompt_toolkit import PromptSession
-from prompt_toolkit.styles import Style
-
 from .runtime import add_agent_arguments, create_agent
 from .input import ClipboardDraft
 from .markdown import MarkdownStream, print_markdown
@@ -19,6 +16,9 @@ _RESET = "\033[0m"
 
 
 def _print(text, role, output):
+    if hasattr(output, "append_line"):
+        output.append_line(text, role)
+        return
     if output.isatty():
         color = _COLORS[role]
         text = color + text.replace("\n", _RESET + "\n" + color) + _RESET
@@ -38,6 +38,9 @@ def _assistant_content(message, output):
             continue
         text = block.get("thinking" if kind == "thinking" else "text")
         if not isinstance(text, str) or not text:
+            continue
+        if hasattr(output, "append_body"):
+            output.append_body(text, channel=kind)
             continue
         if kind != previous:
             _print("思考:" if kind == "thinking" else "assistant:", "assistant", output)
@@ -208,6 +211,10 @@ class ConsoleRenderer:
     def _write_delta(self, text, *, channel="text"):
         if not text:
             return
+        if hasattr(self.output, "write_delta"):
+            self.output.write_delta(text, channel=channel, live=self.live)
+            self._streaming = True
+            return
         if self._channel != channel:
             self._finish_stream()
         if not self._streaming:
@@ -256,7 +263,9 @@ class ConsoleRenderer:
     def _finish_stream(self):
         if not self._streaming:
             return
-        if self._markdown:
+        if hasattr(self.output, "finish_stream"):
+            self.output.finish_stream()
+        elif self._markdown:
             self._markdown.finish()
             self._markdown = None
         else:
@@ -269,6 +278,8 @@ class ConsoleRenderer:
 
     def close(self):
         self._finish_stream()
+        if hasattr(self.output, "finish_response"):
+            self.output.finish_response()
 
     def __call__(self, event):
         if event.get("type") in {"text_delta", "thinking_delta"}:
@@ -280,6 +291,10 @@ class ConsoleRenderer:
             self._tool_delta(event)
             return
         self._finish_stream()
+        if (event.get("type") == "error" or
+                event.get("type") == "message" and event["message"]["role"] == "assistant"):
+            if hasattr(self.output, "finish_response"):
+                self.output.finish_response()
         if event.get("type") == "message" and event["message"]["role"] == "assistant":
             for call in event["message"].get("tool_calls", []):
                 purpose = _purpose(_arguments(call), "name")
@@ -331,31 +346,39 @@ def interact(agent, files):
             Path(directory),
             on_error=lambda message: _print(f"error: {message}", "assistant", sys.stderr),
         )
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            from .terminal import TerminalView
+
+            view = TerminalView(key_bindings=draft.bindings)
+            draft.on_error = lambda message: _print(f"error: {message}", "assistant", view)
+            replay = ConsoleRenderer(view, live=False)
+            for event in agent.session.events():
+                replay(event)
+            replay.close()
+            agent.on_event = ConsoleRenderer(view)
+            try:
+                view.start()
+                return _interact(agent, files, draft, read_input=view.prompt, output=view)
+            finally:
+                view.close()
         return _interact(agent, files, draft)
 
 
-def _interact(agent, files, draft):
-    if sys.stdin.isatty() and sys.stdout.isatty():
-        read_input = PromptSession(
-            "> ", erase_when_done=True,
-            style=Style.from_dict({"": "ansiwhite bg:ansiblack"}),
-            key_bindings=draft.bindings,
-        ).prompt
-    else:
-        read_input = lambda: input("> " if sys.stdin.isatty() else "")
+def _interact(agent, files, draft, *, read_input=None, output=None):
+    read_input = read_input or (lambda: input("> " if sys.stdin.isatty() else ""))
     pending_files = []
     for path in files:
         try:
             pending_files.append(attachment_path(path, agent.workspace))
         except (ValueError, OSError) as exc:
-            _print(f"error: {exc}", "assistant", sys.stderr)
+            _print(f"error: {exc}", "assistant", output or sys.stderr)
     while True:
         try:
             prompt = read_input()
         except EOFError:
             return 0
         except KeyboardInterrupt:
-            print()
+            _print("", "assistant", output or sys.stdout)
             continue
         command = prompt.strip()
         if command == "/exit":
@@ -367,7 +390,7 @@ def _interact(agent, files, draft):
                     raise ValueError("用法：/file PATH；路径包含空格时使用引号")
                 pending_files.append(attachment_path(parts[1], agent.workspace))
             except (ValueError, OSError) as exc:
-                _print(f"error: {exc}", "assistant", sys.stderr)
+                _print(f"error: {exc}", "assistant", output or sys.stderr)
             continue
         if not command and not pending_files:
             continue
@@ -381,12 +404,12 @@ def _interact(agent, files, draft):
             for (marker, _), block in zip(pasted, blocks):
                 block["marker"] = marker
         except (ValueError, OSError) as exc:
-            _print(f"error: {exc}", "assistant", sys.stderr)
+            _print(f"error: {exc}", "assistant", output or sys.stderr)
             continue
         try:
             agent.run(user_message)
         except KeyboardInterrupt:
-            print()
+            _print("", "assistant", output or sys.stdout)
         except Exception:
             # Agent.run records and renders each turn's error.
             continue
@@ -402,10 +425,11 @@ def main(argv=None):
         if args.command == "history" and not (root / args.session / "events.jsonl").is_file():
             raise ValueError(f"会话不存在：{args.session}")
         session = Session(root, args.session)
-        replay = ConsoleRenderer(full=args.command == "history" and args.full, live=False)
-        for event in session.events():
-            replay(event)
-        replay.close()
+        if args.command == "history" or not (sys.stdin.isatty() and sys.stdout.isatty()):
+            replay = ConsoleRenderer(full=args.command == "history" and args.full, live=False)
+            for event in session.events():
+                replay(event)
+            replay.close()
         if args.command == "history":
             return 0
         agent = create_agent(args, session, on_event=ConsoleRenderer(

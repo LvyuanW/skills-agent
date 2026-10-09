@@ -64,7 +64,7 @@ class ClipboardInputTests(unittest.TestCase):
         with patch("tests.test_cli_terminal.subprocess.Popen", side_effect=start):
             terminal = Terminal(self.workspace, endpoint)
         self.addCleanup(terminal.close)
-        terminal.prompt(1)
+        terminal.prompt()
         return terminal, requests
 
     def users(self):
@@ -74,11 +74,11 @@ class ClipboardInputTests(unittest.TestCase):
     def test_clipboard_text_inserts_at_cursor_and_terminal_text_paste_still_works(self):
         terminal, requests = self.terminal([{"text": "剪贴板文字"}])
         terminal.send("前后\x1b[D\x16\n")
-        terminal.prompt(2)
+        terminal.prompt("REPLIED_1")
         self.assertEqual(requests[-1]["input"][-1]["content"],
                          [{"type": "input_text", "text": "前剪贴板文字后"}])
         terminal.send("\x1b[200~普通终端粘贴\n第二行\x1b[201~\n")
-        terminal.prompt(3)
+        terminal.prompt("REPLIED_2")
         self.assertEqual(requests[-1]["input"][-1]["content"],
                          [{"type": "input_text", "text": "普通终端粘贴\n第二行"}])
         self.assertEqual(len(self.users()), 2)
@@ -97,7 +97,7 @@ class ClipboardInputTests(unittest.TestCase):
         terminal.wait_for(lambda output: "删除.txt" in output)
         # Delete the final marker while keeping the two preceding attachments.
         terminal.send("\x7f" * len("[文件3:删除.txt]") + "\n")
-        live = terminal.prompt(2)
+        live = terminal.prompt("REPLIED_1")
         user = self.users()[0]
         text = user["content"][0]["text"]
         self.assertIn("[图片1]", text)
@@ -139,11 +139,11 @@ class ClipboardInputTests(unittest.TestCase):
         image.write_bytes(PNG)
         terminal, requests = self.terminal([{"image": str(image)}])
         terminal.send("\x16\n")
-        terminal.prompt(2)
+        terminal.prompt("REPLIED_1")
         self.assertEqual([block["type"] for block in requests[-1]["input"][-1]["content"]],
                          ["input_text", "input_image"])
         terminal.send("接着聊\n")
-        terminal.prompt(3)
+        terminal.prompt("REPLIED_2")
         self.assertEqual(requests[-1]["input"][-1]["content"],
                          [{"type": "input_text", "text": "接着聊"}])
         self.assertEqual(len(self.users()), 2)
@@ -155,9 +155,9 @@ class ClipboardInputTests(unittest.TestCase):
         terminal.send("\x16")
         terminal.wait_for(lambda output: "[图片1]" in output)
         terminal.send("\x03")
-        terminal.prompt(2)
+        terminal.prompt()
         terminal.send("重新开始\n")
-        terminal.prompt(3)
+        terminal.prompt("REPLIED_1")
         self.assertEqual(requests[-1]["input"][-1]["content"],
                          [{"type": "input_text", "text": "重新开始"}])
         self.assertEqual(len(self.users()), 1)
@@ -169,10 +169,10 @@ class ClipboardInputTests(unittest.TestCase):
         attachment.write_text("COMMAND_ATTACHMENT_BODY")
         terminal, requests = self.terminal([{"image": str(image)}])
         terminal.send("/file input.txt\n")
-        terminal.prompt(2)
+        terminal.prompt()
         self.assertEqual(requests, [])
         terminal.send("一起看 \x16\n")
-        live = terminal.prompt(3)
+        live = terminal.prompt("REPLIED_1")
         content = self.users()[0]["content"]
         attachments = [block for block in content if block.get("path")]
         self.assertEqual([block["type"] for block in attachments], ["image", "text"])
@@ -189,9 +189,9 @@ class ClipboardInputTests(unittest.TestCase):
         record = self.workspace / "clipboard-image-path"
         terminal, requests = self.terminal([{"image": str(image), "record": str(record)}])
         terminal.send("看图 \x16\n")
-        terminal.prompt(2)
+        terminal.prompt("REPLIED_1")
         terminal.send("\x1b[A\n")
-        terminal.prompt(3)
+        terminal.prompt("REPLIED_2")
         self.assertEqual(len(requests), 2)
         first, second = [request["input"][-1]["content"] for request in requests]
         self.assertEqual(first, second)
