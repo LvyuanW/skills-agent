@@ -6,6 +6,9 @@ import json
 from copy import deepcopy
 
 
+DEFAULT_CONTEXT_TOKENS = 1_000_000
+
+
 class ContextBudgetError(RuntimeError):
     pass
 
@@ -57,7 +60,7 @@ def record_groups(records):
 
 
 class WorkingContext:
-    def __init__(self, session, model, auxiliary, *, max_tokens=272000, keep_calls=10, on_activity=None):
+    def __init__(self, session, model, auxiliary, *, max_tokens=DEFAULT_CONTEXT_TOKENS, keep_calls=10, on_activity=None):
         if max_tokens <= 0 or keep_calls < 1:
             raise ValueError("Context token budget and kept calls must be positive")
         self.session, self.model, self.auxiliary = session, model, auxiliary
@@ -198,4 +201,4 @@ class WorkingContext:
         return self._system(system), [deepcopy(record["message"]) for record in self.records]
 
 
-__all__ = ["WorkingContext", "ContextBudgetError", "working_message", "record_groups"]
+__all__ = ["DEFAULT_CONTEXT_TOKENS", "WorkingContext", "ContextBudgetError", "working_message", "record_groups"]

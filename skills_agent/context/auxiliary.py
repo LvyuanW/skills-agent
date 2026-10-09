@@ -5,6 +5,7 @@ import json
 import re
 from uuid import uuid4
 
+from . import DEFAULT_CONTEXT_TOKENS
 from ..providers.base import ProviderConnectionError, ProviderError, blocks
 from ..session import Session
 from .history import HistoryIndex, _message_text
@@ -156,12 +157,14 @@ def _groups(records):
 
 
 class Auxiliary:
-    def __init__(self, model, session, output_tokens=32768):
+    def __init__(self, model, session, output_tokens=32768, *, context_tokens=DEFAULT_CONTEXT_TOKENS):
         if output_tokens <= 0:
             raise ValueError("Auxiliary output_tokens must be positive")
+        if context_tokens <= 0:
+            raise ValueError("Auxiliary context_tokens must be positive")
         self.model, self.session = model, session
         self.output_tokens = output_tokens
-        self.window = min(272000, getattr(model, "model_context_window", None) or 272000)
+        self.window = min(context_tokens, getattr(model, "model_context_window", None) or context_tokens)
         self.reserve = min(output_tokens, max(1, self.window // 4))
         self.history = HistoryIndex(session.path)
 

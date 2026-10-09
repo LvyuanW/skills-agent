@@ -84,7 +84,7 @@ def send_count(handler):
 class AdapterConfigTests(unittest.TestCase):
     def test_token_configuration_defaults_and_validation(self):
         config = LocalConfig(package="unused", model="test")
-        self.assertEqual(config.context_tokens, 272000)
+        self.assertEqual(config.context_tokens, 1_000_000)
         self.assertEqual(config.api_format, "auto")
         self.assertEqual(config.token_counter, "auto")
         self.assertEqual(config.summary_output_tokens, 32768)
@@ -162,7 +162,7 @@ class AdapterTests(unittest.TestCase):
             self.assertNotIn("secret-key", str(start.call_args.args))
             self.assertIn("/opt/task skills", start.call_args.args)
             self.assertIn("--context-tokens", start.call_args.args)
-            self.assertIn("272000", start.call_args.args)
+            self.assertIn("1000000", start.call_args.args)
             self.assertNotIn("--context-chars", start.call_args.args)
             self.assertEqual(start.call_args.kwargs["cwd"], path.resolve())
             self.assertEqual((path / "logs/prompt.txt").read_text(), "Exact task\nwith newlines\n")

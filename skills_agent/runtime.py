@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 from .agent import Agent
+from .context import DEFAULT_CONTEXT_TOKENS
 from .providers import create_provider
 from .sandbox import DockerSandbox
 from .skills import SkillRegistry
@@ -12,7 +13,8 @@ def add_agent_arguments(parser):
     parser.add_argument("--model", help="也可设置 OPENAI_MODEL 或 ANTHROPIC_MODEL")
     parser.add_argument("--base-url", help="兼容服务的 API base URL")
     parser.add_argument("--skill-dir", action="append", type=Path, default=[])
-    parser.add_argument("--context-tokens", type=int, default=272000)
+    parser.add_argument("--context-tokens", type=int, default=DEFAULT_CONTEXT_TOKENS,
+                        help="工作上下文 token 预算（正整数），默认 1000000；达到 90%% 时压缩")
     parser.add_argument("--max-output-tokens", type=int, default=4096)
     parser.add_argument("--summary-output-tokens", type=int, default=32768,
                         help="辅助生成的输出额度；摘要目标篇幅另为8192 tokens")

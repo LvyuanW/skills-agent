@@ -252,6 +252,17 @@ class AuxiliaryTests(unittest.TestCase):
         self.assertEqual(call["max_output_tokens"], 1500 - model.count_tokens(call["system"], call["messages"], call["tools"]))
         self.assertGreater(call["max_output_tokens"], 0)
 
+    def test_large_report_request_uses_configured_context_without_272k_cap(self):
+        for budget, counted_tokens in [(None, 300000), (2000000, 1100000)]:
+            with self.subTest(budget=budget):
+                model = Model(["complete report"])
+                model.count_tokens = lambda *args: counted_tokens
+                options = {} if budget is None else {"context_tokens": budget}
+                result = Auxiliary(model, self.session, **options).tool_report("evidence", {}, {}, {})
+                self.assertEqual(result, "complete report")
+                self.assertEqual(len(model.calls), 1)
+                self.assertEqual(model.calls[0]["max_output_tokens"], 32768)
+
     def test_previous_verified_baseline_is_separate_from_unverified_draft(self):
         baseline = "历史约束仍然有效 [event-1]。"
         model = Model([self.summary, verdict])

@@ -33,7 +33,7 @@ export OPENAI_API_KEY='你的密钥'
 | 字段 | 默认值 / 用途 |
 | --- | --- |
 | `workspace` | ALE 的 `sandbox.task_data_root`，作为脚本当前目录 |
-| `context_tokens` | `272000`；完整工作上下文的 token 预算，达到 90% 时压缩 |
+| `context_tokens` | `1000000`；完整工作上下文的 token 预算，可设为任意正整数，达到 90% 时压缩；有效输入预算更小时提前触发 |
 | `api_format` | `auto`；OpenAI 协议可选择 `responses` 或 `chat` |
 | `token_counter` | `auto`；使用官方接口 `official` 或 DeepSeek 本地计量 `deepseek` |
 | `tokenizer_path` | 未设置；DeepSeek tokenizer 文件的容器内路径 |
@@ -42,6 +42,8 @@ export OPENAI_API_KEY='你的密钥'
 | `max_output_tokens` | `4096` |
 | `summary_output_tokens` | `32768`；辅助生成额度，摘要目标篇幅另为 `8192` tokens |
 | `skill_dirs` | `[]`；额外技能目录，必须已在任务容器内可见 |
+
+`context_tokens` 与实际模型能力分开配置。设置 `model_context_window` 后，有效输入预算为 `min(context_tokens, model_context_window - max_output_tokens)`；未设置时使用 `context_tokens`，仍需确认服务端限制。普通子任务和历史检索子任务继承上下文预算；辅助调用跟随该配置，同时受实际模型窗口约束并预留辅助输出空间。调整上下文预算不会改变默认的 `max_output_tokens: 4096`。
 
 OpenAI 和 Anthropic 使用官方请求前计量接口；OpenAI 网关需要支持 Responses 及其计量接口，并设置 `api_format: responses`。DeepSeek 使用匹配实际模型的本地 tokenizer 和消息模板。使用 DeepSeek 时，在配置中设置 `api_format: chat`、`token_counter: deepseek`、`tokenizer_path` 和对应的 `tokenizer_encoding`；安装包需要包含 `deepseek` 可选依赖，tokenizer 文件必须已在任务容器内可用，宿主机路径不会自动传入。
 

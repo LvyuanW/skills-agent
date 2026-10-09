@@ -3,9 +3,13 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from skills_agent.agent import Agent
+from skills_agent.benchmark import parser as benchmark_parser
+from skills_agent.cli import parser as cli_parser
 from skills_agent.context import ContextBudgetError
+from skills_agent.runtime import create_agent
 from skills_agent.session import Session
 from skills_agent.skills import SkillRegistry
 from tests.test_context import Counter
@@ -44,6 +48,29 @@ class AgentContextTests(unittest.TestCase):
 
     def agent(self, model, **kwargs):
         return Agent(model, self.session, self.skills, self.root, **kwargs)
+
+    def test_entry_points_pass_default_and_custom_context_to_main_and_auxiliary(self):
+        entries = [
+            (cli_parser, ["run", "--session", "main"]),
+            (benchmark_parser, ["--prompt-file", "unused.txt", "--log-dir", str(self.root / "logs")]),
+        ]
+        for parser, initial in entries:
+            for budget, window in [(None, None), (512000, None), (2000000, 1000000)]:
+                with self.subTest(entry=initial[0], budget=budget, window=window):
+                    argv = [*initial, "--workspace", str(self.root), "--model", "test-model"]
+                    if budget is not None:
+                        argv += ["--context-tokens", str(budget)]
+                    if window is not None:
+                        argv += ["--model-context-window", str(window)]
+                    model = ScriptedModel([])
+                    model.model_context_window = window
+                    with patch("skills_agent.runtime.create_provider", return_value=model) as factory:
+                        agent = create_agent(parser().parse_args(argv), self.session)
+                    expected = 1000000 if budget is None else budget
+                    self.assertEqual(agent.context.max_tokens, expected)
+                    self.assertEqual(agent.auxiliary.window, min(expected, window or expected))
+                    self.assertEqual(factory.call_args.kwargs["model_context_window"], window)
+                    self.assertEqual(factory.call_args.kwargs["max_output_tokens"], 4096)
 
     def test_activity_uses_current_listener_and_does_not_log_or_expose_child_work(self):
         model = ScriptedModel([

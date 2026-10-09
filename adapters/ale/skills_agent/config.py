@@ -12,7 +12,7 @@ class SkillsAgentConfig:
     base_url: str | None = None
     api_key: str | None = None
     workspace: str | None = None
-    context_tokens: int = 272000
+    context_tokens: int = 1_000_000
     api_format: str = "auto"
     token_counter: str = "auto"
     tokenizer_path: str | None = None
