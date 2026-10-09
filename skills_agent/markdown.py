@@ -15,8 +15,10 @@ class _Body:
         self.style = _THINKING_STYLE if thinking else _BODY_STYLE
 
     def __rich_console__(self, console, options):
-        for segment in console.render(Markdown(self.text, code_theme="bw"), options):
-            yield Segment(segment.text, (segment.style or Style()) + self.style, segment.control)
+        for line in console.render_lines(Markdown(self.text, code_theme="bw"), options, pad=True):
+            for segment in line:
+                yield Segment(segment.text, (segment.style or Style()) + self.style, segment.control)
+            yield Segment.line()
 
 
 def _console(output):

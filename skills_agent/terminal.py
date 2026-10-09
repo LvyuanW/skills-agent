@@ -25,8 +25,11 @@ from .markdown import _Body
 
 
 _STYLES = {"user": "bright_white on black", "assistant": "black on bright_white",
-           "tool": "blue on bright_white"}
-_THINKING_LINE_STYLE = "fg:ansibrightblack bg:default"
+           "tool": "blue on default"}
+_LINE_STYLES = {"user": "fg:ansiwhite bg:ansiblack",
+                "assistant": "fg:ansiblack bg:ansiwhite",
+                "tool": "fg:ansiblue bg:default",
+                "thinking": "fg:ansibrightblack bg:default"}
 
 
 class _Transcript(UIControl):
@@ -200,18 +203,19 @@ class TerminalView:
         lines = []
         self._headers = {}
         for block in self.blocks:
+            role = "thinking" if block["kind"] == "thinking" else block.get("role", "assistant")
+            style = _LINE_STYLES[role]
             if block["kind"] == "thinking":
                 self._headers[len(lines)] = block
-                rows = [[(_THINKING_LINE_STYLE, "▼ 思考" if block["expanded"] else "▶ 思考")]]
+                rows = [[(style, "▼ 思考" if block["expanded"] else "▶ 思考")]]
                 if block["expanded"]:
                     rows.extend(self._render(block, max(1, width)))
-                # Clear the inherited white background, including blank lines and row tails.
-                lines.extend([*row, (_THINKING_LINE_STYLE, " " * max(0, width - fragment_list_width(row)))]
-                             for row in rows)
-                continue
-            if block["kind"] == "text":
-                lines.append([("fg:ansiblack bg:ansiwhite", "assistant:")])
-            lines.extend(self._render(block, max(1, width)))
+            else:
+                rows = [[(style, "assistant:")]] if block["kind"] == "text" else []
+                rows.extend(self._render(block, max(1, width)))
+            # Paint blank lines and row tails with the message's own background.
+            lines.extend([*row, (style, " " * max(0, width - fragment_list_width(row)))]
+                         for row in rows)
         return lines or [[]]
 
     def isatty(self):

@@ -13,7 +13,7 @@ from skills_agent.session import Session
 from tests.test_markdown import terminal_screen, terminal_text
 
 
-TOOL_COLOR = "\x1b[34;107m"
+TOOL_COLOR = "\x1b[34;49m"
 RESET = "\x1b[0m"
 
 

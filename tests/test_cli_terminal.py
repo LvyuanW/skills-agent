@@ -27,7 +27,7 @@ if os.name == "posix":
 
 USER_COLOR = "\x1b[97;40m"
 ASSISTANT_COLOR = "\x1b[30;107m"
-TOOL_COLOR = "\x1b[34;107m"
+TOOL_COLOR = "\x1b[34;49m"
 PROJECT = Path(__file__).resolve().parents[1]
 
 
@@ -215,7 +215,7 @@ class TerminalTests(unittest.TestCase):
         rows = [screen.buffer[y] for y in range(screen.lines)]
         colors = {USER_COLOR: ("brightwhite", "black"),
                   ASSISTANT_COLOR: ("black", "brightwhite"),
-                  TOOL_COLOR: ("blue", "brightwhite")}
+                  TOOL_COLOR: ("blue", "default")}
         for row in rows:
             chars = [row[x] for x in range(screen.columns) if row[x].data]
             line = "".join(char.data for char in chars)

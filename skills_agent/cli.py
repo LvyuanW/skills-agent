@@ -5,13 +5,15 @@ import shlex
 import sys
 from tempfile import TemporaryDirectory
 
+from rich.text import Text
+
 from .runtime import add_agent_arguments, create_agent
 from .input import ClipboardDraft
-from .markdown import MarkdownStream, print_markdown
+from .markdown import MarkdownStream, _console, print_markdown
 from .session import Session
 
 
-_COLORS = {"user": "\033[97;40m", "assistant": "\033[30;107m", "tool": "\033[34;107m",
+_COLORS = {"user": "\033[97;40m", "assistant": "\033[30;107m", "tool": "\033[34;49m",
            "thinking": "\033[90;49m"}
 _RESET = "\033[0m"
 
@@ -21,6 +23,10 @@ def _print(text, role, output):
         output.append_line(text, role)
         return
     if output.isatty():
+        if role in {"user", "assistant"}:
+            console = _console(output)
+            lines = Text(text).wrap(console, console.width, overflow="fold")
+            text = "\n".join(line.plain + " " * max(0, console.width - line.cell_len) for line in lines)
         color = _COLORS[role]
         text = color + text.replace("\n", _RESET + "\n" + color) + _RESET
     print(text, file=output, flush=True)

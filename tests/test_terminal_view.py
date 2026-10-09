@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from prompt_toolkit.data_structures import Point
-from prompt_toolkit.formatted_text import fragment_list_to_text
+from prompt_toolkit.formatted_text import fragment_list_to_text, fragment_list_width
 from prompt_toolkit.input import DummyInput, create_pipe_input
 from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
 from prompt_toolkit.output import DummyOutput
@@ -101,9 +101,14 @@ class TerminalViewTests(unittest.TestCase):
         self.assertNotIn("**", "\n".join(self.lines()))
         rows = self.view._lines(60)
         self.assertIn("ansiwhite bg:ansiblack", rows[0][0][0])
-        self.assertIn("ansiblue bg:ansiwhite", rows[1][0][0])
+        self.assertIn("ansiwhite bg:ansiblack", rows[0][-1][0])
+        self.assertIn("ansiblue bg:ansidefault", rows[1][0][0])
+        self.assertIn("ansiblue bg:default", rows[1][-1][0])
         self.assertIn("bold", rows[3][0][0])
         self.assertIn("ansiblack bg:ansiwhite", rows[3][0][0])
+        self.assertTrue(all(fragment_list_width(row) == 60 for row in rows))
+        self.assertEqual(fragment_list_to_text(rows[4]), " " * 60)
+        self.assertTrue(all("bg:ansiwhite" in style for style, text in rows[4] if text))
 
     def test_input_thread_edits_and_returns_submitted_text(self):
         with create_pipe_input() as input:
