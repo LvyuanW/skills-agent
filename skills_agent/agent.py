@@ -26,13 +26,18 @@ class Agent:
         self.model, self.session, self.skills = model, session, skills
         self.workspace = Path(workspace).resolve()
         self.context_tokens, self.summary_output_tokens = context_tokens, summary_output_tokens
+        self.on_event = on_event or (lambda event: None)
         self.auxiliary = Auxiliary(model, session, output_tokens=summary_output_tokens)
-        self.context = WorkingContext(session, model, self.auxiliary, max_tokens=context_tokens)
+        self.context = WorkingContext(session, model, self.auxiliary, max_tokens=context_tokens,
+                                      on_activity=self._activity)
         self.sandbox, self.instructions = sandbox, instructions
         self.report_background = None
-        self.on_event = on_event or (lambda event: None)
         self.tools = ToolRegistry(workspace=self.workspace, sandbox=sandbox,
-                                  subagent=self._subagent if allow_subagent else None)
+                                  subagent=self._subagent if allow_subagent else None,
+                                  on_activity=self._activity)
+
+    def _activity(self, activity):
+        self.on_event({"type": "activity", "activity": activity})
 
     def _system(self):
         delegation = (

@@ -88,6 +88,9 @@ class TerminalView:
         self._failure = None
         self._context_usage = context_usage or (lambda: None)
         self._last_usage = None
+        self._activity = None
+        self._activity_phase = 0
+        self._animation_scheduled = False
 
         self.buffer = Buffer(multiline=False, history=InMemoryHistory(),
                              read_only=Condition(lambda: self._busy or self._selecting),
@@ -149,11 +152,14 @@ class TerminalView:
             merged.append(ConditionalKeyBindings(
                 key_bindings, Condition(lambda: not self._busy and not self._selecting)))
 
-        def set_input_cursor(app):
+        def after_render(app):
             # prompt-toolkit disables blinking when showing the cursor on redraw.
             if not app.is_done:
                 app.output.set_cursor_shape(CursorShape.BLINKING_BEAM)
                 app.output.flush()
+                if self._activity and not self._selecting and not self._animation_scheduled:
+                    self._animation_scheduled = True
+                    app.loop.call_later(0.4, self._animate)
 
         self.app = Application(
             layout=Layout(HSplit([
@@ -162,7 +168,7 @@ class TerminalView:
             ]), focused_element=editor),
             key_bindings=merge_key_bindings(merged), full_screen=True,
             mouse_support=Condition(lambda: not self._selecting),
-            after_render=set_input_cursor,
+            after_render=after_render,
             input=input, output=output, min_redraw_interval=0.03,
         )
 
@@ -173,6 +179,20 @@ class TerminalView:
         if not usage or usage["limit"] <= 0:
             return "上下文窗口 —"
         return f"上下文窗口 {usage['tokens'] / usage['limit'] * 100:.1f}%"
+
+    def set_activity(self, text):
+        with self._lock:
+            self._activity = text
+            self._activity_phase = 0
+        self.flush()
+
+    def _animate(self):
+        self._animation_scheduled = False
+        with self._lock:
+            if not self._activity or self._selecting:
+                return
+            self._activity_phase = (self._activity_phase + 1) % 3
+        self.flush()
 
     def _submit(self, buffer):
         if not self._busy and not self._selecting:
@@ -248,7 +268,11 @@ class TerminalView:
     def _lines(self, width):
         lines = []
         self._headers = {}
-        for block in self.blocks:
+        blocks = self.blocks
+        if self._activity:
+            blocks = [*blocks, {"kind": "line", "role": "tool",
+                               "text": self._activity + "." * (self._activity_phase + 1)}]
+        for block in blocks:
             role = "thinking" if block["kind"] == "thinking" else block.get("role", "assistant")
             style = _LINE_STYLES[role]
             if block["kind"] == "thinking":

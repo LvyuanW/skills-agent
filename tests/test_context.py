@@ -168,20 +168,44 @@ class ContextTests(unittest.TestCase):
         self.append({"role": "user", "content": "u"})
         for index in range(11):
             self.append({"role": "assistant", "content": str(index)})
-        context = self.context(max_tokens=1000)
+        activity = []
+        context = self.context(max_tokens=1000, on_activity=activity.append)
         context.sync()
         counts = iter([899, 900, 100, 200])
         self.counter.count_tokens = lambda *args: next(counts)
         context.prepare("large system", [{"name": "tool"}])
         self.assertFalse(self.summary.calls)
+        self.assertFalse(activity)
         context.prepare("large system", [{"name": "tool"}])
         self.assertEqual(len(self.summary.calls), 1)
+        self.assertEqual(activity, [{"kind": "compression"}, None])
         self.assertEqual(context.state["token_count"], 200)
         self.assertEqual(context.state["last_usage"], {"tokens": 200, "limit": 1000})
         self.append({"role": "assistant", "content": "new reply"})
         context.sync()
         self.assertIsNone(context.state["token_count"])
         self.assertEqual(self.context().state["last_usage"], {"tokens": 200, "limit": 1000})
+
+    def test_compression_activity_covers_summary_and_clears_on_failure_or_interrupt(self):
+        self.append({"role": "user", "content": "task"})
+        for index in range(11):
+            self.append({"role": "assistant", "content": str(index)})
+        for error in (RuntimeError("quality check failed"), KeyboardInterrupt()):
+            with self.subTest(error=type(error).__name__):
+                activity = []
+                context = self.context(max_tokens=1000, on_activity=activity.append)
+                context.sync()
+                before = context.path.read_bytes()
+                counts = iter([900, 100])
+                self.counter.count_tokens = lambda *args: next(counts)
+                def compress(*args):
+                    self.assertEqual(activity, [{"kind": "compression"}])
+                    raise error
+                with patch.object(self.summary, "compress", side_effect=compress):
+                    with self.assertRaises(type(error)):
+                        context.prepare("sys", [])
+                self.assertEqual(activity, [{"kind": "compression"}, None])
+                self.assertEqual(context.path.read_bytes(), before)
 
     def test_second_compaction_uses_old_summary_and_only_newly_displaced_records(self):
         self.append({"role": "user", "content": "task"})
@@ -216,13 +240,15 @@ class ContextTests(unittest.TestCase):
 
     def test_protected_user_and_calls_are_not_trimmed_on_overflow(self):
         self.append({"role": "user", "content": "large " * 500})
-        context = self.context(max_tokens=100)
+        activity = []
+        context = self.context(max_tokens=100, on_activity=activity.append)
         context.sync()
         before = copy.deepcopy(context.records)
         with self.assertRaises(ContextBudgetError):
             context.prepare("system", [])
         self.assertEqual(context.records, before)
         self.assertFalse(self.summary.calls)
+        self.assertFalse(activity)
 
     def test_direct_overflow_returns_original_source_without_report(self):
         self.append({"role": "user", "content": "read"}, *pair(1, "exact " * 800))
@@ -250,7 +276,8 @@ class ContextTests(unittest.TestCase):
         self.append({"role": "user", "content": "task"})
         for index in range(11):
             self.append(*pair(index))
-        context = self.context(max_tokens=1000)
+        activity = []
+        context = self.context(max_tokens=1000, on_activity=activity.append)
         context.sync()
         self.counter.can_compact = lambda messages: False
         self.counter.count_tokens = lambda *args: 950
@@ -262,6 +289,7 @@ class ContextTests(unittest.TestCase):
             context.prepare("sys", [])
         self.assertEqual(context.records, before)
         self.assertFalse(self.summary.calls)
+        self.assertFalse(activity)
 
     def test_tool_groups_and_anthropic_compaction_copy(self):
         self.append({"role": "user", "content": "u"})

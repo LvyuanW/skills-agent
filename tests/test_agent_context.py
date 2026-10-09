@@ -45,6 +45,44 @@ class AgentContextTests(unittest.TestCase):
     def agent(self, model, **kwargs):
         return Agent(model, self.session, self.skills, self.root, **kwargs)
 
+    def test_activity_uses_current_listener_and_does_not_log_or_expose_child_work(self):
+        model = ScriptedModel([
+            call("subagent", {"name": "Inspect workspace", "task": "Read files"}),
+            call("shell", {"name": "Private child task", "command": "printf evidence"}),
+            final("Child report"), final("done"),
+        ])
+        agent = self.agent(model)
+        events = []
+        agent.on_event = events.append
+        self.assertEqual(agent.run({"role": "user", "content": "inspect"}), "done")
+        self.assertEqual([event["activity"] for event in events if event["type"] == "activity"], [
+            {"kind": "tool", "name": "subagent", "task_name": "Inspect workspace"}, None,
+        ])
+        self.assertNotIn("Private child task", json.dumps(events))
+        for path in self.session.path.rglob("events.jsonl"):
+            self.assertFalse(any(json.loads(line)["type"] == "activity" for line in path.read_text().splitlines()))
+
+    def test_context_activity_reaches_current_listener_without_session_events(self):
+        model = ScriptedModel([])
+        agent = self.agent(model, context_tokens=1000)
+        events = []
+        agent.on_event = events.append
+        self.session.append({"role": "user", "content": "task"})
+        for index in range(11):
+            self.session.append(final(str(index)))
+        agent.context.sync()
+        before = (self.session.path / "events.jsonl").read_bytes()
+        counts = iter([900, 100, 200])
+        model.count_tokens = lambda *args: next(counts)
+        def compress(*args):
+            self.assertEqual(events, [{"type": "activity", "activity": {"kind": "compression"}}])
+            return "verified summary"
+        agent.auxiliary.compress = compress
+        agent.context.prepare("sys", [])
+        self.assertEqual(events, [{"type": "activity", "activity": {"kind": "compression"}},
+                                  {"type": "activity", "activity": None}])
+        self.assertEqual((self.session.path / "events.jsonl").read_bytes(), before)
+
     def test_long_raw_result_saved_before_report_and_never_replaces_raw_log(self):
         model = ScriptedModel([call("shell", {"name": "inspect log", "command": "ignored"}), final("done")])
         agent = self.agent(model)

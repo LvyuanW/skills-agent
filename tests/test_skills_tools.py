@@ -61,9 +61,36 @@ class SkillsToolsTests(unittest.TestCase):
         self.assertIn(str(path), str(error.exception))
 
     def test_shell_preserves_output_and_exit_code(self):
+        activity = []
+        self.tools.on_activity = activity.append
         result = self.shell("printf 'full stdout'; printf 'full stderr' >&2; exit 7")
         self.assertEqual(result, {"exit_code": 7, "stdout": "full stdout", "stderr": "full stderr"})
+        self.assertEqual(activity, [{"kind": "tool", "name": "shell", "task_name": "执行测试脚本"}, None])
         self.assertEqual(Path(self.shell("pwd")["stdout"].strip()), self.workspace)
+
+    def test_activity_wraps_dispatch_and_clears_on_failure_and_interrupt(self):
+        sandbox = DockerSandbox("python:3.11", self.workspace)
+        for name in ("sandbox", "subagent"):
+            for error in (None, RuntimeError("failed"), KeyboardInterrupt()):
+                with self.subTest(name=name, error=type(error).__name__):
+                    activity = []
+                    started = {"kind": "tool", "name": name, "task_name": "inspect"}
+                    def run(*args, **kwargs):
+                        self.assertEqual(activity, [started])
+                        if error:
+                            raise error
+                        return "done"
+                    tools = ToolRegistry(self.workspace, sandbox, run, on_activity=activity.append)
+                    arguments = {"name": "inspect", "command" if name == "sandbox" else "task": "read files"}
+                    with patch.object(sandbox, "run", side_effect=run):
+                        if isinstance(error, KeyboardInterrupt):
+                            with self.assertRaises(KeyboardInterrupt):
+                                tools.execute(name, json.dumps(arguments))
+                        else:
+                            result = json.loads(tools.execute(name, json.dumps(arguments)))
+                            if error:
+                                self.assertEqual(result, {"error": "failed"})
+                    self.assertEqual(activity, [started, None])
 
     def test_shell_does_not_truncate_output(self):
         result = self.shell(shlex.join([sys.executable, "-c", "print('x' * 100000)"]))
@@ -94,7 +121,9 @@ class SkillsToolsTests(unittest.TestCase):
 
     def test_purpose_names_are_required_and_result_modes_validated_before_execution(self):
         sandbox = DockerSandbox("python:3.11", self.workspace)
-        tools = ToolRegistry(self.workspace, sandbox, lambda name, task, **kwargs: "done")
+        activity = []
+        tools = ToolRegistry(self.workspace, sandbox, lambda name, task, **kwargs: "done",
+                             on_activity=activity.append)
         schemas = {item["name"]: item["parameters"] for item in tools.schemas}
         for name in ["shell", "sandbox"]:
             self.assertEqual(schemas[name]["required"], ["name", "command"])
@@ -118,9 +147,12 @@ class SkillsToolsTests(unittest.TestCase):
         self.assertIn("error", json.loads(tools.execute("subagent", json.dumps({
             "name": "review", "task": "inspect files", "summary": "unsupported",
         }))))
+        self.assertFalse(activity)
 
     @unittest.skipUnless(os.name == "posix", "Shell process groups require POSIX")
     def test_shell_interrupt_kills_descendants_and_propagates(self):
+        activity = []
+        self.tools.on_activity = activity.append
         child_file = self.workspace / "child.pid"
         source = (
             "import os, subprocess, sys, time; from pathlib import Path; "
@@ -149,6 +181,7 @@ class SkillsToolsTests(unittest.TestCase):
                 with self.assertRaises(KeyboardInterrupt):
                     self.shell(shlex.join([sys.executable, "-c", source]))
             self.assertIsNotNone(launched[0].returncode)
+            self.assertEqual(activity, [{"kind": "tool", "name": "shell", "task_name": "执行测试脚本"}, None])
             child_pid = int(child_file.read_text())
             deadline = time.monotonic() + 5
             while True:

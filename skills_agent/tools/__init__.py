@@ -8,9 +8,10 @@ from pathlib import Path
 
 
 class ToolRegistry:
-    def __init__(self, workspace: Path, sandbox=None, subagent=None):
+    def __init__(self, workspace: Path, sandbox=None, subagent=None, *, on_activity=None):
         self.workspace = Path(workspace).expanduser().resolve()
         self.sandbox, self.subagent = sandbox, subagent
+        self.on_activity = on_activity or (lambda activity: None)
         script = {
             "name": {"type": "string", "description": "Short action and purpose, shown to the user."},
             "command": {"type": "string", "description": "Arbitrary shell command or multiline script."},
@@ -59,24 +60,28 @@ class ToolRegistry:
                     raise ValueError(f"Argument {key} must not be empty")
                 if "enum" in field and value not in field["enum"]:
                     raise ValueError(f"Invalid {key}: {value}")
-            if name == "shell":
-                with subprocess.Popen(values["command"], shell=True, cwd=self.workspace,
-                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                      text=True, errors="replace", start_new_session=True) as process:
-                    try:
-                        stdout, stderr = process.communicate()
-                    except BaseException:
+            try:
+                self.on_activity({"kind": "tool", "name": name, "task_name": values["name"]})
+                if name == "shell":
+                    with subprocess.Popen(values["command"], shell=True, cwd=self.workspace,
+                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                          text=True, errors="replace", start_new_session=True) as process:
                         try:
-                            os.killpg(process.pid, signal.SIGKILL)
-                        except ProcessLookupError:
-                            pass
-                        process.wait()
-                        raise
-                result = {"exit_code": process.returncode, "stdout": stdout, "stderr": stderr}
-            elif name == "sandbox":
-                result = self.sandbox.run(values["command"])
-            else:
-                result = {"result": self.subagent(values["name"], values["task"], history=values.get("history", False))}
+                            stdout, stderr = process.communicate()
+                        except BaseException:
+                            try:
+                                os.killpg(process.pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
+                            process.wait()
+                            raise
+                    result = {"exit_code": process.returncode, "stdout": stdout, "stderr": stderr}
+                elif name == "sandbox":
+                    result = self.sandbox.run(values["command"])
+                else:
+                    result = {"result": self.subagent(values["name"], values["task"], history=values.get("history", False))}
+            finally:
+                self.on_activity(None)
         except Exception as exc:
             result = {"error": str(exc)}
         return json.dumps(result, ensure_ascii=False)

@@ -291,6 +291,18 @@ class ConsoleRenderer:
             self.output.finish_response()
 
     def __call__(self, event):
+        if event.get("type") == "activity":
+            if self.live and hasattr(self.output, "set_activity"):
+                activity = event.get("activity")
+                text = None
+                if activity:
+                    if activity["kind"] == "compression":
+                        text = "· 正在压缩上下文"
+                    else:
+                        name = "sub-agent" if activity["name"] == "subagent" else activity["name"]
+                        text = f"· {name}「{_purpose(activity, 'task_name')}」：执行中"
+                self.output.set_activity(text)
+            return
         if event.get("type") in {"text_delta", "thinking_delta"}:
             self._had_deltas = self._had_deltas or bool(event["text"])
             self._write_delta(event["text"], channel="thinking" if event["type"] == "thinking_delta" else "text")

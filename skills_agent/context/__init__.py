@@ -57,11 +57,12 @@ def record_groups(records):
 
 
 class WorkingContext:
-    def __init__(self, session, model, auxiliary, *, max_tokens=272000, keep_calls=10):
+    def __init__(self, session, model, auxiliary, *, max_tokens=272000, keep_calls=10, on_activity=None):
         if max_tokens <= 0 or keep_calls < 1:
             raise ValueError("Context token budget and kept calls must be positive")
         self.session, self.model, self.auxiliary = session, model, auxiliary
         self.max_tokens, self.keep_calls = max_tokens, keep_calls
+        self.on_activity = on_activity or (lambda activity: None)
         self.path = session.path / "context.json"
         self.state = json.loads(self.path.read_text()) if self.path.exists() else {
             "version": 1, "cursor": 0, "summary": "", "covered_event_ids": [],
@@ -166,19 +167,23 @@ class WorkingContext:
         if count >= trigger and can_compact([record["message"] for record in self.records]):
             older, kept = self._protected()
             if older:
-                compacted = self.model.compact_messages([record["message"] for record in kept])
-                candidate = [{**record, "message": message} for record, message in zip(kept, compacted)]
-                if self._count(system, tools, candidate, summary="") > limit:
-                    self.save()
-                    raise ContextBudgetError("Protected context (latest user and 10 model calls) exceeds the token budget")
-                summary = self.auxiliary.compress(self.state["summary"], older, self.latest_user())
-                count = self._count(system, tools, candidate, summary)
-                if count > limit:
-                    self.save()
-                    raise ContextBudgetError("Verified summary and protected context exceed the token budget")
-                self.state["summary"] = summary
-                self.state["covered_event_ids"].extend(record["event_id"] for record in older)
-                self.state["records"] = candidate
+                try:
+                    self.on_activity({"kind": "compression"})
+                    compacted = self.model.compact_messages([record["message"] for record in kept])
+                    candidate = [{**record, "message": message} for record, message in zip(kept, compacted)]
+                    if self._count(system, tools, candidate, summary="") > limit:
+                        self.save()
+                        raise ContextBudgetError("Protected context (latest user and 10 model calls) exceeds the token budget")
+                    summary = self.auxiliary.compress(self.state["summary"], older, self.latest_user())
+                    count = self._count(system, tools, candidate, summary)
+                    if count > limit:
+                        self.save()
+                        raise ContextBudgetError("Verified summary and protected context exceed the token budget")
+                    self.state["summary"] = summary
+                    self.state["covered_event_ids"].extend(record["event_id"] for record in older)
+                    self.state["records"] = candidate
+                finally:
+                    self.on_activity(None)
         self.state["token_count"] = count
         self.state["last_usage"] = {"tokens": count, "limit": limit}
         if count > limit:
