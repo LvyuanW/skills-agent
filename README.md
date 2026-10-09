@@ -12,24 +12,27 @@ python3 -m venv .venv
 
 export OPENAI_API_KEY='你的密钥'
 export OPENAI_MODEL='支持工具调用的模型名称'
-.venv/bin/skills-agent run --session demo '检查当前工作目录'
+.venv/bin/skills-agent run --session demo
 
-# 使用同一会话继续，或从 stdin 接收任务
-.venv/bin/skills-agent run --session demo '继续分析刚才的结果'
-printf '列出结论\n' | .venv/bin/skills-agent run --session demo
+# 进入后输入自然语言，每行一轮；/exit 或 Ctrl-D 退出
+> 检查当前工作目录
+> 继续分析刚才的结果
+> /exit
 
 # 显示完整主会话历史，无需 API 配置
 .venv/bin/skills-agent history --session demo
 ```
 
-也可以使用 `.venv/bin/python -m skills_agent`。每次 `run` 输出本次新增记录；`history` 按顺序回放整个主会话，不压缩、不裁剪正文或工具输出。
+也可以使用 `.venv/bin/python -m skills_agent`。`run --session demo` 创建或恢复名为 `demo` 的会话，先回放完整主会话历史，再等待输入，回答后继续留在会话中。启动命令不接受消息参数。Ctrl-C 中断当前任务并停止正在运行的脚本，随后可继续输入。`history` 只回放历史，不调用模型；正文和工具输出不压缩、不裁剪。
+
+stdin 每行作为一轮输入，EOF 退出。需要将多行任务作为一次输入并执行到结束时，使用下方的 benchmark 入口。
 
 Anthropic：
 
 ```sh
 export ANTHROPIC_API_KEY='你的密钥'
 export ANTHROPIC_MODEL='支持工具调用的模型名称'
-.venv/bin/skills-agent run --provider anthropic --session claude '检查当前工作目录'
+.venv/bin/skills-agent run --provider anthropic --session claude
 ```
 
 `--model` 优先于对应的 `OPENAI_MODEL` / `ANTHROPIC_MODEL`。`--base-url` 优先于对应的 `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`，值为包含 API 前缀的根地址，例如 `http://localhost:8000/v1`。默认端点分别为 OpenAI `/v1/chat/completions` 和 Anthropic `/v1/messages`。本地兼容服务可以不设置密钥。
@@ -38,19 +41,37 @@ export ANTHROPIC_MODEL='支持工具调用的模型名称'
 
 ```sh
 .venv/bin/skills-agent run --session files \
-  --file ./image.png --file ./report.pdf --file ./data.csv \
-  '结合图片、报告和数据分析差异'
+  --file ./image.png --file ./report.pdf --file ./data.csv
+
+> 结合图片、报告和数据分析差异
+> /file "./new data.csv"
+> 对比新数据
 ```
 
-每个附件先完整复制到会话目录。PNG、JPEG、GIF、WebP 和 PDF 使用模型原生输入，需要所选模型及兼容服务支持该格式。UTF-8 文本作为文本附件输入，过长时模型只收到摘录及完整副本路径。其他格式保留副本路径，由模型编写脚本或使用适合的现有代码读取。
+`--file` 和会话内的 `/file PATH` 将文件加入下一条消息的附件，可添加多个；有附件时直接输入空行也可发送。每个附件先完整复制到会话目录。PNG、JPEG、GIF、WebP 和 PDF 使用模型原生输入，需要所选模型及兼容服务支持该格式。UTF-8 文本作为文本附件输入，过长时模型只收到摘录及完整副本路径。其他格式保留副本路径，由模型编写脚本或使用适合的现有代码读取。
 
-`--workspace` 指定 shell 工作目录，默认当前目录。命令行文件路径相对启动 CLI 时的目录解析。`--sessions-dir` 指定会话存储位置，默认 `<workspace>/.agent/sessions`。
+`--workspace` 指定 shell 工作目录，默认当前目录。附件的相对路径按工作目录解析。`--sessions-dir` 指定会话存储位置，默认 `<workspace>/.agent/sessions`。
+
+## 单次任务与 ALE
+
+```sh
+.venv/bin/python -m skills_agent.benchmark \
+  --prompt-file /path/to/prompt.txt \
+  --workspace /path/to/task \
+  --log-dir /path/to/run-logs
+```
+
+完整任务从 UTF-8 文件读取，执行到模型返回最终回答后退出。模型、技能和附件参数与 `run` 相同。每次运行使用独立的 `<log-dir>/session`，已存在时直接报错。退出码为成功 `0`、失败 `1`、中断 `130`。接到 SIGTERM 时停止当前脚本并退出。
+
+[ALE 接入说明](adapters/ale/README.md) 包含可复制到 ALE 仓库的 Deployer、Agent 配置及单任务 smoke 配置。适配器在 ALE 的任务 sandbox 内安装并运行本项目，产物由 Agent 按题目指定路径写入，日志写入 ALE 的 `executor.work_dir`。
 
 ## 模块
 
 ```text
 skills_agent/
   cli.py             命令行输入与完整主会话回放
+  benchmark.py       从任务文件运行一次并退出
+  runtime.py         两个入口共用的参数与 Agent 构造
   agent.py           同步模型/工具循环、独立子会话
   session/           追加式事件日志、输入附件副本
   context/           历史选择、提取摘要、预算裁剪
@@ -60,6 +81,7 @@ skills_agent/
   sandbox/           Docker 命令执行
   builtin_skills/    内置 workspace skill 及其脚本
 tests/
+adapters/ale/        ALE Deployer 与运行配置
 ```
 
 执行顺序：记录用户输入 → 构建模型上下文 → 调用模型 → 记录回答和工具调用 → 执行工具并记录结果 → 再次调用模型，直到模型返回最终回答。
@@ -117,8 +139,8 @@ python3 analyze.py
 ### Sandbox
 
 ```sh
-.venv/bin/skills-agent run --sandbox-image python:3.12-slim \
-  '在 sandbox 中运行 Python 脚本分析当前目录数据'
+.venv/bin/skills-agent run --sandbox-image python:3.12-slim
+> 在 sandbox 中运行 Python 脚本分析当前目录数据
 ```
 
 提供 `--sandbox-image` 才注册 `sandbox` 工具，需要可运行的 Docker。每次调用启动一个临时容器：禁用网络，工作目录读写挂载，外部技能和会话附件目录只读挂载。脚本依赖需预装在指定镜像中。`shell` 始终在宿主机执行；模型通过 `sandbox` 工具明确选择容器执行，容器失败会返回错误。
@@ -129,6 +151,6 @@ python3 analyze.py
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-测试通过本地模拟模型覆盖两种协议：读取技能与参考源码、返回新脚本源码、写入执行、根据错误修改、验证结果并续聊。同时验证长命令实际执行与完整记录、模型上下文裁剪、附件编码、工具配对、子会话显示隔离和 Docker 参数。模拟模型验证协议及执行链路，不代表真实模型的代码生成质量；未调用远程付费模型，也未验证实际容器启动。
+测试通过本地模拟模型覆盖两种协议：读取技能与参考源码、返回新脚本源码、写入执行、根据错误修改、验证结果并续聊。同时验证多轮交互与恢复历史、长命令实际执行与完整记录、模型上下文裁剪、附件编码、工具配对、子会话显示隔离、进程中断清理和 Docker 参数。ALE 测试需要本地官方源码，运行方法见接入说明。模拟模型验证协议及执行链路，不代表真实模型的代码生成质量；未调用远程付费模型，也未验证实际容器启动。
 
 协议依据：[OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、[OpenAI 文件输入](https://developers.openai.com/api/docs/guides/file-inputs)、[Anthropic 工具调用](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)、[Anthropic 图片](https://platform.claude.com/docs/en/build-with-claude/vision)、[Anthropic PDF](https://platform.claude.com/docs/en/build-with-claude/pdf-support)。

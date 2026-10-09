@@ -1,0 +1,9 @@
+id: skills_agent
+class: ale_run.agents.skills_agent.deployer.SkillsAgentDeployer
+executor: sandbox
+model: ${env:SKILLS_AGENT_MODEL}
+config:
+  package: ${env:SKILLS_AGENT_PACKAGE}
+  provider: openai
+  base_url: ${env:OPENAI_BASE_URL}
+  api_key: ${env:OPENAI_API_KEY}

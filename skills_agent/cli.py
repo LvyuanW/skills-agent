@@ -1,13 +1,10 @@
 import argparse
-import os
 from pathlib import Path
+import shlex
 import sys
 
-from .agent import Agent
-from .providers import create_provider
-from .sandbox import DockerSandbox
+from .runtime import add_agent_arguments, create_agent
 from .session import Session
-from .skills import SkillRegistry
 
 
 def render_event(event, output=None):
@@ -47,22 +44,67 @@ def render_event(event, output=None):
 def parser():
     result = argparse.ArgumentParser(prog="skills-agent")
     commands = result.add_subparsers(dest="command", required=True)
-    run = commands.add_parser("run", help="执行任务；使用同一 session 续聊")
+    run = commands.add_parser("run", help="进入会话并进行多轮交互")
     history = commands.add_parser("history", help="显示完整主会话记录")
     for command in (run, history):
         command.add_argument("--workspace", type=Path, default=Path.cwd())
         command.add_argument("--sessions-dir", type=Path)
         command.add_argument("--session", default="default")
-    run.add_argument("prompt", nargs="?", help="省略时从 stdin 读取")
-    run.add_argument("--file", action="append", type=Path, default=[])
-    run.add_argument("--provider", choices=["openai", "anthropic"], default="openai")
-    run.add_argument("--model", help="也可设置 OPENAI_MODEL 或 ANTHROPIC_MODEL")
-    run.add_argument("--base-url", help="兼容服务的 API base URL")
-    run.add_argument("--skill-dir", action="append", type=Path, default=[])
-    run.add_argument("--context-chars", type=int, default=48000)
-    run.add_argument("--max-output-tokens", type=int, default=4096)
-    run.add_argument("--sandbox-image", help="提供 sandbox 工具，使用指定 Docker 镜像")
+    run.add_argument("--file", action="append", type=Path, default=[], help="作为下一条消息的附件")
+    add_agent_arguments(run)
     return result
+
+
+def attachment_path(value, workspace):
+    path = Path(value).expanduser()
+    path = (path if path.is_absolute() else workspace / path).resolve(strict=True)
+    if not path.is_file():
+        raise ValueError(f"Attachment is not a file: {path}")
+    return path
+
+
+def interact(agent, files):
+    pending_files = []
+    for path in files:
+        try:
+            pending_files.append(attachment_path(path, agent.workspace))
+        except (ValueError, OSError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+    while True:
+        try:
+            prompt = input("> " if sys.stdin.isatty() else "")
+        except EOFError:
+            return 0
+        except KeyboardInterrupt:
+            print()
+            continue
+        command = prompt.strip()
+        if command == "/exit":
+            return 0
+        if command == "/file" or command.startswith("/file "):
+            try:
+                parts = shlex.split(command)
+                if len(parts) != 2:
+                    raise ValueError("用法：/file PATH；路径包含空格时使用引号")
+                pending_files.append(attachment_path(parts[1], agent.workspace))
+            except (ValueError, OSError) as exc:
+                print(f"error: {exc}", file=sys.stderr)
+            continue
+        if not command and not pending_files:
+            continue
+        attachments, pending_files = pending_files, []
+        try:
+            user_message = agent.session.make_user_message(prompt, attachments)
+        except (ValueError, OSError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            continue
+        try:
+            agent.run(user_message)
+        except KeyboardInterrupt:
+            print()
+        except Exception:
+            # Agent.run records and renders each turn's error.
+            continue
 
 
 def main(argv=None):
@@ -75,40 +117,14 @@ def main(argv=None):
         if args.command == "history" and not (root / args.session / "events.jsonl").is_file():
             raise ValueError(f"会话不存在：{args.session}")
         session = Session(root, args.session)
+        for event in session.events():
+            render_event(event)
         if args.command == "history":
-            for event in session.events():
-                render_event(event)
             return 0
-        prompt = args.prompt
-        if prompt is None:
-            prompt = "" if sys.stdin.isatty() else sys.stdin.read()
-        if not prompt.strip() and not args.file:
-            raise ValueError("需要任务文本或 --file 输入")
-        prefix = args.provider.upper()
-        model_name = args.model or os.environ.get(f"{prefix}_MODEL", "")
-        if not model_name:
-            raise ValueError(f"需要 --model 或 {prefix}_MODEL")
-        model = create_provider(
-            args.provider, model_name, os.environ.get(f"{prefix}_API_KEY", ""),
-            base_url=args.base_url or os.environ.get(f"{prefix}_BASE_URL"),
-            max_output_tokens=args.max_output_tokens,
-        )
-        roots = [Path(__file__).parent / "builtin_skills", workspace / "skills", *args.skill_dir]
-        skills = SkillRegistry(roots)
-        sandbox = DockerSandbox(
-            image=args.sandbox_image, workspace=workspace,
-            skill_roots=[path for path in skills.roots if path.is_dir()],
-            read_roots=[root],
-        ) if args.sandbox_image else None
-        user_message = session.make_user_message(prompt, args.file)
-        agent = Agent(model, session, skills, workspace, context_chars=args.context_chars,
-                      sandbox=sandbox, on_event=render_event)
-        agent.run(user_message)
-        return 0
+        agent = create_agent(args, session, on_event=render_event)
+        return interact(agent, args.file)
     except (ValueError, OSError, RuntimeError) as exc:
-        # Agent errors were already recorded and rendered.
-        if "agent" not in locals():
-            print(f"error: {exc}", file=sys.stderr)
+        print(f"error: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         return 130

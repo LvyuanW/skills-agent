@@ -1,0 +1,13 @@
+name: skills_agent_smoke
+agents:
+  - configs/agents/skills_agent.yaml
+environment: configs/environments/docker.yaml
+tasks:
+  - path: computing_math/os_log_permission_guard_v1
+    variants: [0]
+output:
+  root: .logs/skills_agent
+concurrency: 1
+auto_resume: false
+max_attempts: 1
+cleanup_mode: delete

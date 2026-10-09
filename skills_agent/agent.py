@@ -99,6 +99,9 @@ class Agent:
                         "role": "tool", "name": call["name"], "tool_call_id": call["id"],
                         "content": result,
                     })
+        except KeyboardInterrupt:
+            self._event({"type": "error", "message": "Interrupted"})
+            raise
         except Exception as exc:
             event = {"type": "error", "message": str(exc)}
             if getattr(exc, "raw", None) is not None:

@@ -1,6 +1,8 @@
 """The small tool boundary: shell, sandbox, and subagents."""
 
 import json
+import os
+import signal
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -61,14 +63,24 @@ class ToolRegistry:
                 if not isinstance(value, str):
                     raise ValueError(f"Argument {key} must be a string")
             if name == "shell":
-                process = subprocess.run(
+                with subprocess.Popen(
                     values["command"], shell=True, cwd=self.workspace,
-                    capture_output=True, text=True, errors="replace",
-                )
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    text=True, errors="replace", start_new_session=True,
+                ) as process:
+                    try:
+                        stdout, stderr = process.communicate()
+                    except BaseException:
+                        try:
+                            os.killpg(process.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                        process.wait()
+                        raise
                 result = {
                     "exit_code": process.returncode,
-                    "stdout": process.stdout,
-                    "stderr": process.stderr,
+                    "stdout": stdout,
+                    "stderr": stderr,
                 }
             elif name == "sandbox":
                 result = self.sandbox.run(values["command"])

@@ -8,6 +8,7 @@ import sys
 from tempfile import TemporaryDirectory
 import threading
 import unittest
+from unittest.mock import patch
 
 from skills_agent.agent import Agent
 from skills_agent.cli import main, render_event
@@ -194,15 +195,125 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertIn("  unchanged\ntext  ", output.getvalue())
 
-    def test_missing_attachment_is_reported(self):
-        import os
-        from unittest.mock import patch
-        with TemporaryDirectory() as directory, patch.dict(os.environ, {"OPENAI_MODEL": "test"}):
-            error = io.StringIO()
-            with redirect_stderr(error):
-                code = main(["run", "--workspace", directory, "--file", directory + "/absent", "task"])
-            self.assertEqual(code, 1)
-            self.assertIn("error:", error.getvalue())
+
+class CLIInteractionTests(unittest.TestCase):
+    def invoke(self, directory, model, lines, *options):
+        output, error = io.StringIO(), io.StringIO()
+        with patch("skills_agent.runtime.create_provider", return_value=model) as provider, \
+                patch("sys.stdin", io.StringIO(lines)), redirect_stdout(output), redirect_stderr(error):
+            code = main(["run", "--workspace", directory, "--model", "test", *options])
+        provider.assert_called_once()
+        return code, output.getvalue(), error.getvalue()
+
+    def test_named_session_opens_without_submitting_a_task(self):
+        class Model:
+            def complete(self, *args):
+                raise AssertionError("Starting a session must wait for input")
+
+        with TemporaryDirectory() as directory:
+            code, output, error = self.invoke(directory, Model(), "/exit\n", "--session", "demo")
+            self.assertEqual((code, output, error), (0, "", ""))
+            self.assertTrue((Path(directory) / ".agent" / "sessions" / "demo").is_dir())
+
+    def test_run_rejects_startup_prompt(self):
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as result:
+            main(["run", "startup task"])
+        self.assertEqual(result.exception.code, 2)
+
+    def test_piped_lines_are_distinct_turns_and_preserve_user_text(self):
+        class Model:
+            def complete(self, system, messages, tools):
+                self.messages = messages
+                return answer("response")
+
+        with TemporaryDirectory() as directory:
+            model = Model()
+            code, output, error = self.invoke(directory, model, "  first turn  \nsecond turn\n")
+            self.assertEqual((code, error), (0, ""))
+            messages = Session(Path(directory) / ".agent" / "sessions", "default").messages()
+            self.assertEqual([message["role"] for message in messages],
+                             ["user", "assistant", "user", "assistant"])
+            self.assertEqual(messages[0]["content"], [{"type": "text", "text": "  first turn  "}])
+            self.assertIn("first turn", json.dumps(model.messages))
+            self.assertIn("second turn", json.dumps(model.messages))
+            self.assertEqual(output.count("assistant:\nresponse"), 2)
+
+    def test_files_and_images_are_queued_for_only_the_next_turn(self):
+        class Model:
+            def complete(self, *args):
+                return answer("attached")
+
+        with TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            (workspace / "data.csv").write_text("a,b\n1,2\n")
+            (workspace / "sample image.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+            code, output, error = self.invoke(
+                directory, Model(), '/file "sample image.png"\ninspect these\nfollow up\n/exit\n',
+                "--file", "data.csv",
+            )
+            self.assertEqual((code, error), (0, ""))
+            users = [message for message in Session(workspace / ".agent" / "sessions", "default").messages()
+                     if message["role"] == "user"]
+            self.assertEqual([block["type"] for block in users[0]["content"]], ["text", "text", "image"])
+            self.assertEqual(users[0]["content"][1]["name"], "data.csv")
+            self.assertEqual(users[0]["content"][2]["name"], "sample image.png")
+            self.assertEqual(users[1]["content"], [{"type": "text", "text": "follow up"}])
+
+    def test_file_errors_are_reported_and_session_continues(self):
+        class Model:
+            def complete(self, *args):
+                return answer("done")
+
+        with TemporaryDirectory() as directory:
+            code, output, error = self.invoke(
+                directory, Model(), "/file missing.txt\n/file\nkeep working\n/exit\n",
+                "--file", "also-missing.txt",
+            )
+            self.assertEqual(code, 0)
+            self.assertEqual(error.count("error:"), 3)
+            self.assertIn("assistant:\ndone", output)
+
+    def test_provider_error_is_shown_once_and_next_turn_runs(self):
+        class Model:
+            count = 0
+
+            def complete(self, *args):
+                self.count += 1
+                if self.count == 1:
+                    raise ProviderError("failed request")
+                return answer("done")
+
+        with TemporaryDirectory() as directory:
+            code, output, error = self.invoke(directory, Model(), "first\ntry again\n/exit\n")
+            self.assertEqual((code, error), (0, ""))
+            self.assertEqual(output.count("error: failed request"), 1)
+            self.assertIn("assistant:\ndone", output)
+
+    def test_ctrl_c_at_prompt_returns_to_prompt(self):
+        class Model:
+            def complete(self, *args):
+                return answer("done")
+
+        with TemporaryDirectory() as directory, \
+                patch("builtins.input", side_effect=[KeyboardInterrupt(), "task", "/exit"]):
+            code, output, error = self.invoke(directory, Model(), "")
+            self.assertEqual((code, error), (0, ""))
+            self.assertIn("assistant:\ndone", output)
+
+    def test_ctrl_c_during_turn_returns_to_prompt(self):
+        class Model:
+            count = 0
+
+            def complete(self, *args):
+                self.count += 1
+                if self.count == 1:
+                    raise KeyboardInterrupt()
+                return answer("done")
+
+        with TemporaryDirectory() as directory:
+            code, output, error = self.invoke(directory, Model(), "first\nsecond\n/exit\n")
+            self.assertEqual((code, error), (0, ""))
+            self.assertIn("assistant:\ndone", output)
 
 
 class CLIProtocolTests(unittest.TestCase):
@@ -274,7 +385,8 @@ class CLIProtocolTests(unittest.TestCase):
                     command = [sys.executable, "-m", "skills_agent", "run", "--workspace", directory,
                                "--provider", provider, "--model", "test-model", "--base-url",
                                f"http://127.0.0.1:{server.server_port}/v1"]
-                    first = subprocess.run([*command, "create result"], capture_output=True, text=True)
+                    first = subprocess.run(command, input="create result\nfollow up\n/exit\n",
+                                           capture_output=True, text=True)
                     self.assertEqual(first.returncode, 0, first.stderr + first.stdout)
                     self.assertEqual((workspace / "result.txt").read_text(), "10")
                     self.assertEqual((workspace / "task.py").read_text(), fixed_source)
@@ -302,19 +414,22 @@ class CLIProtocolTests(unittest.TestCase):
                         self.assertEqual(received[-1], results[index])
                     session_log = workspace / ".agent" / "sessions" / "default" / "events.jsonl"
                     before = session_log.read_bytes()
-                    second = subprocess.run(command, input="continue via stdin\n", capture_output=True, text=True)
+                    second = subprocess.run(command, input="continue via stdin\n/exit\n",
+                                            capture_output=True, text=True)
                     self.assertEqual(second.returncode, 0, second.stderr + second.stdout)
                     self.assertTrue(session_log.read_bytes().startswith(before))
-                    self.assertEqual(len(requests), 5)
+                    self.assertEqual(len(requests), 6)
                     self.assertNotIn("_raw", json.dumps(requests[-1]))
                     self.assertIn("create result", json.dumps(requests[-1]))
+                    self.assertIn("follow up", json.dumps(requests[-1]))
                     self.assertIn("continue via stdin", json.dumps(requests[-1]))
                     history = subprocess.run(
                         [sys.executable, "-m", "skills_agent", "history", "--workspace", directory],
                         capture_output=True, text=True,
                     )
                     self.assertEqual(history.returncode, 0, history.stderr)
-                    self.assertEqual(history.stdout, first.stdout + second.stdout)
+                    self.assertTrue(second.stdout.startswith(first.stdout))
+                    self.assertEqual(history.stdout, second.stdout)
                     expected = "/v1/chat/completions" if provider == "openai" else "/v1/messages"
                     self.assertTrue(all(path == expected for path, _ in requests))
                 finally:

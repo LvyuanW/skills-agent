@@ -1,6 +1,9 @@
 """Execute commands inside an explicitly configured Docker container."""
 
+import os
+import signal
 import subprocess
+import uuid
 from pathlib import Path
 
 
@@ -25,14 +28,35 @@ class DockerSandbox:
             # Paths in the workspace are already accessible and writable.
             if not root.is_relative_to(self.workspace):
                 mounts[root] = "ro"
-        args = ["docker", "run", "--rm", "--network", "none"]
+        container_name = f"skills-agent-{uuid.uuid4().hex}"
+        args = ["docker", "run", "--rm", "--network", "none", "--name", container_name]
         # Parent mounts precede children so the workspace keeps its writable mount.
         for root, mode in sorted(mounts.items(), key=lambda item: len(item[0].parts)):
             args.extend(["-v", f"{root}:{root}:{mode}"])
         args.extend(["-w", str(self.workspace), self.image, "sh", "-lc", command])
-        result = subprocess.run(args, capture_output=True, text=True, errors="replace")
+        with subprocess.Popen(
+            args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, errors="replace", start_new_session=True,
+        ) as process:
+            try:
+                stdout, stderr = process.communicate()
+            except BaseException:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait()
+                try:
+                    subprocess.run(
+                        ["docker", "rm", "-f", container_name],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        timeout=5,
+                    )
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
+                raise
         return {
-            "exit_code": result.returncode,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
+            "exit_code": process.returncode,
+            "stdout": stdout,
+            "stderr": stderr,
         }

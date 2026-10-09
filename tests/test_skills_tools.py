@@ -1,8 +1,11 @@
 import json
+import os
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -65,6 +68,56 @@ class SkillsToolsTests(unittest.TestCase):
     def test_shell_does_not_truncate_output(self):
         result = self.shell(shlex.join([sys.executable, "-c", "print('x' * 100000)"]))
         self.assertEqual(len(result["stdout"]), 100001)
+
+    @unittest.skipUnless(os.name == "posix", "Shell process groups require POSIX")
+    def test_shell_interrupt_kills_descendants_and_propagates(self):
+        child_file = self.workspace / "child.pid"
+        source = (
+            "import os, subprocess, sys, time; from pathlib import Path; "
+            "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
+            "Path('child.pid').write_text(str(child.pid)); time.sleep(60)"
+        )
+        real_popen = subprocess.Popen
+        launched = []
+
+        def interrupt_when_child_starts(*args, **kwargs):
+            process = real_popen(*args, **kwargs)
+            launched.append(process)
+
+            def communicate():
+                deadline = time.monotonic() + 5
+                while not child_file.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(child_file.exists(), "Shell did not launch its child")
+                raise KeyboardInterrupt
+
+            process.communicate = communicate
+            return process
+
+        try:
+            with patch("skills_agent.tools.subprocess.Popen", side_effect=interrupt_when_child_starts):
+                with self.assertRaises(KeyboardInterrupt):
+                    self.shell(shlex.join([sys.executable, "-c", source]))
+            self.assertIsNotNone(launched[0].returncode)
+            child_pid = int(child_file.read_text())
+            deadline = time.monotonic() + 5
+            while True:
+                status = subprocess.run(
+                    ["ps", "-o", "stat=", "-p", str(child_pid)], capture_output=True, text=True,
+                ).stdout.strip()
+                # An orphan may remain a zombie until the host init process reaps it.
+                if not status or status.startswith("Z"):
+                    break
+                if time.monotonic() >= deadline:
+                    self.fail(f"Shell descendant {child_pid} survived interruption: {status}")
+                time.sleep(0.01)
+        finally:
+            for process in launched:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait()
 
     def test_workspace_script_reads_requested_lines(self):
         (self.workspace / "text.txt").write_text("first\nsecond\nthird\nfourth\n", encoding="utf-8")
@@ -176,30 +229,51 @@ class SkillsToolsTests(unittest.TestCase):
         self.assertEqual(calls, [("review", "inspect files")])
         self.assertEqual(result, {"result": "complete result"})
 
-    @patch("skills_agent.sandbox.subprocess.run")
-    def test_sandbox_mounts_external_inputs_without_overriding_workspace(self, run):
-        run.return_value = subprocess.CompletedProcess([], 3, "output", "error")
+    @patch("skills_agent.sandbox.subprocess.Popen")
+    def test_sandbox_mounts_external_inputs_without_overriding_workspace(self, popen):
+        process = popen.return_value.__enter__.return_value
+        process.returncode = 3
+        process.communicate.return_value = ("output", "error")
         inside = self.workspace / "skills"
         outside = self.workspace.parent / "external-skills"
         attachments = self.workspace.parent / "session"
         sandbox = DockerSandbox("python:3.11", self.workspace, [inside, outside], [attachments])
         self.assertEqual(sandbox.run("python script.py"), {"exit_code": 3, "stdout": "output", "stderr": "error"})
-        args = run.call_args.args[0]
+        args = popen.call_args.args[0]
         self.assertEqual(args[:5], ["docker", "run", "--rm", "--network", "none"])
+        self.assertEqual(args[5], "--name")
+        self.assertTrue(args[6].startswith("skills-agent-"))
         self.assertIn(f"{self.workspace}:{self.workspace}:rw", args)
         self.assertIn(f"{outside}:{outside}:ro", args)
         self.assertIn(f"{attachments}:{attachments}:ro", args)
         self.assertNotIn(f"{inside}:{inside}:ro", args)
         self.assertEqual(args[-6:], ["-w", str(self.workspace), "python:3.11", "sh", "-lc", "python script.py"])
-        self.assertNotIn("shell", run.call_args.kwargs)
+        self.assertNotIn("shell", popen.call_args.kwargs)
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
 
-    @patch("skills_agent.sandbox.subprocess.run", side_effect=FileNotFoundError("docker unavailable"))
-    def test_missing_docker_returns_error_without_host_execution(self, run):
+    @patch("skills_agent.sandbox.subprocess.run")
+    @patch("skills_agent.sandbox.os.killpg")
+    @patch("skills_agent.sandbox.subprocess.Popen")
+    def test_sandbox_interrupt_removes_container_and_propagates(self, popen, killpg, run):
+        process = popen.return_value.__enter__.return_value
+        process.pid = 123
+        process.communicate.side_effect = KeyboardInterrupt
+        tools = ToolRegistry(self.workspace, DockerSandbox("python:3.11", self.workspace))
+        with self.assertRaises(KeyboardInterrupt):
+            tools.execute("sandbox", '{"command": "sleep 60"}')
+        killpg.assert_called_once_with(123, signal.SIGKILL)
+        process.wait.assert_called_once()
+        container_name = popen.call_args.args[0][6]
+        self.assertEqual(run.call_args.args[0], ["docker", "rm", "-f", container_name])
+        self.assertEqual(run.call_args.kwargs["timeout"], 5)
+
+    @patch("skills_agent.sandbox.subprocess.Popen", side_effect=FileNotFoundError("docker unavailable"))
+    def test_missing_docker_returns_error_without_host_execution(self, popen):
         tools = ToolRegistry(self.workspace, DockerSandbox("python:3.11", self.workspace))
         result = json.loads(tools.execute("sandbox", '{"command": "touch should-not-exist"}'))
         self.assertIn("docker unavailable", result["error"])
-        run.assert_called_once()
-        self.assertEqual(run.call_args.args[0][0], "docker")
+        popen.assert_called_once()
+        self.assertEqual(popen.call_args.args[0][0], "docker")
         self.assertFalse((self.workspace / "should-not-exist").exists())
 
 
