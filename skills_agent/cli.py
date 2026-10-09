@@ -137,6 +137,101 @@ def render_event(event, output=None, *, full=False, echo_user=True):
             _render_full_event(event, output)
 
 
+class ConsoleRenderer:
+    """Display public text as it arrives, then render the recorded result once."""
+
+    def __init__(self, output=None, *, full=False, echo_user=True):
+        self.output = output or sys.stdout
+        self.full = full
+        self.echo_user = echo_user
+        self._streaming = False
+        self._line_ended = False
+        self._had_deltas = False
+        self._calls = {}
+
+    def _write_delta(self, text):
+        if not text:
+            return
+        if not self._streaming:
+            _print("assistant:", "assistant", self.output)
+            self._streaming = True
+        displayed = text
+        if self.output.isatty():
+            color = _COLORS["assistant"]
+            displayed = color + text.replace("\n", _RESET + "\n" + color)
+        self.output.write(displayed)
+        self.output.flush()
+        self._line_ended = text.endswith("\n")
+
+    def _tool_delta(self, event):
+        call = self._calls.setdefault(event["index"], {
+            "name": "", "arguments": "", "announced": False, "shown": False,
+        })
+        for key in ("name", "arguments"):
+            call[key] += event.get(key) or ""
+        if call["name"] not in {"shell", "sandbox"}:
+            return
+        try:
+            arguments = json.loads(call["arguments"])
+        except ValueError:
+            arguments = None
+        display = None
+        if isinstance(arguments, dict) and not call["shown"]:
+            if self.full:
+                display = f"tool_call {call['name']}: {call['arguments']}"
+            else:
+                summary = arguments.get("summary")
+                if isinstance(summary, str) and summary.strip():
+                    display = f"· {call['name']}：{_brief(summary)}"
+                elif not call["announced"]:
+                    display = f"· {call['name']}：执行脚本"
+            call["shown"] = True
+        elif not call["announced"]:
+            display = f"· {call['name']}：接收调用"
+        if display is not None:
+            self._finish_stream()
+            _print(display, "tool", self.output)
+            call["announced"] = True
+
+    def _finish_stream(self):
+        if not self._streaming:
+            return
+        if self.output.isatty():
+            self.output.write(_RESET)
+        if not self._line_ended:
+            self.output.write("\n")
+        self.output.flush()
+        self._streaming = False
+        self._line_ended = False
+
+    def close(self):
+        self._finish_stream()
+
+    def __call__(self, event):
+        if event.get("type") == "text_delta":
+            self._had_deltas = self._had_deltas or bool(event["text"])
+            self._write_delta(event["text"])
+            return
+        if event.get("type") == "tool_call_delta":
+            self._had_deltas = True
+            self._tool_delta(event)
+            return
+        self._finish_stream()
+        if event.get("type") == "message" and event["message"]["role"] == "assistant":
+            streamed = event.get("streamed") or self._had_deltas
+            self._had_deltas = False
+            self._calls.clear()
+            if streamed:
+                return
+        elif event.get("type") == "error":
+            streamed = self._had_deltas
+            self._had_deltas = False
+            self._calls.clear()
+            if self.full and streamed and event.get("partial_content"):
+                event = {key: value for key, value in event.items() if key != "partial_content"}
+        render_event(event, self.output, full=self.full, echo_user=self.echo_user)
+
+
 def parser():
     result = argparse.ArgumentParser(prog="skills-agent")
     commands = result.add_subparsers(dest="command", required=True)
@@ -214,13 +309,13 @@ def main(argv=None):
         if args.command == "history" and not (root / args.session / "events.jsonl").is_file():
             raise ValueError(f"会话不存在：{args.session}")
         session = Session(root, args.session)
+        replay = ConsoleRenderer(full=args.command == "history" and args.full)
         for event in session.events():
-            render_event(event, full=args.command == "history" and args.full)
+            replay(event)
+        replay.close()
         if args.command == "history":
             return 0
-        agent = create_agent(args, session, on_event=lambda event: render_event(
-            event, echo_user=False,
-        ))
+        agent = create_agent(args, session, on_event=ConsoleRenderer(echo_user=False))
         return interact(agent, args.file)
     except (ValueError, OSError, RuntimeError) as exc:
         _print(f"error: {exc}", "assistant", sys.stderr)

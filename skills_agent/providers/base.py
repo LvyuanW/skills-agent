@@ -1,5 +1,6 @@
 import base64
 import json
+from http.client import HTTPException
 from pathlib import Path
 from typing import Protocol
 from urllib import error, request
@@ -14,30 +15,58 @@ class ProviderError(RuntimeError):
 
 
 class Provider(Protocol):
-    def complete(self, system: str, messages: list[dict], tools: list[dict]) -> dict: ...
+    def complete(self, system: str, messages: list[dict], tools: list[dict],
+                 *, on_event=None) -> dict: ...
 
 
-def post_json(url: str, payload: dict, headers: dict) -> dict:
+def post_stream(url: str, payload: dict, headers: dict):
+    """Yield JSON SSE frames; a terminal [DONE] frame yields None."""
     req = request.Request(
         url,
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json", **headers},
+        headers={"Content-Type": "application/json", "Accept": "text/event-stream", **headers},
         method="POST",
     )
+
+    def parse(lines):
+        data = "\n".join(lines)
+        if data == "[DONE]":
+            return None
+        try:
+            event = json.loads(data)
+        except (ValueError, UnicodeError):
+            raise ProviderError("API returned invalid stream JSON") from None
+        if not isinstance(event, dict):
+            raise ProviderError("API stream event must be a JSON object")
+        return event
+
     try:
         with request.urlopen(req, timeout=120) as response:
-            data = json.load(response)
+            data = []
+            for line in response:
+                line = line.decode("utf-8").rstrip("\r\n")
+                if not line:
+                    if data:
+                        event = parse(data)
+                        data = []
+                        yield event
+                        if event is None:
+                            return
+                    continue
+                if line.startswith(":"):
+                    continue
+                field, separator, value = line.partition(":")
+                if field == "data":
+                    data.append(value.removeprefix(" ") if separator else "")
+            if data:
+                yield parse(data)
     except error.HTTPError as exc:
+        exc.close()
         raise ProviderError(f"API HTTP error {exc.code}") from None
-    except (error.URLError, OSError):
+    except (error.URLError, OSError, HTTPException):
         raise ProviderError("API connection failed") from None
-    except (ValueError, UnicodeError):
-        raise ProviderError("API returned invalid JSON") from None
-    if not isinstance(data, dict):
-        raise ProviderError("API response must be a JSON object")
-    if "error" in data:
-        raise ProviderError("API returned an error")
-    return data
+    except UnicodeError:
+        raise ProviderError("API returned invalid stream encoding") from None
 
 
 def blocks(content: str | list | None) -> list[dict]:

@@ -5,7 +5,7 @@ from pathlib import Path
 import signal
 import sys
 
-from .cli import render_event
+from .cli import ConsoleRenderer
 from .runtime import add_agent_arguments, create_agent
 from .session import Session
 
@@ -35,7 +35,7 @@ def main(argv=None):
         paths = [path.expanduser() for path in args.file]
         paths = [path if path.is_absolute() else workspace / path for path in paths]
         user_message = session.make_user_message(prompt, paths)
-        agent = create_agent(args, session, on_event=render_event)
+        agent = create_agent(args, session, on_event=ConsoleRenderer())
         agent.run(user_message)
         return 0
     except KeyboardInterrupt:

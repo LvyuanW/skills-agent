@@ -28,7 +28,7 @@ export OPENAI_MODEL='支持工具调用的模型名称'
 
 也可以使用 `.venv/bin/python -m skills_agent`。`run --session demo` 创建或恢复名为 `demo` 的会话，先按时间顺序回放主会话，再等待输入，回答后继续留在会话中。启动命令不接受消息参数。Ctrl-C 中断当前任务并停止正在运行的脚本，随后可继续输入。
 
-终端默认将中间过程显示为简短步骤摘要，以及工具的完成状态、失败退出码和输出行数；不展开命令源码、工具 JSON 或思考原文。最终回答完整显示。`run` 不再次打印当前输入的消息，附件只列名称。用户输入为黑底白字，Agent 回复为白底黑字，工具摘要为白底蓝字。颜色只用于终端，重定向输出及原始日志不含新增的颜色控制码。`history` 使用相同的摘要显示；`history --full` 展开完整公开记录，不调用模型。原始日志始终完整保存，摘要只影响显示，不额外调用模型。
+两种 API 均使用流式接收。正文收到即显示；正文和工具调用按到达顺序记录、渲染，历史回放保持相同顺序。工具调用只显示摘要及完成状态、失败退出码和输出行数，不展开命令源码、工具 JSON 或思考字段。`run` 不再次打印当前输入的消息，附件只列名称。用户输入为黑底白字，Agent 回复为白底黑字，工具摘要为白底蓝字。颜色只用于终端，重定向输出及原始日志不含新增的颜色控制码。`history` 使用相同的摘要显示；`history --full` 展开完整公开记录，不调用模型。原始日志始终完整保存，摘要只影响显示，不额外调用模型。
 
 stdin 每行作为一轮输入，EOF 退出。需要将多行任务作为一次输入并执行到结束时，使用下方的 benchmark 入口。
 
@@ -89,11 +89,11 @@ tests/
 adapters/ale/        ALE Deployer 与运行配置
 ```
 
-执行顺序：记录用户输入 → 构建模型上下文 → 调用模型 → 记录回答和工具调用 → 执行工具并记录结果 → 再次调用模型，直到模型返回最终回答。
+执行顺序：记录用户输入 → 构建模型上下文 → 流式接收、记录和显示模型事件 → 响应完整后执行工具并记录结果 → 再次调用模型，直到模型返回最终回答。
 
 ### 会话与上下文
 
-- `events.jsonl` 只追加，保存完整原始文本、工具参数、工具输出及模型原始响应 `_raw`。附件在 `attachments/`，子会话在 `subagents/`。
+- `events.jsonl` 只追加，按接收顺序保存正文和工具调用片段，响应结束后保存完整消息及原始 API 分片 `_raw.stream_events`，完整消息用于构建模型上下文，显示时不重复输出。工具参数、工具输出和中断前收到的内容均保留。附件在 `attachments/`，子会话在 `subagents/`。
 - 终端显示主 Agent 的对话及中间步骤摘要。sub-agent 的调用细节、内部对话及直接返回值不展示，只显示目标摘要，例如 `sub-agent 处理了：统计文件`，`history --full` 也遵循此规则。主 Agent 使用返回结果完成最终回答。
 - sub-agent 与主 Agent 共享工作目录、技能和模型配置；拥有独立历史和上下文，只接收 `task` 中显式给出的信息，只返回最终结果。执行是同步的，子 Agent 不再创建子 Agent。
 - 模型上下文从日志构建，去掉 `_raw`。超出预算时压缩已执行的长命令源码、工具输出和文本附件，再按近期与关键词相关性选择历史，对遗漏内容生成提取式摘要。命令摘录标明已经执行，并通过工具调用 ID 指向会话中的完整原文；实际执行和原始日志使用完整命令。摘要不额外调用模型。
@@ -139,7 +139,7 @@ python3 analyze.py
 
 脚本可使用当前环境中安装的语言与库，无需注册、固定入口或统一返回格式。shell 返回退出码、stdout 和 stderr，模型据此继续修改代码。配置的技能说明作为任务指导，普通输入资料与执行结果作为数据。
 
-shell 和 sandbox 可附带 `summary`，用简短自然语言说明此次操作的目的，供终端显示。它不影响脚本执行；未提供时显示“执行脚本”。未完成的回答只提示已保存部分输出，原文可用 `history --full` 查看。
+shell 和 sandbox 可附带 `summary`，用简短自然语言说明此次操作的目的，供终端显示。它不影响脚本执行；参数尚未收全时显示“接收调用”，完整后显示摘要，未提供摘要时仅显示调用及完成状态。断流或中断时保留已经显示的正文，并记录错误，不执行不完整的工具调用。
 
 内置 `workspace` skill 讲解文本读取和检索方法，附带可阅读、改写的参考实现。会话历史使用其中的 `history` 辅助命令读取，保留公开记录并排除隐藏的子会话细节。
 
@@ -160,4 +160,4 @@ shell 和 sandbox 可附带 `summary`，用简短自然语言说明此次操作�
 
 测试通过本地模拟模型覆盖两种协议：读取技能与参考源码、返回新脚本源码、写入执行、根据错误修改、验证结果并续聊。同时验证多轮交互与恢复历史、长命令实际执行与完整记录、模型上下文裁剪、附件编码、工具配对、子会话显示隔离、进程中断清理和 Docker 参数。ALE 测试需要本地官方源码，运行方法见接入说明。模拟模型验证协议及执行链路，不代表真实模型的代码生成质量；未调用远程付费模型，也未验证实际容器启动。
 
-协议依据：[OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、[OpenAI 文件输入](https://developers.openai.com/api/docs/guides/file-inputs)、[Anthropic 工具调用](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)、[Anthropic 图片](https://platform.claude.com/docs/en/build-with-claude/vision)、[Anthropic PDF](https://platform.claude.com/docs/en/build-with-claude/pdf-support)。
+协议依据：[OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、[OpenAI 流事件](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events)、[OpenAI 文件输入](https://developers.openai.com/api/docs/guides/file-inputs)、[Anthropic 流事件](https://platform.claude.com/docs/en/build-with-claude/streaming)、[Anthropic 工具调用](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)、[Anthropic 图片](https://platform.claude.com/docs/en/build-with-claude/vision)、[Anthropic PDF](https://platform.claude.com/docs/en/build-with-claude/pdf-support)。

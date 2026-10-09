@@ -10,6 +10,8 @@ import threading
 import time
 import unittest
 
+from tests.sse import stream_response
+
 from skills_agent.benchmark import main
 
 
@@ -24,9 +26,9 @@ class BenchmarkTests(unittest.TestCase):
             def do_POST(self):
                 payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 requests.append(payload)
-                body = json.dumps(reply(len(requests))).encode()
+                body = stream_response(reply(len(requests)))
                 self.send_response(200)
-                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
@@ -85,7 +87,7 @@ class BenchmarkTests(unittest.TestCase):
             (root / "prompt.txt").write_text("task")
             process = subprocess.run(self.command(root, endpoint), text=True, capture_output=True)
             self.assertEqual(process.returncode, 1)
-            self.assertNotIn("original partial", process.stdout)
+            self.assertEqual(process.stdout.count("original partial"), 1)
             self.assertIn("回答未完成", process.stdout)
             events = [json.loads(line) for line in (root / "logs/session/events.jsonl").read_text().splitlines()]
             self.assertEqual(events[-1]["type"], "error")

@@ -17,6 +17,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from tests.sse import stream_response
+
 
 ROOT = Path(__file__).resolve().parents[1]
 ALE_SOURCE = os.environ.get("ALE_SOURCE_DIR")
@@ -179,9 +181,9 @@ class AdapterTests(unittest.TestCase):
                             "name": "shell", "arguments": json.dumps({"command": command}),
                         }}],
                     }}]}
-                    encoded = json.dumps(body).encode()
+                    encoded = stream_response(body)
                     self.send_response(200)
-                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Type", "text/event-stream")
                     self.send_header("Content-Length", str(len(encoded)))
                     self.end_headers()
                     self.wfile.write(encoded)
@@ -341,9 +343,9 @@ except asyncio.CancelledError:
                                     "content": [{"type": "tool_use", "id": "shell1", "name": "shell", "input": {"command": command}}]
                                     if len(requests) == 1 else [{"type": "text", "text": "done"}],
                                     "usage": {"input_tokens": 5, "output_tokens": 2}}
-                        encoded = json.dumps(body).encode()
+                        encoded = stream_response(body)
                         self.send_response(200)
-                        self.send_header("Content-Type", "application/json")
+                        self.send_header("Content-Type", "text/event-stream")
                         self.send_header("Content-Length", str(len(encoded)))
                         self.end_headers()
                         self.wfile.write(encoded)

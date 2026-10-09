@@ -14,6 +14,8 @@ import threading
 import time
 import unittest
 
+from tests.sse import stream_response
+
 if os.name == "posix":
     import fcntl
     import pty
@@ -113,9 +115,9 @@ class TerminalTests(unittest.TestCase):
             def do_POST(self):
                 payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 requests.append(payload)
-                encoded = json.dumps(respond(payload, len(requests))).encode()
+                encoded = stream_response(respond(payload, len(requests)))
                 self.send_response(200)
-                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Content-Length", str(len(encoded)))
                 self.end_headers()
                 self.wfile.write(encoded)

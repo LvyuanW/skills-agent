@@ -23,6 +23,9 @@ def history(path: Path, start: int, end: int) -> None:
             if number < start or not line.strip():
                 continue
             event = json.loads(line)
+            if event.get("type") in {"text_delta", "tool_call_delta"}:
+                # Complete messages below contain public content without private call fragments.
+                continue
             event.pop("_raw", None)
             if event.get("type") == "message":
                 message = event["message"]

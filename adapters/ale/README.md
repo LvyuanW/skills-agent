@@ -59,7 +59,7 @@ ALE 传入的题目文本完整写入 `prompt.txt`，适配器启动 `python -m 
 ```text
 install.log                 包安装输出
 prompt.txt                  原始任务文本
-transcript.log              主会话显示记录（中间过程为摘要）
+transcript.log              主会话显示记录（正文流式显示，工具为摘要）
 stderr.log                  进程错误输出
 session/events.jsonl        原始会话事件与模型响应
 session/subagents/*/        独立子会话日志

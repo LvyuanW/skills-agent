@@ -50,9 +50,12 @@ class Agent:
             f"Available skills:\n{self.skills.catalog()}"
         )
 
-    def _message(self, message):
-        self.session.append(message)
-        self.on_event({"type": "message", "message": message})
+    def _message(self, message, *, streamed=False):
+        event = {"type": "message", "message": message}
+        if streamed:
+            event["streamed"] = True
+        self.session.append_event(event)
+        self.on_event(event)
 
     def _event(self, event):
         self.session.append_event(event)
@@ -68,6 +71,10 @@ class Agent:
         status = "completed"
         try:
             return child.run(child_session.make_user_message(f"Goal: {goal}\n\n{task}", []))
+        except KeyboardInterrupt:
+            status = "failed"
+            # Child response details are already recorded in its private session.
+            raise KeyboardInterrupt from None
         except BaseException:
             status = "failed"
             raise
@@ -82,8 +89,15 @@ class Agent:
                 messages = self.context.build(
                     self.session.messages(), system=system, tools=self.tools.schemas,
                 )
-                reply = self.model.complete(system, messages, self.tools.schemas)
-                self._message(reply)
+                streamed = False
+
+                def receive(event):
+                    nonlocal streamed
+                    streamed = True
+                    self._event(event)
+
+                reply = self.model.complete(system, messages, self.tools.schemas, on_event=receive)
+                self._message(reply, streamed=streamed)
                 calls = reply.get("tool_calls", [])
                 if not calls:
                     content = reply.get("content", [])
@@ -99,11 +113,8 @@ class Agent:
                         "role": "tool", "name": call["name"], "tool_call_id": call["id"],
                         "content": result,
                     })
-        except KeyboardInterrupt:
-            self._event({"type": "error", "message": "Interrupted"})
-            raise
-        except Exception as exc:
-            event = {"type": "error", "message": str(exc)}
+        except (Exception, KeyboardInterrupt) as exc:
+            event = {"type": "error", "message": "Interrupted" if isinstance(exc, KeyboardInterrupt) else str(exc)}
             if getattr(exc, "raw", None) is not None:
                 event["_raw"] = exc.raw
             if getattr(exc, "partial_content", None):

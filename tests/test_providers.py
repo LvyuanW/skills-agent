@@ -1,4 +1,5 @@
 import base64
+from copy import deepcopy
 import io
 import json
 import tempfile
@@ -28,11 +29,40 @@ def anthropic_response(content=None, reason="end_turn"):
         {"type": "text", "text": "done"}], "stop_reason": reason}
 
 
+def response_events(response):
+    if "choices" in response:
+        choice = response["choices"][0]
+        delta = deepcopy(choice["message"])
+        if "tool_calls" in delta:
+            delta["tool_calls"] = [{**deepcopy(call), "index": index}
+                                   for index, call in enumerate(delta["tool_calls"])]
+        yield {**{key: value for key, value in response.items() if key != "choices"},
+               "choices": [{"index": 0, "delta": delta, "finish_reason": choice["finish_reason"]}]}
+        yield None
+    else:
+        initial = {key: value for key, value in response.items() if key not in {"content", "stop_reason"}}
+        yield {"type": "message_start", "message": {**initial, "content": [], "stop_reason": None}}
+        for index, block in enumerate(response.get("content", [])):
+            yield {"type": "content_block_start", "index": index, "content_block": block}
+            yield {"type": "content_block_stop", "index": index}
+        yield {"type": "message_delta", "delta": {"stop_reason": response.get("stop_reason")}}
+        yield {"type": "message_stop"}
+
+
 def response_stream(response):
-    return io.BytesIO(json.dumps(response).encode())
+    return io.BytesIO(b"".join(
+        b"data: " + (b"[DONE]" if event is None else json.dumps(event).encode()) + b"\n\n"
+        for event in response_events(response)
+    ))
 
 
 class ProviderTests(unittest.TestCase):
+    def assert_raw(self, actual, expected):
+        self.assertIn("stream_events", actual)
+        self.assertEqual(actual["stream_events"], [event for event in response_events(expected) if event is not None])
+        if "usage" in expected:
+            self.assertEqual(actual["usage"], expected["usage"])
+
     def test_openai_request_and_raw_response(self):
         raw = openai_response()
         with patch("skills_agent.providers.base.request.urlopen", return_value=response_stream(raw)) as send:
@@ -52,18 +82,19 @@ class ProviderTests(unittest.TestCase):
         ])
         self.assertEqual(payload["tools"][0], {"type": "function", "function": TOOLS[0]})
         self.assertEqual(result["content"], [{"type": "text", "text": "done"}])
-        self.assertEqual(result["_raw"], raw)
-        self.assertNotIn("stream", payload)
+        self.assert_raw(result["_raw"], raw)
+        self.assertTrue(payload["stream"])
+        self.assertEqual(payload["stream_options"], {"include_usage": True})
 
     def test_openai_tool_response_and_followup(self):
         call = {"id": "a", "type": "function", "function": {
             "name": "shell", "arguments": '{"command":"pwd"}'}}
         raw = openai_response(None, [call], "tool_calls")
         provider = OpenAIProvider("test-model", "secret")
-        with patch("skills_agent.providers.openai.post_json", return_value=raw):
+        with patch("skills_agent.providers.openai.post_stream", return_value=response_events(raw)):
             assistant = provider.complete("", [{"role": "user", "content": "pwd"}], TOOLS)
         self.assertEqual(assistant["tool_calls"][0]["arguments"], '{"command":"pwd"}')
-        with patch("skills_agent.providers.openai.post_json", return_value=openai_response()) as send:
+        with patch("skills_agent.providers.openai.post_stream", return_value=response_events(openai_response())) as send:
             provider.complete("", [assistant, {
                 "role": "tool", "tool_call_id": "a", "name": "shell", "content": "/tmp",
             }], TOOLS)
@@ -109,11 +140,11 @@ class ProviderTests(unittest.TestCase):
             {"type": "text", "text": "checking"},
             {"type": "tool_use", "id": "a", "name": "shell", "input": {"command": "pwd"}},
         ], "tool_use")
-        with patch("skills_agent.providers.anthropic.post_json", return_value=raw):
+        with patch("skills_agent.providers.anthropic.post_stream", return_value=response_events(raw)):
             result = AnthropicProvider("model", "key").complete("", [], TOOLS)
         self.assertEqual(result["content"], [{"type": "text", "text": "checking"}])
         self.assertEqual(json.loads(result["tool_calls"][0]["arguments"]), {"command": "pwd"})
-        self.assertEqual(result["_raw"], raw)
+        self.assert_raw(result["_raw"], raw)
 
     def test_anthropic_omits_empty_text_after_context_compaction(self):
         messages = [
@@ -124,7 +155,7 @@ class ProviderTests(unittest.TestCase):
         ]
         selected = ContextBuilder(350).build(messages)
         self.assertEqual(selected[1]["content"], [{"type": "text", "text": ""}])
-        with patch("skills_agent.providers.anthropic.post_json", return_value=anthropic_response()) as send:
+        with patch("skills_agent.providers.anthropic.post_stream", return_value=response_events(anthropic_response())) as send:
             AnthropicProvider("model", "key").complete("", selected, TOOLS)
         sent = send.call_args.args[1]["messages"]
         self.assertEqual(sent[1]["content"], [{
@@ -140,7 +171,7 @@ class ProviderTests(unittest.TestCase):
             {"role": "assistant", "content": []},
             {"role": "user", "content": "next"},
         ]
-        with patch("skills_agent.providers.anthropic.post_json", return_value=anthropic_response()) as send:
+        with patch("skills_agent.providers.anthropic.post_stream", return_value=response_events(anthropic_response())) as send:
             AnthropicProvider("model", "key").complete("", messages, [])
         self.assertEqual(send.call_args.args[1]["messages"], [{"role": "user", "content": [
             {"type": "text", "text": "first"}, {"type": "text", "text": "next"},
@@ -160,7 +191,7 @@ class ProviderTests(unittest.TestCase):
             for kind, cls, raw in [("openai", OpenAIProvider, openai_response()),
                                    ("anthropic", AnthropicProvider, anthropic_response())]:
                 with self.subTest(provider=kind), patch(
-                    f"skills_agent.providers.{kind}.post_json", return_value=raw,
+                    f"skills_agent.providers.{kind}.post_stream", return_value=response_events(raw),
                 ) as send:
                     cls("model", "key").complete("", [{"role": "user", "content": content}], [])
                     blocks = send.call_args.args[1]["messages"][0]["content"]
@@ -183,23 +214,23 @@ class ProviderTests(unittest.TestCase):
             "anthropic", AnthropicProvider,
             anthropic_response([{"type": "text", "text": "declined"}], "refusal"),
         )]:
-            with self.subTest(provider=kind), patch(f"skills_agent.providers.{kind}.post_json", return_value=response):
+            with self.subTest(provider=kind), patch(f"skills_agent.providers.{kind}.post_stream", return_value=response_events(response)):
                 result = cls("model", "key").complete("", [], [])
                 self.assertEqual(result["content"], [{"type": "text", "text": "declined"}])
 
     def test_unsuccessful_stop_never_returns_partial_calls(self):
-        cases = [("openai", OpenAIProvider, openai_response(None, [{"broken": True}], reason), reason)
+        cases = [("openai", OpenAIProvider, openai_response(None, [{"id": "a", "type": "function", "function": {"name": "shell", "arguments": "{}"}}], reason), reason)
                  for reason in ["length", "content_filter", None]]
         cases += [("anthropic", AnthropicProvider, anthropic_response([
             {"type": "tool_use", "id": "a", "name": "shell", "input": {}},
         ], reason), reason) for reason in ["max_tokens", "pause_turn", "model_context_window_exceeded"]]
         for kind, cls, raw, reason in cases:
             with self.subTest(provider=kind, reason=reason), patch(
-                f"skills_agent.providers.{kind}.post_json", return_value=raw,
+                f"skills_agent.providers.{kind}.post_stream", return_value=response_events(raw),
             ), self.assertRaises(ProviderError) as raised:
                 cls("model", "key").complete("", [], [])
             self.assertIn(str(reason), str(raised.exception))
-            self.assertEqual(raised.exception.raw, raw)
+            self.assert_raw(raised.exception.raw, raw)
 
     def test_truncated_response_preserves_received_text_without_tool_inputs(self):
         text = "  original\npartial answer  "
@@ -216,26 +247,26 @@ class ProviderTests(unittest.TestCase):
         for kind, cls, raw in [("openai", OpenAIProvider, openai_raw),
                                ("anthropic", AnthropicProvider, anthropic_raw)]:
             with self.subTest(provider=kind), patch(
-                f"skills_agent.providers.{kind}.post_json", return_value=raw,
+                f"skills_agent.providers.{kind}.post_stream", return_value=response_events(raw),
             ), self.assertRaises(ProviderError) as raised:
                 cls("model", "key").complete("", [], [])
             self.assertEqual(raised.exception.partial_content, [
                 {"type": "text", "text": text}, {"type": "text", "text": "refusal text"},
             ])
-            self.assertEqual(raised.exception.raw, raw)
+            self.assert_raw(raised.exception.raw, raw)
             self.assertNotIn("PRIVATE_TASK", json.dumps(raised.exception.partial_content))
 
     def test_response_parse_errors_keep_text_and_top_level_refusal(self):
         raw = openai_response("original", [{"id": "a", "type": "function", "function": {
             "name": "shell", "arguments": "{"}}], "tool_calls")
         raw["choices"][0]["message"]["refusal"] = "received refusal"
-        with patch("skills_agent.providers.openai.post_json", return_value=raw), self.assertRaises(ProviderError) as raised:
+        with patch("skills_agent.providers.openai.post_stream", return_value=response_events(raw)), self.assertRaises(ProviderError) as raised:
             OpenAIProvider("model", "key").complete("", [], [])
         self.assertEqual(raised.exception.partial_content, [
             {"type": "text", "text": "original"}, {"type": "text", "text": "received refusal"},
         ])
         malformed = {"content": [{"type": "text", "text": "received before invalid envelope"}]}
-        with patch("skills_agent.providers.anthropic.post_json", return_value=malformed), self.assertRaises(ProviderError) as raised:
+        with patch("skills_agent.providers.anthropic.post_stream", return_value=response_events(malformed)), self.assertRaises(ProviderError) as raised:
             AnthropicProvider("model", "key").complete("", [], [])
         self.assertEqual(raised.exception.partial_content, malformed["content"])
 
@@ -259,7 +290,7 @@ class ProviderTests(unittest.TestCase):
                 root = Path(directory)
                 session = Session(root, "s")
                 agent = Agent(cls("model", "key"), session, SkillRegistry([]), root)
-                with patch(f"skills_agent.providers.{kind}.post_json", return_value=raw), patch.object(
+                with patch(f"skills_agent.providers.{kind}.post_stream", return_value=response_events(raw)), patch.object(
                     agent.tools, "execute",
                 ) as execute, self.assertRaises(ProviderError):
                     agent.run(session.make_user_message("do the task", []))
@@ -285,7 +316,7 @@ class ProviderTests(unittest.TestCase):
         for arguments in ['{"command":', "[]"]:
             raw = openai_response(None, [{"id": "a", "type": "function", "function": {
                 "name": "shell", "arguments": arguments}}], "tool_calls")
-            with patch("skills_agent.providers.openai.post_json", return_value=raw), self.assertRaises(ProviderError):
+            with patch("skills_agent.providers.openai.post_stream", return_value=response_events(raw)), self.assertRaises(ProviderError):
                 OpenAIProvider("model", "key").complete("", [], [])
 
     def test_duplicate_response_calls_are_rejected_before_execution(self):
@@ -296,10 +327,10 @@ class ProviderTests(unittest.TestCase):
             ("anthropic", AnthropicProvider, anthropic_response([anth_call, anth_call], "tool_use")),
         ]:
             with self.subTest(provider=kind), patch(
-                f"skills_agent.providers.{kind}.post_json", return_value=raw,
+                f"skills_agent.providers.{kind}.post_stream", return_value=response_events(raw),
             ), self.assertRaisesRegex(ProviderError, "Duplicate") as raised:
                 cls("model", "key").complete("", [], [])
-            self.assertEqual(raised.exception.raw, raw)
+            self.assert_raw(raised.exception.raw, raw)
 
     def test_http_error_does_not_expose_key_or_body_and_does_not_retry(self):
         error = HTTPError("https://example.com?key=secret", 401, "secret", {}, io.BytesIO(b"secret"))

@@ -223,6 +223,25 @@ class SkillsToolsTests(unittest.TestCase):
         selected = self.script("history", str(path), "--start", "3", "--end", "4")
         self.assertEqual(selected["stdout"], f"4: {json.dumps(events[3], ensure_ascii=False)}\n")
 
+    def test_history_uses_complete_messages_without_exposing_private_stream_fragments(self):
+        events = [
+            {"type": "text_delta", "text": "public answer"},
+            {"type": "tool_call_delta", "index": 0, "name": "subagent"},
+            {"type": "tool_call_delta", "index": 0, "arguments": '{"task":"HIDDEN_TASK"}'},
+            {"type": "message", "streamed": True, "message": {
+                "role": "assistant", "content": "public answer",
+                "tool_calls": [{"name": "subagent", "arguments": '{"task":"HIDDEN_TASK"}'}],
+            }},
+        ]
+        path = self.workspace / "events.jsonl"
+        original = "".join(json.dumps(event) + "\n" for event in events)
+        path.write_text(original, encoding="utf-8")
+        result = self.script("history", str(path))
+        self.assertEqual(result["exit_code"], 0, result["stderr"])
+        self.assertNotIn("HIDDEN_TASK", result["stdout"])
+        self.assertEqual(result["stdout"].count("public answer"), 1)
+        self.assertEqual(path.read_text(encoding="utf-8"), original)
+
     def test_workspace_script_rejects_invalid_line_ranges(self):
         result = self.script("read", "missing.txt", "--start", "0")
         self.assertEqual(result["exit_code"], 2)

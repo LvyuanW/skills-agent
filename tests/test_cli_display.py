@@ -179,7 +179,7 @@ class DisplayTests(unittest.TestCase):
                 return True
 
         class Model:
-            def complete(self, *args):
+            def complete(self, *args, **kwargs):
                 return {"role": "assistant", "content": "done"}
 
         with TemporaryDirectory() as directory:

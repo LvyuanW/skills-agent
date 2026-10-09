@@ -10,8 +10,10 @@ import threading
 import unittest
 from unittest.mock import patch
 
+from tests.sse import stream_response
+
 from skills_agent.agent import Agent
-from skills_agent.cli import main, render_event
+from skills_agent.cli import ConsoleRenderer, main, render_event
 from skills_agent.providers import ProviderError
 from skills_agent.session import Session
 from skills_agent.skills import SkillRegistry
@@ -31,7 +33,7 @@ def call(name, values, identifier="c1"):
 class AgentTests(unittest.TestCase):
     def test_empty_response_is_recorded_but_does_not_report_success(self):
         class Model:
-            def complete(self, *args):
+            def complete(self, *args, **kwargs):
                 return answer("")
 
         with TemporaryDirectory() as directory:
@@ -45,7 +47,7 @@ class AgentTests(unittest.TestCase):
 
     def test_child_conversation_and_result_are_private_in_live_and_replayed_output(self):
         class Model:
-            def complete(self, system, messages, tools):
+            def complete(self, system, messages, tools, *, on_event=None):
                 is_child = not any(tool["name"] == "subagent" for tool in tools)
                 if messages[-1]["role"] == "user":
                     if is_child:
@@ -81,9 +83,54 @@ class AgentTests(unittest.TestCase):
             self.assertIn("CHILD_TOOL_OUTPUT", child_logs[0].read_text())
             self.assertIn("PRIVATE_CHILD_RESULT", (session.path / "events.jsonl").read_text())
 
+    def test_interrupted_child_stream_stays_private_in_main_log_and_replay(self):
+        class Model:
+            def complete(self, system, messages, tools, *, on_event=None):
+                if any(tool["name"] == "subagent" for tool in tools):
+                    child_call = call("subagent", {"goal": "统计文件", "task": "delegate task"})
+                    on_event({"type": "text_delta", "text": "parent text"})
+                    on_event({"type": "tool_call_delta", "index": 0,
+                              "name": "subagent", "arguments": child_call["arguments"]})
+                    return answer("parent text", [child_call])
+                on_event({"type": "text_delta", "text": "PRIVATE_CHILD_PARTIAL"})
+                self.interruption = KeyboardInterrupt()
+                self.interruption.raw = {"thinking": "PRIVATE_CHILD_RAW"}
+                self.interruption.partial_content = [{"type": "text", "text": "PRIVATE_CHILD_PARTIAL"}]
+                raise self.interruption
+
+        for full in (False, True):
+            with self.subTest(full=full), TemporaryDirectory() as directory:
+                path = Path(directory)
+                session = Session(path, "main")
+                output = io.StringIO()
+                model = Model()
+                agent = Agent(model, session, SkillRegistry([]), path,
+                              on_event=ConsoleRenderer(output, full=full))
+                with self.assertRaises(KeyboardInterrupt) as caught:
+                    agent.run(session.make_user_message("task", []))
+                self.assertIsNot(caught.exception, model.interruption)
+                self.assertEqual(session.events()[-1], {"type": "error", "message": "Interrupted"})
+                root_log = (session.path / "events.jsonl").read_text()
+                self.assertNotIn("PRIVATE_CHILD_", root_log)
+                self.assertNotIn("PRIVATE_CHILD_", output.getvalue())
+                self.assertEqual(output.getvalue().count("parent text"), 1)
+                self.assertIn("sub-agent 未完成：统计文件", output.getvalue())
+                self.assertIn("error: Interrupted", output.getvalue())
+                replay = io.StringIO()
+                renderer = ConsoleRenderer(replay, full=full)
+                for event in session.events():
+                    renderer(event)
+                self.assertEqual(replay.getvalue(), output.getvalue())
+                child_logs = list((session.path / "subagents").glob("*/events.jsonl"))
+                self.assertEqual(len(child_logs), 1)
+                child_events = [json.loads(line) for line in child_logs[0].read_text().splitlines()]
+                self.assertEqual(child_events[-1]["_raw"], model.interruption.raw)
+                self.assertEqual(child_events[-1]["partial_content"], model.interruption.partial_content)
+                self.assertIn({"type": "text_delta", "text": "PRIVATE_CHILD_PARTIAL"}, child_events)
+
     def test_tool_output_is_saved_and_displayed_in_full(self):
         class Model:
-            def complete(self, system, messages, tools):
+            def complete(self, system, messages, tools, *, on_event=None):
                 if messages[-1]["role"] == "user":
                     return answer("", [call("shell", {
                         "command": "python3 -c 'print(\"x\" * 15000)'",
@@ -115,7 +162,7 @@ class AgentTests(unittest.TestCase):
         command = "cat > generated.py <<'PY'\n" + source + "PY\npython3 generated.py"
 
         class Model:
-            def complete(self, system, messages, tools):
+            def complete(self, system, messages, tools, *, on_event=None):
                 if messages[-1]["role"] == "user":
                     return answer("", [call("shell", {"command": command})])
                 self.observed = messages
@@ -149,7 +196,7 @@ class AgentTests(unittest.TestCase):
         raw = {"incomplete": "original response"}
 
         class Model:
-            def complete(self, *args):
+            def complete(self, *args, **kwargs):
                 raise ProviderError("truncated", raw)
 
         with TemporaryDirectory() as directory:
@@ -163,7 +210,7 @@ class AgentTests(unittest.TestCase):
 
     def test_partial_response_is_displayed_and_replayed_but_not_sent_as_history(self):
         class Model:
-            def complete(self, *args):
+            def complete(self, *args, **kwargs):
                 error = ProviderError("truncated", {"private": "RAW_ONLY"})
                 error.partial_content = [{"type": "text", "text": "  original partial\n"}]
                 raise error
@@ -207,7 +254,7 @@ class CLIInteractionTests(unittest.TestCase):
 
     def test_named_session_opens_without_submitting_a_task(self):
         class Model:
-            def complete(self, *args):
+            def complete(self, *args, **kwargs):
                 raise AssertionError("Starting a session must wait for input")
 
         with TemporaryDirectory() as directory:
@@ -222,7 +269,7 @@ class CLIInteractionTests(unittest.TestCase):
 
     def test_piped_lines_are_distinct_turns_and_preserve_user_text(self):
         class Model:
-            def complete(self, system, messages, tools):
+            def complete(self, system, messages, tools, *, on_event=None):
                 self.messages = messages
                 return answer("response")
 
@@ -243,7 +290,7 @@ class CLIInteractionTests(unittest.TestCase):
 
     def test_files_and_images_are_queued_for_only_the_next_turn(self):
         class Model:
-            def complete(self, *args):
+            def complete(self, *args, **kwargs):
                 return answer("attached")
 
         with TemporaryDirectory() as directory:
@@ -264,7 +311,7 @@ class CLIInteractionTests(unittest.TestCase):
 
     def test_file_errors_are_reported_and_session_continues(self):
         class Model:
-            def complete(self, *args):
+            def complete(self, *args, **kwargs):
                 return answer("done")
 
         with TemporaryDirectory() as directory:
@@ -280,7 +327,7 @@ class CLIInteractionTests(unittest.TestCase):
         class Model:
             count = 0
 
-            def complete(self, *args):
+            def complete(self, *args, **kwargs):
                 self.count += 1
                 if self.count == 1:
                     raise ProviderError("failed request")
@@ -294,7 +341,7 @@ class CLIInteractionTests(unittest.TestCase):
 
     def test_ctrl_c_at_prompt_returns_to_prompt(self):
         class Model:
-            def complete(self, *args):
+            def complete(self, *args, **kwargs):
                 return answer("done")
 
         with TemporaryDirectory() as directory, \
@@ -307,7 +354,7 @@ class CLIInteractionTests(unittest.TestCase):
         class Model:
             count = 0
 
-            def complete(self, *args):
+            def complete(self, *args, **kwargs):
                 self.count += 1
                 if self.count == 1:
                     raise KeyboardInterrupt()
@@ -376,9 +423,9 @@ class CLIProtocolTests(unittest.TestCase):
                             response = {"choices": [{"finish_reason": "stop", "message": {"content": "completed"}}]}
                         else:
                             response = {"stop_reason": "end_turn", "content": [{"type": "text", "text": "completed"}]}
-                        encoded = json.dumps(response).encode()
+                        encoded = stream_response(response)
                         self.send_response(200)
-                        self.send_header("Content-Type", "application/json")
+                        self.send_header("Content-Type", "text/event-stream")
                         self.send_header("Content-Length", str(len(encoded)))
                         self.end_headers()
                         self.wfile.write(encoded)
