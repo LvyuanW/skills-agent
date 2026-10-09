@@ -47,7 +47,7 @@ class DisplayTests(unittest.TestCase):
                     render_event(event, terminal, full=full)
                 text = terminal.getvalue()
                 self.assertIn("\033[97;40muser text\033[0m\n", text)
-                self.assertIn("\033[30;107mfirst line\033[0m\n\033[30;107msecond line\033[0m\n", text)
+                self.assertRegex(text, r"\x1b\[30;107mfirst line second line *\x1b\[0m\n")
                 self.assertIn("\033[34;107msub-agent 处理了：统计文件\033[0m\n", text)
                 self.assertIn("\033[34;107m" + ("tool_call shell:" if full else "· shell：检查目录"), text)
                 self.assertNotIn("\033[", self.render(events, full=full))

@@ -4,7 +4,7 @@ Python CLI Agent。模型阅读 `SKILL.md` 和参考脚本源码，针对任务�
 
 ## 运行
 
-需要 Python 3.11+，唯一运行依赖是 PyYAML。
+需要 Python 3.11+，运行依赖为 PyYAML 和 Rich。
 
 ```sh
 python3 -m venv .venv
@@ -29,6 +29,8 @@ export OPENAI_MODEL='支持工具调用的模型名称'
 也可以使用 `.venv/bin/python -m skills_agent`。`run --session demo` 创建或恢复名为 `demo` 的会话，先按时间顺序回放主会话，再等待输入，回答后继续留在会话中。启动命令不接受消息参数。Ctrl-C 中断当前任务并停止正在运行的脚本，随后可继续输入。
 
 两种 API 均使用流式接收。正文收到即显示；正文和工具调用按到达顺序记录、渲染，历史回放保持相同顺序。工具调用只显示摘要及完成状态、失败退出码和输出行数，不展开命令源码、工具 JSON 或思考字段。`run` 不再次打印当前输入的消息，附件只列名称。用户输入为黑底白字，Agent 回复为白底黑字，工具摘要为白底蓝字。颜色只用于终端，重定向输出及原始日志不含新增的颜色控制码。`history` 使用相同的摘要显示；`history --full` 展开完整公开记录，不调用模型。原始日志始终完整保存，摘要只影响显示，不额外调用模型。
+
+终端中的 Agent 正文渲染 Markdown，包括标题、加粗、斜体、列表、引用、链接、代码和表格。流式接收时更新当前正文的预览；正文超过一屏时显示末尾，结束或出现下一条工具摘要时，完整正文进入终端回滚历史。历史回放直接渲染完整正文。重定向输出和日志保留 Markdown 源文。
 
 stdin 每行作为一轮输入，EOF 退出。需要将多行任务作为一次输入并执行到结束时，使用下方的 benchmark 入口。
 
@@ -75,6 +77,7 @@ export ANTHROPIC_MODEL='支持工具调用的模型名称'
 ```text
 skills_agent/
   cli.py             命令行输入、摘要显示与完整记录回放
+  markdown.py        终端 Markdown 渲染与流式预览
   benchmark.py       从任务文件运行一次并退出
   runtime.py         两个入口共用的参数与 Agent 构造
   agent.py           同步模型/工具循环、独立子会话
@@ -155,6 +158,7 @@ shell 和 sandbox 可附带 `summary`，用简短自然语言说明此次操作�
 ## 验证
 
 ```sh
+.venv/bin/python -m pip install -e '.[test]'
 .venv/bin/python -m unittest discover -s tests -v
 ```
 

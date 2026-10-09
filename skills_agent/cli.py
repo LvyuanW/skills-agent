@@ -5,6 +5,7 @@ import shlex
 import sys
 
 from .runtime import add_agent_arguments, create_agent
+from .markdown import MarkdownStream, print_markdown
 from .session import Session
 
 
@@ -57,7 +58,10 @@ def _render_full_event(event, output):
             _print(f"{label}:", role, output)
             for block in blocks:
                 if block["type"] == "text":
-                    _print(block["text"], role, output)
+                    if role == "assistant" and output.isatty():
+                        print_markdown(block["text"], output)
+                    else:
+                        _print(block["text"], role, output)
                 else:
                     _print(f"[{block['type']}] {block['path']}", role, output)
         for call in message.get("tool_calls", []):
@@ -140,10 +144,12 @@ def render_event(event, output=None, *, full=False, echo_user=True):
 class ConsoleRenderer:
     """Display public text as it arrives, then render the recorded result once."""
 
-    def __init__(self, output=None, *, full=False, echo_user=True):
+    def __init__(self, output=None, *, full=False, echo_user=True, live=True):
         self.output = output or sys.stdout
         self.full = full
         self.echo_user = echo_user
+        self.live = live
+        self._markdown = None
         self._streaming = False
         self._line_ended = False
         self._had_deltas = False
@@ -155,12 +161,13 @@ class ConsoleRenderer:
         if not self._streaming:
             _print("assistant:", "assistant", self.output)
             self._streaming = True
-        displayed = text
-        if self.output.isatty():
-            color = _COLORS["assistant"]
-            displayed = color + text.replace("\n", _RESET + "\n" + color)
-        self.output.write(displayed)
-        self.output.flush()
+            if self.output.isatty():
+                self._markdown = MarkdownStream(self.output, live=self.live)
+        if self._markdown:
+            self._markdown.write(text)
+        else:
+            self.output.write(text)
+            self.output.flush()
         self._line_ended = text.endswith("\n")
 
     def _tool_delta(self, event):
@@ -196,11 +203,13 @@ class ConsoleRenderer:
     def _finish_stream(self):
         if not self._streaming:
             return
-        if self.output.isatty():
-            self.output.write(_RESET)
-        if not self._line_ended:
-            self.output.write("\n")
-        self.output.flush()
+        if self._markdown:
+            self._markdown.finish()
+            self._markdown = None
+        else:
+            if not self._line_ended:
+                self.output.write("\n")
+            self.output.flush()
         self._streaming = False
         self._line_ended = False
 
@@ -309,7 +318,7 @@ def main(argv=None):
         if args.command == "history" and not (root / args.session / "events.jsonl").is_file():
             raise ValueError(f"会话不存在：{args.session}")
         session = Session(root, args.session)
-        replay = ConsoleRenderer(full=args.command == "history" and args.full)
+        replay = ConsoleRenderer(full=args.command == "history" and args.full, live=False)
         for event in session.events():
             replay(event)
         replay.close()

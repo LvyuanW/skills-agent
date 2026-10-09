@@ -2,17 +2,17 @@ from contextlib import redirect_stdout
 import copy
 import io
 import json
+import os
 from pathlib import Path
-import re
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from skills_agent.cli import ConsoleRenderer, main, render_event
 from skills_agent.session import Session
+from tests.test_markdown import terminal_screen, terminal_text
 
 
-ANSI = re.compile(r"\x1b\[[0-9;]*m")
-ASSISTANT_COLOR = "\x1b[30;107m"
 TOOL_COLOR = "\x1b[34;107m"
 RESET = "\x1b[0m"
 
@@ -47,6 +47,13 @@ def tool_delta(index=0, **fragments):
 
 
 class StreamDisplayTests(unittest.TestCase):
+    def setUp(self):
+        terminal = patch.dict(os.environ, {
+            "TERM": "xterm-256color", "COLUMNS": "80", "LINES": "24",
+        })
+        terminal.start()
+        self.addCleanup(terminal.stop)
+
     def test_chunks_are_flushed_before_completion_and_body_is_not_repeated(self):
         output = Output()
         renderer = ConsoleRenderer(output)
@@ -86,7 +93,7 @@ class StreamDisplayTests(unittest.TestCase):
         self.assertEqual(output.getvalue().count("assistant:"), 2)
         self.assertEqual(output.getvalue().count("Final result"), 1)
 
-    def test_multiline_stream_resets_colors_before_newlines_and_completion(self):
+    def test_multiline_stream_renders_markdown_and_keeps_role_colors(self):
         output = Output(tty=True)
         renderer = ConsoleRenderer(output)
         renderer({"type": "text_delta", "text": "first\n"})
@@ -95,9 +102,10 @@ class StreamDisplayTests(unittest.TestCase):
         renderer(tool_delta(name="shell", arguments=call["arguments"]))
         renderer(message("assistant", "first\nsecond", tool_calls=[call], streamed=True))
         text = output.getvalue()
-        self.assertEqual(ANSI.sub("", text), "assistant:\nfirst\nsecond\n· shell：检查目录\n")
-        self.assertIn(ASSISTANT_COLOR + "first" + RESET + "\n", text)
-        self.assertIn(ASSISTANT_COLOR + "second" + RESET + "\n", text)
+        self.assertEqual(terminal_text(text), "assistant:\nfirst second\n· shell：检查目录")
+        screen = terminal_screen(text)
+        self.assertEqual((screen.buffer[1][0].fg, screen.buffer[1][0].bg),
+                         ("black", "brightwhite"))
         self.assertIn(TOOL_COLOR + "· shell：检查目录" + RESET + "\n", text)
         self.assertTrue(text.endswith(RESET + "\n"))
 
@@ -106,15 +114,15 @@ class StreamDisplayTests(unittest.TestCase):
         renderer = ConsoleRenderer(output)
         renderer({"type": "text_delta", "text": "complete\n"})
         renderer(message("assistant", "complete\n"))
-        self.assertEqual(ANSI.sub("", output.getvalue()), "assistant:\ncomplete\n")
-        self.assertTrue(output.getvalue().endswith(RESET))
+        self.assertEqual(terminal_text(output.getvalue()), "assistant:\ncomplete")
+        self.assertTrue(output.getvalue().endswith(RESET + "\n"))
 
     def test_replay_ending_during_stream_closes_line_and_resets_color(self):
         output = Output(tty=True)
         renderer = ConsoleRenderer(output)
         renderer({"type": "text_delta", "text": "last saved chunk"})
         renderer.close()
-        self.assertEqual(ANSI.sub("", output.getvalue()), "assistant:\nlast saved chunk\n")
+        self.assertEqual(terminal_text(output.getvalue()), "assistant:\nlast saved chunk")
         self.assertTrue(output.getvalue().endswith(RESET + "\n"))
         closed = output.getvalue()
         renderer.close()
@@ -129,7 +137,7 @@ class StreamDisplayTests(unittest.TestCase):
                 renderer({"type": "error", "message": error, "partial_content": [
                     {"type": "text", "text": "received partial"},
                 ], "_raw": {"reasoning_content": "PRIVATE_REASONING"}})
-                plain = ANSI.sub("", output.getvalue())
+                plain = terminal_text(output.getvalue())
                 self.assertEqual(plain.count("received partial"), 1)
                 self.assertIn("received partial\n· 回答未完成，已保存 16 字符\n", plain)
                 self.assertIn("error: " + error, plain)
@@ -137,7 +145,7 @@ class StreamDisplayTests(unittest.TestCase):
                 self.assertTrue(output.getvalue().endswith(RESET + "\n"))
                 renderer({"type": "text_delta", "text": "next answer"})
                 renderer(message("assistant", "next answer"))
-                self.assertEqual(ANSI.sub("", output.getvalue()).count("assistant:"), 2)
+                self.assertEqual(terminal_text(output.getvalue()).count("assistant:"), 2)
 
     def test_child_calls_results_and_raw_private_fields_remain_hidden(self):
         output = Output()

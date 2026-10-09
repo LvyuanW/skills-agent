@@ -7,6 +7,7 @@ import re
 import select
 import shlex
 import signal
+import struct
 import subprocess
 import sys
 import tempfile
@@ -15,6 +16,7 @@ import time
 import unittest
 
 from tests.sse import stream_response
+from tests.test_markdown import terminal_screen, terminal_text
 
 if os.name == "posix":
     import fcntl
@@ -37,6 +39,7 @@ def terminal_owner():
 class Terminal:
     def __init__(self, workspace, endpoint):
         self.master, slave = pty.openpty()
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
         self.output = b""
         try:
             self.process = subprocess.Popen(
@@ -150,10 +153,19 @@ class TerminalTests(unittest.TestCase):
         return terminal, requests
 
     def assert_color(self, text, marker, expected):
-        offset = text.index(marker)
-        styles = list(ANSI.finditer(text, 0, offset))
-        self.assertTrue(styles, f"No color before {marker!r}")
-        self.assertEqual(styles[-1].group(), expected)
+        screen = terminal_screen(text)
+        rows = [*screen.history.top, *(screen.buffer[y] for y in range(screen.lines))]
+        colors = {USER_COLOR: ("brightwhite", "black"),
+                  ASSISTANT_COLOR: ("black", "brightwhite"),
+                  TOOL_COLOR: ("blue", "brightwhite")}
+        for row in rows:
+            chars = [row[x] for x in range(screen.columns) if row[x].data]
+            line = "".join(char.data for char in chars)
+            if marker in line:
+                cell = chars[line.index(marker)]
+                self.assertEqual((cell.fg, cell.bg), colors[expected])
+                return
+        self.fail(f"Marker {marker!r} is not displayed in the terminal")
 
     def events(self):
         raw = (self.workspace / ".agent/sessions/terminal/events.jsonl").read_text()
@@ -165,7 +177,7 @@ class TerminalTests(unittest.TestCase):
         def respond(payload, count):
             if count == 1:
                 return self.response(command="printf RAW_TERMINAL_OUTPUT", summary="运行测试脚本")
-            return self.response("FIRST_FINAL" if count == 2 else "SECOND_FINAL")
+            return self.response("**FIRST_FINAL**" if count == 2 else "`SECOND_FINAL`")
 
         terminal, requests = self.terminal(respond)
         first = "first unique terminal request"
@@ -174,11 +186,15 @@ class TerminalTests(unittest.TestCase):
         second = "second unique terminal request"
         terminal.send(second + "\n")
         text = terminal.prompt(3)
-        plain = ANSI.sub("", text)
+        plain = terminal_text(text)
         self.assertEqual(plain.count(first), 1)
         self.assertEqual(plain.count(second), 1)
         self.assertNotIn("user:", plain)
         self.assertNotIn("RAW_TERMINAL_OUTPUT", plain)
+        self.assertEqual(plain.count("FIRST_FINAL"), 1)
+        self.assertEqual(plain.count("SECOND_FINAL"), 1)
+        self.assertNotIn("**FIRST_FINAL**", plain)
+        self.assertNotIn("`SECOND_FINAL`", plain)
         self.assert_color(text, first, USER_COLOR)
         self.assert_color(text, second, USER_COLOR)
         self.assert_color(text, "shell：运行测试脚本", TOOL_COLOR)
@@ -239,7 +255,7 @@ class TerminalTests(unittest.TestCase):
         terminal.send("continue after interrupt\n")
         continued = terminal.prompt(4)
         self.assert_color(continued, "AFTER_INTERRUPT", ASSISTANT_COLOR)
-        plain = ANSI.sub("", continued)
+        plain = terminal_text(continued)
         self.assertEqual(plain.count(instruction), 1)
         self.assertEqual(plain.count("continue after interrupt"), 1)
         self.assertNotIn("user:", plain)

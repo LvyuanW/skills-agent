@@ -6,7 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "skills-cli-agent"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["PyYAML>=6.0"]
+dependencies = ["PyYAML>=6.0", "rich>=14,<15"]
+
+[project.optional-dependencies]
+test = ["pyte>=0.8,<0.9"]
 
 [project.scripts]
 skills-agent = "skills_agent.cli:main"
