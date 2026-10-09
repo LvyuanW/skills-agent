@@ -41,10 +41,15 @@ class Agent:
 
     def _system(self):
         delegation = (
-            "Use named subagent tasks for independent work. Provide task inputs and boundaries; "
-            "only its final report returns. Delegate conversation-history retrieval to subagent "
+            "Use named subagent tasks for independent work. Ordinary subagents do not inherit "
+            "the parent conversation; supply the goal, relevant constraints, necessary materials, "
+            "operation boundaries and expected deliverable in task. Only the final report returns. "
+            "Continue from its evidence, execution results and unresolved matters. Verify important "
+            "or conflicting claims at their sources; do not accept a completion claim alone or "
+            "routinely repeat the entire subtask. Delegate conversation-history retrieval to subagent "
             "with history=true and a concrete question; do not search session logs yourself. "
-            "The child receives the complete current working context as read-only background, "
+            "Only history=true supplies the complete current working context as read-only background. "
+            "The history retrieval child "
             "finds original evidence, checks relevance and later corrections, and returns a "
             "source-linked report. This applies before or after compaction. "
         ) if self.tools.subagent else ""

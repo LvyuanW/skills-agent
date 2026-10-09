@@ -28,12 +28,17 @@ class ToolRegistry:
                                              script, ["name", "command"]))
         if subagent:
             self.schemas.append(self._schema("subagent", "Delegate a named task; only its final report returns. "
-                                             "For conversation-history retrieval, use history=true. The child receives "
-                                             "the complete working context as read-only background, searches original "
+                                             "Ordinary subagents do not inherit the parent conversation; provide "
+                                             "the necessary background in task. For conversation-history retrieval, "
+                                             "use history=true. Only this mode supplies the complete current working "
+                                             "context as read-only background. The child searches original "
                                              "evidence, checks relevance and later corrections, and returns a report.", {
                 "name": {"type": "string", "description": "Short task name, shown to the user."},
-                "task": {"type": "string", "description": "Goal, input, boundaries and required evidence."},
-                "history": {"type": "boolean", "description": "Retrieve details from this session's original history. Default false."},
+                "task": {"type": "string", "description": "Self-contained goal, relevant constraints, necessary materials "
+                         "(content or accessible paths), operation boundaries (what may be read or changed), "
+                         "and expected deliverable with required evidence."},
+                "history": {"type": "boolean", "description": "Retrieve original session history with the complete current "
+                            "working context as read-only background. Default false: no parent conversation is inherited."},
             }, ["name", "task"]))
 
     @staticmethod
