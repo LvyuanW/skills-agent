@@ -110,6 +110,8 @@ adapters/ale/        ALE Deployer 与运行配置
 
 ### 会话与上下文
 
+下一版设计讨论见 [上下文管理设计与调研](docs/context-management-design.md)（尚未实施）；以下为当前实现。
+
 - `events.jsonl` 只追加，按接收顺序保存正文和工具调用片段，响应结束后保存完整消息及原始 API 分片 `_raw.stream_events`，完整消息用于构建模型上下文，显示时不重复输出。工具参数、工具输出和中断前收到的内容均保留。附件在 `attachments/`，子会话在 `subagents/`。
 - 终端显示主 Agent 的对话及中间步骤摘要。sub-agent 的调用细节、内部对话及直接返回值不展示，只显示目标摘要，例如 `sub-agent 处理了：统计文件`，`history --full` 也遵循此规则。主 Agent 使用返回结果完成最终回答。
 - sub-agent 与主 Agent 共享工作目录、技能和模型配置；拥有独立历史和上下文，只接收 `task` 中显式给出的信息，只返回最终结果。执行是同步的，子 Agent 不再创建子 Agent。
