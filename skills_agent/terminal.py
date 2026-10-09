@@ -8,6 +8,7 @@ from threading import Event, RLock, Thread
 
 from prompt_toolkit.application import Application
 from prompt_toolkit.buffer import Buffer
+from prompt_toolkit.cursor_shapes import CursorShape
 from prompt_toolkit.data_structures import Point
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import ANSI, fragment_list_to_text, fragment_list_width, to_formatted_text
@@ -15,7 +16,7 @@ from prompt_toolkit.formatted_text.utils import split_lines
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import ConditionalKeyBindings, KeyBindings, merge_key_bindings
 from prompt_toolkit.layout import HSplit, Layout, Window
-from prompt_toolkit.layout.controls import BufferControl, UIContent, UIControl
+from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl, UIContent, UIControl
 from prompt_toolkit.layout.processors import BeforeInput
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
 from rich.console import Console
@@ -92,11 +93,12 @@ class TerminalView:
         self.control = _Transcript(self)
         self.window = Window(self.control, get_vertical_scroll=lambda _: self._scroll,
                              style="fg:ansiblack bg:ansiwhite")
-        editor = Window(BufferControl(self.buffer, input_processors=[BeforeInput(
-            lambda: "选择文本（F2 返回） " if self._selecting else "> "
-        )]),
+        editor = Window(BufferControl(self.buffer, input_processors=[BeforeInput("> ")]),
                         dont_extend_height=True, wrap_lines=True,
                         style="fg:ansiwhite bg:ansiblack")
+        hint = Window(FormattedTextControl(
+            lambda: "选择文本（F2 返回）" if self._selecting else "按 F2 选中文本"
+        ), height=1, style="fg:ansibrightblack bg:default")
         bindings = KeyBindings()
 
         @bindings.add("f2")
@@ -141,10 +143,21 @@ class TerminalView:
         if key_bindings is not None:
             merged.append(ConditionalKeyBindings(
                 key_bindings, Condition(lambda: not self._busy and not self._selecting)))
+
+        def set_input_cursor(app):
+            # prompt-toolkit disables blinking when showing the cursor on redraw.
+            if not app.is_done:
+                app.output.set_cursor_shape(CursorShape.BLINKING_BEAM)
+                app.output.flush()
+
         self.app = Application(
-            layout=Layout(HSplit([self.window, editor]), focused_element=editor),
+            layout=Layout(HSplit([
+                self.window, Window(height=1, style="bg:default"),
+                editor, Window(height=1, style="bg:default"), hint,
+            ]), focused_element=editor),
             key_bindings=merge_key_bindings(merged), full_screen=True,
             mouse_support=Condition(lambda: not self._selecting),
+            after_render=set_input_cursor,
             input=input, output=output, min_redraw_interval=0.03,
         )
 
