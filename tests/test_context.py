@@ -31,6 +31,62 @@ def assert_paired(test, messages):
 
 
 class ContextTests(unittest.TestCase):
+    def test_reasoning_is_recovered_from_older_sessions_without_changing_log(self):
+        with tempfile.TemporaryDirectory() as directory:
+            session = Session(Path(directory), "reasoning")
+            messages = [{"role": "user", "content": "inspect"}, *tool_pair(1)]
+            reasoning = "  original reasoning\n中文\n"
+            messages[1]["_raw"] = {"choices": [{"message": {"reasoning_content": reasoning}}]}
+            messages.append({"role": "assistant", "content": "done", "_raw": {
+                "choices": [{"message": {"reasoning_content": ""}}],
+            }})
+            for message in messages:
+                session.append(message)
+            before = (session.path / "events.jsonl").read_bytes()
+            selected = ContextBuilder().build(session.messages())
+            self.assertEqual(selected[1]["reasoning_content"], reasoning)
+            self.assertEqual(selected[-1]["reasoning_content"], "")
+            self.assertTrue(all("_raw" not in message for message in selected))
+            self.assertEqual((session.path / "events.jsonl").read_bytes(), before)
+
+    def test_older_stream_reasoning_is_recovered_even_after_null_overwrite(self):
+        messages = [{"role": "assistant", "content": "done", "_raw": {
+            "choices": [{"message": {"reasoning_content": None}}],
+            "stream_events": [
+                {"choices": [{"delta": {"reasoning_content": "  first\n"}}]},
+                {"choices": [{"delta": {"reasoning_content": None, "content": "done"}}]},
+                {"choices": [{"delta": {"reasoning_content": "中文  "}}]},
+                {"choices": []},
+            ],
+        }}]
+        original = copy.deepcopy(messages)
+        self.assertEqual(ContextBuilder().build(messages)[0]["reasoning_content"], "  first\n中文  ")
+        self.assertEqual(messages, original)
+        messages[0]["reasoning_content"] = "already normalized"
+        self.assertEqual(ContextBuilder().build(messages)[0]["reasoning_content"], "already normalized")
+
+    def test_reasoning_is_counted_but_never_excerpted_during_compaction(self):
+        reasoning = "UNMODIFIED_REASONING\n" * 30
+        messages = [{"role": "user", "content": "inspect"}, *tool_pair(1, 12000)]
+        messages[1]["reasoning_content"] = reasoning
+        original = copy.deepcopy(messages)
+        builder = ContextBuilder(1500)
+        selected = builder.build(messages)
+        self.assertEqual(selected[1]["reasoning_content"], reasoning)
+        self.assertLess(len(selected[-1]["content"]), len(messages[-1]["content"]))
+        self.assertLessEqual(builder.size(selected), 1500)
+        with self.assertRaisesRegex(ContextBudgetError, "reasoning_content"):
+            ContextBuilder(400).build(messages)
+        self.assertEqual(messages, original)
+
+    def test_omitted_reasoning_is_not_added_to_extracted_summary(self):
+        messages = [{"role": "user", "content": "earlier"}, {
+            "role": "assistant", "content": "earlier answer", "reasoning_content": "PRIVATE_REASONING" * 1000,
+        }, {"role": "user", "content": "current"}]
+        selected = ContextBuilder(1000).build(messages)
+        self.assertNotIn("PRIVATE_REASONING", str(selected))
+        self.assertIn("earlier answer", str(selected))
+
     def test_build_never_changes_original_history_or_file(self):
         with tempfile.TemporaryDirectory() as directory:
             session = Session(Path(directory), "s")

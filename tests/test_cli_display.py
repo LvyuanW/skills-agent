@@ -60,7 +60,7 @@ class DisplayTests(unittest.TestCase):
             message("user", "  original request\nsecond line  "),
             message("assistant", "intermediate details " * 500, tool_calls=[call(arguments={
                 "command": command, "summary": "生成并运行分析脚本",
-            })], _raw={"reasoning_content": "RAW_REASONING"}),
+            })], reasoning_content="RAW_REASONING", _raw={"reasoning_content": "RAW_REASONING"}),
             message("tool", json.dumps({"exit_code": 0, "stdout": stdout, "stderr": ""}),
                     name="shell", tool_call_id="c1"),
             message("assistant", [{"type": "text", "text": "  final answer\nunchanged  "}]),

@@ -147,8 +147,25 @@ class ContextBuilder:
                               ensure_ascii=False, separators=(",", ":")))
 
     def build(self, messages: list[dict], system: str = "", tools: list[dict] | None = None) -> list[dict]:
-        clean = [{key: copy.deepcopy(value) for key, value in message.items() if key != "_raw"}
-                 for message in messages]
+        clean = []
+        for message in messages:
+            item = {key: copy.deepcopy(value) for key, value in message.items() if key != "_raw"}
+            if item.get("role") == "assistant" and "reasoning_content" not in item:
+                # Sessions saved before reasoning round-trip support kept it only in _raw.
+                raw = message.get("_raw") or {}
+                choices = raw.get("choices") or []
+                source = choices[0].get("message", {}) if choices else {}
+                reasoning = source.get("reasoning_content")
+                # Older stream assembly could overwrite earlier fragments with null.
+                parts = [choice.get("delta", {}).get("reasoning_content")
+                         for event in raw.get("stream_events", [])
+                         for choice in event.get("choices", []) if choice.get("index", 0) == 0]
+                parts = [part for part in parts if isinstance(part, str)]
+                if parts:
+                    reasoning = "".join(parts)
+                if isinstance(reasoning, str):
+                    item["reasoning_content"] = reasoning
+            clean.append(item)
         groups = _groups(clean)
         clean = _flatten(groups)
         measure = lambda selected: self.size(selected, system, tools)
@@ -199,7 +216,7 @@ class ContextBuilder:
         if measure(_flatten(compacted)) > target:
             minimum_cost = measure(_flatten(compacted))
             if minimum_cost > self.max_chars:
-                raise ContextBudgetError("Current user message and latest tool call metadata exceed max_chars")
+                raise ContextBudgetError("Current user message and latest tool call metadata (including reasoning_content) exceed max_chars")
             target = minimum_cost
             reserve = self.max_chars - minimum_cost
 

@@ -37,7 +37,7 @@ def gated_response(provider):
             chunk({"tool_calls": [{"index": 0, "function": {"arguments": arguments[split:]}}]}),
             chunk({"content": FIRST_BODY}),
         ]
-        ending = [chunk({"content": LAST_BODY}), chunk({}, "tool_calls"), None]
+        ending = [chunk({"content": LAST_BODY, "reasoning_content": None}), chunk({}, "tool_calls"), None]
         final = {"choices": [{"finish_reason": "stop", "message": {"content": FINAL}}]}
     else:
         beginning = [
@@ -164,6 +164,10 @@ class StreamIntegrationTests(unittest.TestCase):
                     self.assertTrue(completed.is_set())
                     self.assertEqual(len(requests), 2)
                     self.assertTrue(all(request["stream"] for request in requests))
+                    if provider == "openai":
+                        assistant = next(message for message in requests[1]["messages"]
+                                         if message["role"] == "assistant")
+                        self.assertEqual(assistant["reasoning_content"], "PRIVATE_REASONING")
                     self.assertEqual((workspace / "result.txt").read_text(), "result")
                     self.assertNotIn("user:", output)
                     self.assertNotIn("PRIVATE_REASONING", output)

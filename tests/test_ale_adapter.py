@@ -65,7 +65,8 @@ class AdapterTests(unittest.TestCase):
             (root / "configs" / "environments").mkdir()
             shutil.copyfile(ROOT / "adapters/ale/skills_agent.yaml", root / "configs/agents/skills_agent.yaml")
             shutil.copyfile(ROOT / "adapters/ale/smoke.yaml", root / "smoke.yaml")
-            shutil.copyfile(Path(ALE_SOURCE) / "configs/environments/docker.yaml", root / "configs/environments/docker.yaml")
+            # Only the prepared local profile is present; smoke must select it.
+            shutil.copyfile(Path(ALE_SOURCE) / "configs/environments/docker.yaml", root / "configs/environments/docker.local.yaml")
             values = {"SKILLS_AGENT_MODEL": "test", "SKILLS_AGENT_PACKAGE": "skills-cli-agent==0.1.0",
                       "OPENAI_BASE_URL": "https://example.invalid/v1", "OPENAI_API_KEY": "test-key"}
             with patch.dict(os.environ, values):

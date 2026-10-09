@@ -39,7 +39,7 @@ export OPENAI_API_KEY='你的密钥'
 
 ## 运行一题
 
-先按 [ALE Docker 指南](https://agents-last-exam.org/docs?p=pages/local-docker.html) 准备 Docker 和任务数据。smoke 使用官方 `configs/environments/docker.yaml`，它从 ALE 仓库的 `task-data` 目录读取题目数据。
+先按 [ALE Docker 指南](https://agents-last-exam.org/docs?p=pages/local-docker.html) 准备 Docker 和任务数据。smoke 使用服务器上已准备好的 `configs/environments/docker.local.yaml`；该文件需位于 ALE 仓库中，并指向服务器实际的任务数据目录和环境配置。本项目不提供或覆盖该文件。
 
 ```sh
 cd "$ALE_REPO"
@@ -49,6 +49,8 @@ uv run --no-sync python -m ale_run run skills_agent_smoke.yaml
 ```
 
 配置只运行 `computing_math/os_log_permission_guard_v1` 的 variant 0，并发为 1，不自动续跑或重试。`--dry-run` 只展开运行列表；真实运行才会检查容器、安装、模型调用、任务产物和评分。
+
+正常运行后检查该次日志中的 `run.json`、`eval_result.json` 和 `trajectory.json`，确认模型及工具调用、任务产物和评分均已产生。模拟模型测试通过不代表真实 Docker 评分已通过。
 
 ALE 传入的题目文本完整写入 `prompt.txt`，适配器启动 `python -m skills_agent.benchmark`。模型按题目中的路径读取输入、写入要求的 `output`；适配器不改写任务路径。`shell` 直接在 ALE 任务容器中执行，不需要配置本项目的 `--sandbox-image`。
 
@@ -67,7 +69,9 @@ session/subagents/*/        独立子会话日志
 
 `parse_artifacts()` 从原始事件日志将完整模型回答、工具调用、工具结果和 token usage 转为 ALE 轨迹，不受终端摘要显示影响。子会话转为嵌套轨迹；主会话终端仍只展示 sub-agent 的目标摘要。截断或未完成的日志会在轨迹中标记。
 
-适配器收到异步取消或 SIGTERM 时终止并回收启动的进程；benchmark 随之清理当前脚本。上述 ALE 版本的外层 executor 超时可能不向容器内进程发送信号，smoke 使用 `cleanup_mode: delete`，由 ALE 删除任务容器。适配器无法处理没有传递到自身的取消。
+适配器收到异步取消或 SIGTERM 时终止并回收启动的进程；benchmark 随之清理当前脚本。上述 ALE 版本的外层 executor 超时可能不向容器内进程发送信号，适配器无法处理没有传递到自身的取消。smoke 使用 `cleanup_mode: delete`，但 ALE 在评分后才删除容器，不能据此判断评分前 Agent 已停止。
+
+超时验收需在独立实验副本中设置较短的 `wall_time_s`，让 Agent 执行超过该时限的脚本，并在 ALE 开始评分前检查容器中的 Agent、shell 及其子进程均已退出，同时确认输出文件停止变化。仅看到 `timeout` 状态或最终容器被删除不算通过。
 
 ## 本地验证
 

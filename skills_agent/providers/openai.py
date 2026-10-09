@@ -44,6 +44,10 @@ class OpenAIProvider(HTTPProvider):
                 item.update(content=message["content"], tool_call_id=message["tool_call_id"])
             else:
                 item["content"] = _content(message.get("content")) or None
+                if role == "assistant" and "reasoning_content" in message:
+                    if not isinstance(message["reasoning_content"], str):
+                        raise ProviderError("Invalid OpenAI reasoning_content")
+                    item["reasoning_content"] = message["reasoning_content"]
                 if message.get("tool_calls"):
                     item["tool_calls"] = [{
                         "id": call["id"], "type": "function",
@@ -137,6 +141,11 @@ class OpenAIProvider(HTTPProvider):
                                     raise ProviderError("Invalid OpenAI refusal delta")
                                 message[key] = message.get(key, "") + value
                                 text_delta(value, key)
+                        elif key == "reasoning_content":
+                            if value is not None:
+                                if not isinstance(value, str):
+                                    raise ProviderError("Invalid OpenAI reasoning_content delta")
+                                message[key] = message.get(key, "") + value
                         elif key == "tool_calls":
                             if value is None:
                                 continue
@@ -202,6 +211,8 @@ class OpenAIProvider(HTTPProvider):
                 raise ProviderError("OpenAI tool calls do not match finish_reason")
             validate_calls(calls)
             result = {"role": "assistant", "content": content, "_raw": raw}
+            if "reasoning_content" in message:
+                result["reasoning_content"] = message["reasoning_content"]
             if calls:
                 result["tool_calls"] = calls
             return result

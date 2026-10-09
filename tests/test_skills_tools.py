@@ -188,6 +188,7 @@ class SkillsToolsTests(unittest.TestCase):
             {"type": "message", "message": {
                 "role": "assistant", "content": [{"type": "text", "text": "public answer"}],
                 "_raw": {"secret": "HIDDEN_RAW_MESSAGE"},
+                "reasoning_content": "HIDDEN_REASONING",
                 "tool_calls": [
                     {"id": "child", "name": "subagent", "arguments": '{"task": "HIDDEN_TASK"}'},
                     {"id": "host", "name": "shell", "arguments": '{"command": "pwd"}'},

@@ -46,6 +46,8 @@ export ANTHROPIC_MODEL='支持工具调用的模型名称'
 
 `--model` 优先于对应的 `OPENAI_MODEL` / `ANTHROPIC_MODEL`。`--base-url` 优先于对应的 `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`，值为包含 API 前缀的根地址，例如 `http://localhost:8000/v1`。默认端点分别为 OpenAI `/v1/chat/completions` 和 Anthropic `/v1/messages`。本地兼容服务可以不设置密钥。
 
+OpenAI 兼容接口返回的 `reasoning_content` 会完整保存，并随保留的助手消息回传，包括未调用工具的回答，以支持 [DeepSeek 思考模式](https://api-docs.deepseek.com/guides/thinking_mode/)。该字段不在终端或历史摘要中显示。
+
 ## 图片和文件
 
 ```sh
@@ -102,6 +104,7 @@ adapters/ale/        ALE Deployer 与运行配置
 - 终端显示主 Agent 的对话及中间步骤摘要。sub-agent 的调用细节、内部对话及直接返回值不展示，只显示目标摘要，例如 `sub-agent 处理了：统计文件`，`history --full` 也遵循此规则。主 Agent 使用返回结果完成最终回答。
 - sub-agent 与主 Agent 共享工作目录、技能和模型配置；拥有独立历史和上下文，只接收 `task` 中显式给出的信息，只返回最终结果。执行是同步的，子 Agent 不再创建子 Agent。
 - 模型上下文从日志构建，去掉 `_raw`。超出预算时压缩已执行的长命令源码、工具输出和文本附件，再按近期与关键词相关性选择历史，对遗漏内容生成提取式摘要。命令摘录标明已经执行，并通过工具调用 ID 指向会话中的完整原文；实际执行和原始日志使用完整命令。摘要不额外调用模型。
+- 保留消息的 `reasoning_content` 计入预算但不截断，也不写入提取式摘要；旧会话从原始响应或流式分片恢复该字段，不修改日志。必需保留的工具调用及其思考字段超预算时直接报错。
 - 工具调用与对应结果作为整体选择，当前用户输入与最新完整工具调用组保留。不完整的工具组不进入模型上下文，原始日志不变。
 - `--context-chars` 默认 48000，统计规范化消息、系统指令和工具定义的 JSON 字符数。它不是精确 token 上限；原生图片、PDF 只计元数据，实际媒体 token 由模型服务计算。不可裁剪的当前输入超预算时直接报错。
 - `--max-output-tokens` 默认 4096。模型输出截断时保留已收到的正文供显示和回放，记录错误并停止，不执行不完整的工具调用。

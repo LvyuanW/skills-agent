@@ -2,10 +2,14 @@ import copy
 import io
 import json
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+from skills_agent.context import ContextBuilder
 from skills_agent.providers import OpenAIProvider, ProviderError
 from skills_agent.providers.base import post_stream
+from skills_agent.session import Session
 
 
 def chunk(delta=None, finish=None, **metadata):
@@ -69,7 +73,92 @@ class OpenAIStreamTests(unittest.TestCase):
         self.assertEqual(result["_raw"]["stream_events"], original[:-1])
         self.assertEqual(events, original)
         self.assertNotIn("PRIVATE_REASONING", json.dumps(observed))
+        self.assertEqual(result["reasoning_content"], "PRIVATE_REASONING")
         self.assertEqual(result["content"], [{"type": "text", "text": "firstmiddleafter"}])
+
+    def test_reasoning_roundtrips_through_tools_and_later_user_turns(self):
+        reasoning = "  private\n思考 remains unchanged  "
+        call = {"id": "a", "type": "function", "function": {
+            "name": "shell", "arguments": '{"command":"pwd"}',
+        }}
+        sequences = [
+            [chunk({"reasoning_content": "  private\n"}),
+             chunk({"reasoning_content": "思考 remains unchanged  "}),
+             chunk({"reasoning_content": None, **tool(**call)}, "tool_calls"), None],
+            [chunk({"reasoning_content": "private final reasoning"}),
+             chunk({"content": "done"}, "stop"), None],
+            [chunk({"content": "next answer"}, "stop"), None],
+        ]
+        responses = [io.BytesIO(b"".join(
+            b"data: " + (b"[DONE]" if event is None else json.dumps(event).encode()) + b"\n\n"
+            for event in sequence
+        )) for sequence in sequences]
+        observed = []
+        provider = OpenAIProvider("test", "secret")
+        tools = [{"name": "shell", "description": "Run a command", "parameters": {"type": "object"}}]
+        context = ContextBuilder()
+        with TemporaryDirectory() as directory, \
+                patch("skills_agent.providers.base.request.urlopen", side_effect=responses) as send:
+            session = Session(Path(directory), "reasoning")
+            session.append({"role": "user", "content": "first task"})
+            first = provider.complete("", context.build(session.messages()), tools, on_event=observed.append)
+            self.assertEqual(first["reasoning_content"], reasoning)
+            self.assertEqual(first["_raw"]["choices"][0]["message"]["reasoning_content"], reasoning)
+            session.append(first)
+            session.append({"role": "tool", "tool_call_id": "a", "content": "/tmp"})
+            final = provider.complete("", context.build(session.messages()), tools, on_event=observed.append)
+            session.append(final)
+            session.append({"role": "user", "content": "second task"})
+            restored = Session(Path(directory), "reasoning")
+            provider.complete("", context.build(restored.messages()), tools, on_event=observed.append)
+        second_request = json.loads(send.call_args_list[1].args[0].data)
+        third_request = json.loads(send.call_args_list[2].args[0].data)
+        self.assertEqual(second_request["messages"][1], {
+            "role": "assistant", "content": None, "reasoning_content": reasoning,
+            "tool_calls": [call],
+        })
+        self.assertEqual(third_request["messages"][1], second_request["messages"][1])
+        self.assertEqual(third_request["messages"][3], {
+            "role": "assistant", "content": [{"type": "text", "text": "done"}],
+            "reasoning_content": "private final reasoning",
+        })
+        self.assertNotIn("private", json.dumps(observed))
+        self.assertNotIn("_raw", json.dumps(third_request))
+        self.assertTrue(all(response.closed for response in responses))
+
+    def test_empty_reasoning_is_preserved_but_null_or_missing_is_not_invented(self):
+        for delta in [{"reasoning_content": ""}, {"reasoning_content": None}, {}]:
+            with self.subTest(delta=delta):
+                result = self.complete([chunk({**delta, "content": "done"}, "stop"), None])
+                with patch("skills_agent.providers.openai.post_stream", return_value=(event for event in [
+                    chunk({"content": "next"}, "stop"), None,
+                ])) as send:
+                    OpenAIProvider("test", "secret").complete("", [result], [])
+                sent = send.call_args.args[1]["messages"][0]
+                if delta.get("reasoning_content") == "":
+                    self.assertEqual(result["reasoning_content"], "")
+                    self.assertEqual(sent["reasoning_content"], "")
+                else:
+                    self.assertNotIn("reasoning_content", result)
+                    self.assertNotIn("reasoning_content", sent)
+
+    def test_invalid_reasoning_delta_is_rejected_and_retained_in_raw_log(self):
+        for value in [7, False, [], {}]:
+            first = chunk({"content": "received"})
+            invalid = chunk({"reasoning_content": value})
+            with self.subTest(value=value), self.assertRaisesRegex(ProviderError, "reasoning_content") as caught:
+                self.complete([first, invalid, chunk(finish="stop"), None])
+            self.assertEqual(caught.exception.raw["stream_events"], [first, invalid])
+            self.assertEqual(caught.exception.partial_content, [{"type": "text", "text": "received"}])
+
+    def test_invalid_saved_reasoning_is_rejected_before_request(self):
+        for value in [None, 7, False, [], {}]:
+            with self.subTest(value=value), patch("skills_agent.providers.openai.post_stream") as send:
+                with self.assertRaisesRegex(ProviderError, "reasoning_content"):
+                    OpenAIProvider("test", "secret").complete("", [{
+                        "role": "assistant", "content": "done", "reasoning_content": value,
+                    }], [])
+                send.assert_not_called()
 
     def test_refusal_streams_and_preserves_received_order(self):
         observed = []

@@ -30,6 +30,7 @@ def history(path: Path, start: int, end: int) -> None:
             if event.get("type") == "message":
                 message = event["message"]
                 message.pop("_raw", None)
+                message.pop("reasoning_content", None)
                 if message.get("role") == "tool" and message.get("name") == "subagent":
                     continue
                 if message.get("role") == "assistant":

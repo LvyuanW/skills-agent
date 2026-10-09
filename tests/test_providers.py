@@ -101,7 +101,21 @@ class ProviderTests(unittest.TestCase):
         sent = send.call_args.args[1]["messages"]
         self.assertEqual(sent[0]["tool_calls"], [call])
         self.assertNotIn("_raw", sent[0])
+        self.assertNotIn("reasoning_content", sent[0])
         self.assertEqual(sent[1], {"role": "tool", "tool_call_id": "a", "content": "/tmp"})
+
+    def test_anthropic_ignores_openai_reasoning_metadata(self):
+        with patch("skills_agent.providers.anthropic.post_stream",
+                   return_value=response_events(anthropic_response())) as send:
+            AnthropicProvider("test-model", "secret").complete("", [
+                {"role": "user", "content": "first"},
+                {"role": "assistant", "content": "answer", "reasoning_content": "PRIVATE_REASONING"},
+                {"role": "user", "content": "next"},
+            ], TOOLS)
+        self.assertEqual(send.call_args.args[1]["messages"][1], {
+            "role": "assistant", "content": [{"type": "text", "text": "answer"}],
+        })
+        self.assertNotIn("PRIVATE_REASONING", json.dumps(send.call_args.args[1]))
 
     def test_anthropic_merges_parallel_results_before_user_text(self):
         calls = [{"id": name, "name": "shell", "arguments": '{"command":"pwd"}'}
