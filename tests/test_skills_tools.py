@@ -21,8 +21,7 @@ class SkillsToolsTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.workspace = Path(self.directory.name).resolve()
-        self.skills = SkillRegistry([BUILTIN_ROOT])
-        self.tools = ToolRegistry(self.workspace, self.skills)
+        self.tools = ToolRegistry(self.workspace)
 
     def shell(self, command):
         return json.loads(self.tools.execute("shell", json.dumps({"command": command})))
@@ -30,7 +29,7 @@ class SkillsToolsTests(unittest.TestCase):
     def script(self, *arguments):
         return self.shell(shlex.join([sys.executable, str(SCRIPT), *arguments]))
 
-    def test_catalog_does_not_include_instructions_and_read_is_on_demand(self):
+    def test_catalog_includes_metadata_and_path_without_instructions(self):
         root = self.workspace / "skills" / "example"
         root.mkdir(parents=True)
         path = root / "SKILL.md"
@@ -40,8 +39,6 @@ class SkillsToolsTests(unittest.TestCase):
         self.assertIn("example: Read example files.", skills.catalog())
         self.assertIn(str(path), skills.catalog())
         self.assertNotIn("original body", skills.catalog())
-        path.write_text(header + "updated body", encoding="utf-8")
-        self.assertEqual(skills.read("example"), header + "updated body")
 
     def test_invalid_skill_metadata_is_reported(self):
         root = self.workspace / "bad"
@@ -146,20 +143,33 @@ class SkillsToolsTests(unittest.TestCase):
             with self.subTest(name=name, arguments=arguments):
                 self.assertIn("error", json.loads(self.tools.execute(name, arguments)))
 
-    def test_skill_tool_returns_complete_file(self):
-        result = json.loads(self.tools.execute("read_skill", '{"name": "workspace"}'))
-        self.assertEqual(result["content"], self.skills.read("workspace"))
+    def test_shell_reads_skill_instructions_and_reference_source(self):
+        for path in [SCRIPT.parent.parent / "SKILL.md", SCRIPT]:
+            with self.subTest(path=path):
+                result = self.shell(shlex.join(["cat", str(path)]))
+                self.assertEqual(result["exit_code"], 0)
+                self.assertEqual(result["stdout"], path.read_text(encoding="utf-8"))
+
+    def test_shell_executes_inline_code_and_writes_new_scripts(self):
+        python = shlex.quote(sys.executable)
+        result = self.shell(f"{python} - <<'PY'\nprint(sum([2, 3, 5]))\nPY")
+        self.assertEqual(result, {"exit_code": 0, "stdout": "10\n", "stderr": ""})
+        source = "from pathlib import Path\nPath('result.txt').write_text(str(sum(range(5))))\n"
+        result = self.shell(f"cat > task.py <<'PY'\n{source}PY\n{python} task.py")
+        self.assertEqual(result["exit_code"], 0, result["stderr"])
+        self.assertEqual((self.workspace / "task.py").read_text(), source)
+        self.assertEqual((self.workspace / "result.txt").read_text(), "10")
 
     def test_optional_tools_are_only_exposed_when_available(self):
-        self.assertEqual([item["name"] for item in self.tools.schemas], ["read_skill", "shell"])
+        self.assertEqual([item["name"] for item in self.tools.schemas], ["shell"])
         calls = []
 
         def delegate(goal, task):
             calls.append((goal, task))
             return "complete result"
 
-        tools = ToolRegistry(self.workspace, self.skills, DockerSandbox("python:3.11", self.workspace), delegate)
-        self.assertEqual([item["name"] for item in tools.schemas], ["read_skill", "shell", "sandbox", "subagent"])
+        tools = ToolRegistry(self.workspace, DockerSandbox("python:3.11", self.workspace), delegate)
+        self.assertEqual([item["name"] for item in tools.schemas], ["shell", "sandbox", "subagent"])
         with patch("builtins.print") as output:
             result = json.loads(tools.execute("subagent", '{"goal": "review", "task": "inspect files"}'))
         output.assert_not_called()
@@ -185,7 +195,7 @@ class SkillsToolsTests(unittest.TestCase):
 
     @patch("skills_agent.sandbox.subprocess.run", side_effect=FileNotFoundError("docker unavailable"))
     def test_missing_docker_returns_error_without_host_execution(self, run):
-        tools = ToolRegistry(self.workspace, self.skills, DockerSandbox("python:3.11", self.workspace))
+        tools = ToolRegistry(self.workspace, DockerSandbox("python:3.11", self.workspace))
         result = json.loads(tools.execute("sandbox", '{"command": "touch should-not-exist"}'))
         self.assertIn("docker unavailable", result["error"])
         run.assert_called_once()

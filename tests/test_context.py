@@ -1,4 +1,5 @@
 import copy
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -61,12 +62,86 @@ class ContextTests(unittest.TestCase):
         self.assertIn("Please inspect all files", str(selected))
         assert_paired(self, selected)
 
-    def test_latest_oversized_tool_arguments_fail_instead_of_losing_the_result(self):
+    def test_completed_script_source_shrinks_without_changing_history_or_result(self):
+        with tempfile.TemporaryDirectory() as directory:
+            session = Session(Path(directory), "s")
+            messages = [{"role": "user", "content": "run this"}, *tool_pair(1)]
+            source = "python - <<'PY'\n" + 'print("你好\\n")\n' * 2000 + "PY"
+            messages[1]["tool_calls"][0]["arguments"] = json.dumps({"command": source})
+            for message in messages:
+                session.append(message)
+            before = (session.path / "events.jsonl").read_bytes()
+            messages = session.messages()
+            original = copy.deepcopy(messages)
+
+            builder = ContextBuilder(2000)
+            selected = builder.build(messages)
+
+            self.assertLessEqual(builder.size(selected), 2000)
+            self.assertEqual(selected[0], original[0])
+            self.assertEqual(selected[-1], original[-1])
+            command = json.loads(selected[1]["tool_calls"][0]["arguments"])["command"]
+            self.assertIn("Already-executed command excerpt", command)
+            self.assertIn("full source: session tool call call-1", command)
+            self.assertLess(len(command), len(source))
+            self.assertEqual(messages, original)
+            self.assertEqual((session.path / "events.jsonl").read_bytes(), before)
+            assert_paired(self, selected)
+
+    def test_multiple_shell_and_sandbox_scripts_keep_their_ids_and_results(self):
+        messages = [{"role": "user", "content": "run both scripts"}, {
+            "role": "assistant", "content": "", "tool_calls": [
+                {"id": "host", "name": "shell", "arguments": json.dumps({"command": "print('host')\n" * 2000})},
+                {"id": "container", "name": "sandbox", "arguments": json.dumps({"command": "print('container')\n" * 2000})},
+            ]},
+            {"role": "tool", "tool_call_id": "container", "content": "container done"},
+            {"role": "tool", "tool_call_id": "host", "content": "host done"},
+        ]
+        builder = ContextBuilder(2400)
+        selected = builder.build(messages)
+        self.assertLessEqual(builder.size(selected), 2400)
+        self.assertEqual(selected[0], messages[0])
+        self.assertEqual(selected[-2:], messages[-2:])
+        for call in selected[1]["tool_calls"]:
+            arguments = json.loads(call["arguments"])
+            self.assertEqual(set(arguments), {"command"})
+            self.assertIn(f"full source: session tool call {call['id']}", arguments["command"])
+        assert_paired(self, selected)
+
+    def test_repeated_script_compaction_keeps_one_source_reference(self):
         messages = [{"role": "user", "content": "run this"}, *tool_pair(1)]
-        messages[1]["tool_calls"][0]["arguments"] = '{"command":"' + "x" * 20000 + '"}'
-        builder = ContextBuilder(2000)
+        messages[1]["tool_calls"][0]["arguments"] = json.dumps({"command": "x" * 20000})
+        selected = ContextBuilder(3000).build(messages)
+        original = copy.deepcopy(selected)
+        for budget in (600, 400):
+            with self.subTest(budget=budget):
+                tighter = ContextBuilder(budget)
+                selected_again = tighter.build(selected)
+                command = json.loads(selected_again[1]["tool_calls"][0]["arguments"])["command"]
+                self.assertEqual(command.count("Already-executed command excerpt"), 1)
+                self.assertEqual(command.count("full source: session tool call call-1"), 1)
+                self.assertLessEqual(tighter.size(selected_again), budget)
+                if budget == 400:
+                    self.assertEqual(command, "[Already-executed command excerpt; full source: session tool call call-1]\n")
+                assert_paired(self, selected_again)
+        self.assertEqual(selected, original)
+
+    def test_short_and_non_shell_arguments_are_not_rewritten(self):
+        for name, arguments in (
+            ("shell", '{ "command": "ls" }'),
+            ("sandbox", '{ "command": "pwd" }'),
+            ("subagent", '{ "goal": "inspect", "task": "inspect all files" }'),
+        ):
+            with self.subTest(name=name):
+                messages = [{"role": "user", "content": "inspect"}, *tool_pair(1, 6000)]
+                messages[1]["tool_calls"][0].update(name=name, arguments=arguments)
+                selected = ContextBuilder(600).build(messages)
+                self.assertEqual(selected[1]["tool_calls"][0]["arguments"], arguments)
+
+        messages = [{"role": "user", "content": "delegate"}, *tool_pair(1)]
+        messages[1]["tool_calls"][0].update(name="subagent", arguments=json.dumps({"task": "x" * 20000}))
         with self.assertRaisesRegex(ContextBudgetError, "latest tool call"):
-            builder.build(messages)
+            ContextBuilder(2000).build(messages)
 
     def test_text_attachment_can_shrink_while_path_and_source_remain(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -122,9 +197,11 @@ class ContextTests(unittest.TestCase):
         assert_paired(self, selected)
 
     def test_interrupted_tool_units_are_filtered_only_in_model_context(self):
-        for messages in ([tool_pair(1)[1]], [tool_pair(1)[0]]):
+        pending = tool_pair(1)[0]
+        pending["tool_calls"][0]["arguments"] = json.dumps({"command": "x" * 20000})
+        for messages in ([tool_pair(1)[1]], [pending]):
             original = copy.deepcopy(messages)
-            self.assertEqual(ContextBuilder().build(messages), [])
+            self.assertEqual(ContextBuilder(2000).build(messages), [])
             self.assertEqual(messages, original)
         user = {"role": "user", "content": "continue after interruption"}
         messages = [{"role": "user", "content": "first"}, tool_pair(1)[0], user, *tool_pair(2)]

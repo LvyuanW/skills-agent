@@ -1,4 +1,4 @@
-"""Discover skill metadata; load instructions only when requested."""
+"""Discover skill metadata and paths for the model's prompt."""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -52,8 +52,3 @@ class SkillRegistry:
             f"- {skill.name}: {skill.description.strip()} ({skill.path})"
             for skill in self._skills.values()
         )
-
-    def read(self, name: str) -> str:
-        if name not in self._skills:
-            raise ValueError(f"Unknown skill: {name}")
-        return self._skills[name].path.read_text(encoding="utf-8")

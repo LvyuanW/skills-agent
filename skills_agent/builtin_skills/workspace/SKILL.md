@@ -1,21 +1,13 @@
 ---
 name: workspace
-description: Read text attachments and other files by line range, search their contents, and retrieve public session history.
+description: Read and search text attachments or workspace files, and retrieve public session history.
 ---
 
-Use `shell` to execute `scripts/workspace.py` beside this SKILL.md. Resolve the script's absolute path from the catalog's SKILL.md path. Paths supplied to the script may be absolute or relative to the workspace.
+Read the source of [scripts/workspace.py](scripts/workspace.py) through `shell` to learn its file-reading and search methods. Resolve its path relative to this SKILL.md. Adapt the relevant code or write your own script for the current task, then execute it through `shell` and revise it based on the result. Use inline code or a file in the workspace; no tool registration or fixed script interface is needed.
 
-Read a file with one-based, inclusive line numbers:
+For UTF-8 text, stream lines and select the relevant ranges instead of loading an entire large file. Preserve filenames and one-based line numbers when reporting matches. The reference `read` function selects inclusive line ranges; `search` demonstrates literal or regular-expression matching and optional filename filtering. Choose ranges, filters, and output format to fit the task.
 
-```sh
-python3 "<skill-directory>/scripts/workspace.py" read "<file>" --start 1 --end 200
-```
-
-The default range is 200 lines. Request further ranges when needed. Search literal text across files or directories; add `--regex` for regular expressions or `--glob '*.py'` to restrict filenames:
-
-```sh
-python3 "<skill-directory>/scripts/workspace.py" search "<pattern>" "<path>"
-```
+For PDF, office documents, archives, or other binary attachments, use a suitable installed reader or write a task-specific parser. Extract relevant content before reasoning about it; do not interpret binary data as text.
 
 Retrieve earlier public interactions using only `history` with the main session's `events.jsonl` path supplied in the system context:
 
@@ -23,6 +15,4 @@ Retrieve earlier public interactions using only `history` with the main session'
 python3 "<skill-directory>/scripts/workspace.py" history "<events.jsonl>" --start 1 --end 200
 ```
 
-Ranges use original event line numbers and default to 200 lines. The command preserves public messages and subagent goal summaries while omitting hidden subagent calls, results, and raw provider payloads. Request further ranges as needed; to search public history, pipe `history` output to a text search command. Do not use `read`, `search`, or other raw-file commands on session logs or child sessions. Keep file searches outside session directories.
-
-Use these commands for UTF-8 text. For PDF, office documents, archives, or other binary attachments, use a suitable installed reader or a task-specific script. Extract the relevant content before reasoning about it; do not interpret binary data as text.
+Ranges use original event line numbers and default to 200 lines. This history helper preserves public messages and subagent goal summaries while omitting hidden subagent calls, results, and raw provider payloads. Request further ranges as needed; process or search its output with your own code. Do not use `read`, `search`, or other raw-file commands on session logs or child sessions. Keep file searches outside session directories.

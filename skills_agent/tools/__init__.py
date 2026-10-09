@@ -1,4 +1,4 @@
-"""The small tool boundary: skills, shell, sandbox, and subagents."""
+"""The small tool boundary: shell, sandbox, and subagents."""
 
 import json
 import subprocess
@@ -6,24 +6,23 @@ from collections.abc import Callable
 from pathlib import Path
 
 from skills_agent.sandbox import DockerSandbox
-from skills_agent.skills import SkillRegistry
 
 
 class ToolRegistry:
     def __init__(
         self,
         workspace: Path,
-        skills: SkillRegistry,
         sandbox: DockerSandbox | None = None,
         subagent: Callable[[str, str], str] | None = None,
     ):
         self.workspace = Path(workspace).expanduser().resolve()
-        self.skills = skills
         self.sandbox = sandbox
         self.subagent = subagent
         definitions = [
-            ("read_skill", "Read the complete instructions for a skill.", {"name": "Skill name from the catalog."}),
-            ("shell", "Run a shell command on the host in the workspace.", {"command": "Shell command to execute."}),
+            ("shell", "Run arbitrary shell commands on the host in the workspace. "
+             "Read skill instructions and reference source code, execute multiline inline code, "
+             "or write and run new scripts for the current task.",
+             {"command": "Shell command or multiline script to execute."}),
         ]
         if sandbox is not None:
             definitions.append(("sandbox", "Run a command inside the configured Docker sandbox.", {"command": "Shell command to execute."}))
@@ -61,9 +60,7 @@ class ToolRegistry:
             for key, value in values.items():
                 if not isinstance(value, str):
                     raise ValueError(f"Argument {key} must be a string")
-            if name == "read_skill":
-                result = {"content": self.skills.read(values["name"])}
-            elif name == "shell":
+            if name == "shell":
                 process = subprocess.run(
                     values["command"], shell=True, cwd=self.workspace,
                     capture_output=True, text=True, errors="replace",

@@ -103,6 +103,47 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(json.loads(saved_tool["content"])["stdout"], "x" * 15000 + "\n")
             self.assertNotIn("x" * 15000, json.dumps(model.observed))
 
+    def test_generated_script_runs_once_and_is_compacted_only_in_model_context(self):
+        source = (
+            "from pathlib import Path\n"
+            "# " + "reference detail " * 1500 + "\n"
+            "with Path('runs.txt').open('a') as output:\n"
+            "    output.write('executed once\\n')\n"
+            "print('generated script completed')\n"
+        )
+        command = "cat > generated.py <<'PY'\n" + source + "PY\npython3 generated.py"
+
+        class Model:
+            def complete(self, system, messages, tools):
+                if messages[-1]["role"] == "user":
+                    return answer("", [call("shell", {"command": command})])
+                self.observed = messages
+                return answer("done")
+
+        with TemporaryDirectory() as directory:
+            path = Path(directory)
+            session = Session(path, "generated")
+            output = io.StringIO()
+            model = Model()
+            agent = Agent(model, session, SkillRegistry([]), path, context_chars=9000,
+                          on_event=lambda event: render_event(event, output))
+            self.assertEqual(agent.run(session.make_user_message("write and run a script", [])), "done")
+            self.assertEqual((path / "generated.py").read_text(), source)
+            self.assertEqual((path / "runs.txt").read_text(), "executed once\n")
+            saved_call = next(message for message in session.messages() if message.get("tool_calls"))
+            self.assertEqual(json.loads(saved_call["tool_calls"][0]["arguments"]), {"command": command})
+            context_call = next(message for message in model.observed if message.get("tool_calls"))
+            excerpt = json.loads(context_call["tool_calls"][0]["arguments"])["command"]
+            self.assertLess(len(excerpt), len(command))
+            self.assertIn("generated.py", excerpt)
+            result = next(message for message in model.observed if message["role"] == "tool")
+            self.assertEqual(json.loads(result["content"])["stdout"], "generated script completed\n")
+            self.assertIn(saved_call["tool_calls"][0]["arguments"], output.getvalue())
+            replay = io.StringIO()
+            for event in session.events():
+                render_event(event, replay)
+            self.assertEqual(output.getvalue(), replay.getvalue())
+
     def test_failed_provider_response_is_recorded_without_executing_tools(self):
         raw = {"incomplete": "original response"}
 
@@ -165,12 +206,36 @@ class AgentTests(unittest.TestCase):
 
 
 class CLIProtocolTests(unittest.TestCase):
-    def test_cli_executes_real_script_and_resumes_over_both_http_protocols(self):
+    def test_cli_reads_references_writes_repairs_script_and_resumes_over_both_protocols(self):
+        # Scripted model responses validate transport and execution, not model competence.
         for provider in ("openai", "anthropic"):
             with self.subTest(provider=provider), TemporaryDirectory() as directory:
                 requests = []
                 workspace = Path(directory)
-                (workspace / "task.py").write_text("from pathlib import Path\nPath('result.txt').write_text('created')\nprint('script done')\n")
+                skill = workspace / "skills" / "totals"
+                (skill / "scripts").mkdir(parents=True)
+                instructions = (
+                    "---\nname: totals\ndescription: Calculate totals from task data.\n---\n"
+                    "Read scripts/example.py as a reference, then write code for the task.\n"
+                )
+                reference = "def total(numbers):\n    return sum(numbers)\n"
+                (skill / "SKILL.md").write_text(instructions)
+                (skill / "scripts" / "example.py").write_text(reference)
+                (workspace / "data.json").write_text('{"numbers": [2, 3, 5]}')
+                broken_source = (
+                    "import json\nfrom pathlib import Path\n"
+                    "data = json.loads(Path('data.json').read_text())\n"
+                    "result = sum(data['values'])\n"
+                    "Path('result.txt').write_text(str(result))\n"
+                    "print(f'total={result}')\n"
+                )
+                fixed_source = broken_source.replace("data['values']", "data['numbers']")
+                commands = [
+                    "cat skills/totals/SKILL.md skills/totals/scripts/example.py",
+                    "cat > task.py <<'PY'\n" + broken_source + "PY\npython3 task.py",
+                    "cat > task.py <<'PY'\n" + fixed_source + "PY\npython3 task.py",
+                ]
+                self.assertFalse((workspace / "task.py").exists())
 
                 class Handler(BaseHTTPRequestHandler):
                     def log_message(self, *args):
@@ -179,16 +244,18 @@ class CLIProtocolTests(unittest.TestCase):
                     def do_POST(self):
                         data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                         requests.append((self.path, data))
-                        if len(requests) == 1:
+                        if len(requests) <= len(commands):
+                            arguments = {"command": commands[len(requests) - 1]}
+                            identifier = f"shell{len(requests)}"
                             if provider == "openai":
                                 response = {"choices": [{"finish_reason": "tool_calls", "message": {
-                                    "content": None, "tool_calls": [{"id": "shell1", "type": "function", "function": {
-                                        "name": "shell", "arguments": json.dumps({"command": "python3 task.py"}),
+                                    "content": None, "tool_calls": [{"id": identifier, "type": "function", "function": {
+                                        "name": "shell", "arguments": json.dumps(arguments),
                                     }}],
                                 }}]}
                             else:
-                                response = {"stop_reason": "tool_use", "content": [{"type": "tool_use", "id": "shell1",
-                                    "name": "shell", "input": {"command": "python3 task.py"}}]}
+                                response = {"stop_reason": "tool_use", "content": [{"type": "tool_use", "id": identifier,
+                                    "name": "shell", "input": arguments}]}
                         elif provider == "openai":
                             response = {"choices": [{"finish_reason": "stop", "message": {"content": "completed"}}]}
                         else:
@@ -209,18 +276,45 @@ class CLIProtocolTests(unittest.TestCase):
                                f"http://127.0.0.1:{server.server_port}/v1"]
                     first = subprocess.run([*command, "create result"], capture_output=True, text=True)
                     self.assertEqual(first.returncode, 0, first.stderr + first.stdout)
-                    self.assertEqual((workspace / "result.txt").read_text(), "created")
-                    self.assertIn("script done", first.stdout)
+                    self.assertEqual((workspace / "result.txt").read_text(), "10")
+                    self.assertEqual((workspace / "task.py").read_text(), fixed_source)
+                    self.assertIn("KeyError", first.stdout)
+                    self.assertIn("total=10", first.stdout)
                     self.assertIn("completed", first.stdout)
+                    session = Session(workspace / ".agent" / "sessions", "default")
+                    messages = session.messages()
+                    saved_commands = [json.loads(call["arguments"])["command"]
+                                      for message in messages for call in message.get("tool_calls", [])]
+                    self.assertEqual(saved_commands, commands)
+                    results = [json.loads(message["content"]) for message in messages if message["role"] == "tool"]
+                    self.assertEqual(results[0]["stdout"], instructions + reference)
+                    self.assertNotEqual(results[1]["exit_code"], 0)
+                    self.assertIn("KeyError: 'values'", results[1]["stderr"])
+                    self.assertEqual(results[2], {"exit_code": 0, "stdout": "total=10\n", "stderr": ""})
+                    for index in range(3):
+                        payload = requests[index + 1][1]
+                        if provider == "openai":
+                            received = [json.loads(message["content"]) for message in payload["messages"]
+                                        if message["role"] == "tool"]
+                        else:
+                            received = [json.loads(block["content"]) for message in payload["messages"]
+                                        for block in message["content"] if block["type"] == "tool_result"]
+                        self.assertEqual(received[-1], results[index])
                     session_log = workspace / ".agent" / "sessions" / "default" / "events.jsonl"
                     before = session_log.read_bytes()
                     second = subprocess.run(command, input="continue via stdin\n", capture_output=True, text=True)
                     self.assertEqual(second.returncode, 0, second.stderr + second.stdout)
                     self.assertTrue(session_log.read_bytes().startswith(before))
-                    self.assertEqual(len(requests), 3)
+                    self.assertEqual(len(requests), 5)
                     self.assertNotIn("_raw", json.dumps(requests[-1]))
                     self.assertIn("create result", json.dumps(requests[-1]))
                     self.assertIn("continue via stdin", json.dumps(requests[-1]))
+                    history = subprocess.run(
+                        [sys.executable, "-m", "skills_agent", "history", "--workspace", directory],
+                        capture_output=True, text=True,
+                    )
+                    self.assertEqual(history.returncode, 0, history.stderr)
+                    self.assertEqual(history.stdout, first.stdout + second.stdout)
                     expected = "/v1/chat/completions" if provider == "openai" else "/v1/messages"
                     self.assertTrue(all(path == expected for path, _ in requests))
                 finally:

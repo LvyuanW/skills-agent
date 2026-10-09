@@ -65,9 +65,32 @@ def _flatten(groups: list[list[dict]]) -> list[dict]:
     return [message for group in groups for message in group]
 
 
+def _compact_commands(message: dict, limit: int) -> None:
+    """Excerpt completed commands in a context copy, never executable input."""
+    for call in message.get("tool_calls", []):
+        if call["name"] not in {"shell", "sandbox"}:
+            continue
+        try:
+            arguments = json.loads(call["arguments"])
+        except (TypeError, ValueError):
+            continue
+        command = arguments.get("command") if isinstance(arguments, dict) else None
+        if not isinstance(command, str):
+            continue
+        marker = f"[Already-executed command excerpt; full source: session tool call {call['id']}]\n"
+        is_excerpt = command.startswith(marker)
+        if len(command) <= limit or (not is_excerpt and len(command) <= 128):
+            continue
+        # A second, tighter pass must keep one marker and the original call ID.
+        source = command[len(marker):] if is_excerpt else command
+        arguments["command"] = marker + source[:max(0, limit - len(marker))]
+        call["arguments"] = json.dumps(arguments, ensure_ascii=False)
+
+
 def _compact(groups: list[list[dict]], limit: int, attachment_limit: int | None = None) -> list[list[dict]]:
     result = copy.deepcopy(groups)
     for message in _flatten(result):
+        _compact_commands(message, limit)
         content = message.get("content", "")
         if isinstance(content, str):
             if message.get("role") != "user":
