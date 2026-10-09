@@ -35,11 +35,15 @@ _LINE_STYLES = {"user": "fg:ansiwhite bg:ansiblack",
 class _Transcript(UIControl):
     def __init__(self, view):
         self.view = view
+        self.lines = [[]]
 
     def create_content(self, width, height):
         view = self.view
         with view._lock:
-            lines = view._lines(width)
+            # Keep the displayed frame stable while the terminal owns selection.
+            if not view._selecting:
+                self.lines = view._lines(width)
+            lines = self.lines
             view._height = max(1, height)
             view._bottom = max(0, len(lines) - view._height)
             view._scroll = view._bottom if view._follow_tail else min(view._scroll, view._bottom)
@@ -76,20 +80,34 @@ class TerminalView:
         self._height = 1
         self._follow_tail = True
         self._busy = False
+        self._selecting = False
         self._submitted = Queue()
         self._ready = Event()
         self._thread = None
         self._failure = None
 
         self.buffer = Buffer(multiline=False, history=InMemoryHistory(),
-                             read_only=Condition(lambda: self._busy), accept_handler=self._submit)
+                             read_only=Condition(lambda: self._busy or self._selecting),
+                             accept_handler=self._submit)
         self.control = _Transcript(self)
         self.window = Window(self.control, get_vertical_scroll=lambda _: self._scroll,
                              style="fg:ansiblack bg:ansiwhite")
-        editor = Window(BufferControl(self.buffer, input_processors=[BeforeInput("> ")]),
+        editor = Window(BufferControl(self.buffer, input_processors=[BeforeInput(
+            lambda: "选择文本（F2 返回） " if self._selecting else "> "
+        )]),
                         dont_extend_height=True, wrap_lines=True,
                         style="fg:ansiwhite bg:ansiblack")
         bindings = KeyBindings()
+
+        @bindings.add("f2")
+        def selection(event):
+            with self._lock:
+                self._selecting = not self._selecting
+            self.app.invalidate()
+
+        @bindings.add("enter", filter=Condition(lambda: self._selecting))
+        def keep_draft(event):
+            pass
 
         @bindings.add("c-c")
         def interrupt(event):
@@ -100,7 +118,7 @@ class TerminalView:
 
         @bindings.add("c-d")
         def end(event):
-            if not self._busy:
+            if not self._busy and not self._selecting:
                 if self.buffer.text:
                     self.buffer.delete()
                 else:
@@ -121,15 +139,17 @@ class TerminalView:
 
         merged = [bindings]
         if key_bindings is not None:
-            merged.append(ConditionalKeyBindings(key_bindings, Condition(lambda: not self._busy)))
+            merged.append(ConditionalKeyBindings(
+                key_bindings, Condition(lambda: not self._busy and not self._selecting)))
         self.app = Application(
             layout=Layout(HSplit([self.window, editor]), focused_element=editor),
-            key_bindings=merge_key_bindings(merged), full_screen=True, mouse_support=True,
+            key_bindings=merge_key_bindings(merged), full_screen=True,
+            mouse_support=Condition(lambda: not self._selecting),
             input=input, output=output, min_redraw_interval=0.03,
         )
 
     def _submit(self, buffer):
-        if not self._busy:
+        if not self._busy and not self._selecting:
             self._busy = True
             self._follow_tail = True
             self._submitted.put(buffer.text)
@@ -222,7 +242,8 @@ class TerminalView:
         return False
 
     def flush(self):
-        self.app.invalidate()
+        if not self._selecting:
+            self.app.invalidate()
 
     def start(self):
         def run():

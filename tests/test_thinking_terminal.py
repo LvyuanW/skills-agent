@@ -166,6 +166,91 @@ class ThinkingTerminalTests(unittest.TestCase):
         self.assertIn("FINAL_AFTER_LONG_THINKING", terminal.visible)
         self.assertEqual(len(requests), 1)
 
+    def test_native_selection_freezes_stream_until_f2_restores_mouse_and_completed_response(self):
+        continue_stream = threading.Event()
+        self.addCleanup(continue_stream.set)
+        first = "SELECTABLE_THOUGHT"
+        second = "LATER_THOUGHT"
+        answer = "COMPLETED_DURING_SELECTION"
+        response = self.response(answer)
+        response["choices"][0]["message"]["reasoning_content"] = first + " " + second
+        native = responses_from_chat(response)
+
+        def chunks():
+            yield frame({"type": "response.created", "response": {
+                "id": native["id"], "status": "in_progress", "output": [],
+            }})
+            yield frame({"type": "response.output_item.added", "output_index": 0,
+                         "item": {"type": "reasoning", "id": "reasoning", "summary": []}})
+            yield frame({"type": "response.reasoning_summary_text.delta", "output_index": 0,
+                         "summary_index": 0, "delta": first})
+            if not continue_stream.wait(5):
+                return
+            yield frame({"type": "response.reasoning_summary_text.delta", "output_index": 0,
+                         "summary_index": 0, "delta": " " + second})
+            yield frame({"type": "response.output_item.done", "output_index": 0,
+                         "item": native["output"][0]})
+            yield frame({"type": "response.output_item.added", "output_index": 1,
+                         "item": native["output"][1]})
+            yield frame({"type": "response.output_text.delta", "output_index": 1,
+                         "content_index": 0, "delta": answer})
+            yield frame({"type": "response.output_item.done", "output_index": 1,
+                         "item": native["output"][1]})
+            yield frame({"type": "response.completed", "response": native})
+
+        terminal = self.open_terminal(self.streaming_server(chunks))
+        terminal.send("select while streaming\n")
+        terminal.wait_for(lambda output: first in terminal.visible)
+        self.assertIn("▼ 思考", terminal.visible)
+        start = len(terminal.output)
+        terminal.send("\x1bOQ")  # F2 returns mouse input to the terminal emulator.
+        terminal.wait_for(lambda output: "选择文本（F2 返回）" in terminal.visible)
+        for mode in (1000, 1003, 1006, 1015):
+            self.assertIn(f"\x1b[?{mode}l".encode(), terminal.output[start:])
+        terminal.read(0.1)
+        frozen = terminal.visible
+        continue_stream.set()
+        # The model must finish and persist its response while the view remains
+        # fixed for native selection; waiting on the screen would hide a stall.
+        terminal.wait_for(lambda output: any(
+            event.get("type") == "message" and event["message"]["role"] == "assistant"
+            for event in self.events()
+        ))
+        terminal.read(0.2)
+        self.assertEqual(terminal.visible, frozen)
+        self.assertIn("▼ 思考", terminal.visible)
+        self.assertNotIn(second, terminal.visible)
+        self.assertNotIn(answer, terminal.visible)
+        log = self.workspace / ".agent/sessions/terminal/events.jsonl"
+        recorded = log.read_bytes()
+        self.assertIn(second.encode(), recorded)
+        self.assertIn(answer.encode(), recorded)
+
+        start = len(terminal.output)
+        terminal.send("\x1bOQ")
+        terminal.prompt(answer)
+        for mode in (1000, 1003, 1006, 1015):
+            self.assertIn(f"\x1b[?{mode}h".encode(), terminal.output[start:])
+        self.assertNotIn("选择文本（F2 返回）", terminal.visible)
+        self.assertIn("▶ 思考", terminal.visible)
+        self.assertNotIn(first, terminal.visible)
+        terminal.click("▶ 思考")
+        terminal.wait_for(lambda output: first in terminal.visible and second in terminal.visible)
+        self.assertIn("▼ 思考", terminal.visible)
+        self.assertIn(answer, terminal.visible)
+        self.assertEqual(log.read_bytes(), recorded)
+        terminal.send("UNSENT_DRAFT")
+        terminal.wait_for(lambda output: "> UNSENT_DRAFT" in terminal.visible)
+        terminal.send("\x1bOQ")
+        terminal.wait_for(lambda output: "选择文本（F2 返回）" in terminal.visible)
+        terminal.send("\n")
+        terminal.read(0.2)
+        self.assertIn("选择文本（F2 返回）", terminal.visible)
+        terminal.send("\x1bOQ")
+        terminal.wait_for(lambda output: "选择文本（F2 返回）" not in terminal.visible)
+        self.assertIn("> UNSENT_DRAFT", terminal.visible)
+        self.assertEqual(log.read_bytes(), recorded)
+
 
 if __name__ == "__main__":
     unittest.main()

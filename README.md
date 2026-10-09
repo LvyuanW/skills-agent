@@ -34,6 +34,8 @@ export OPENAI_MODEL='支持工具调用的模型名称'
 
 鼠标点击需要终端允许鼠标报告；Apple Terminal 默认开启，可在 [View → Allow Mouse Reporting](https://support.apple.com/en-mide/guide/terminal/trmlc69728a5/mac) 中检查。滚轮或 PageUp / PageDown 浏览消息，Ctrl-End 返回最新输出。
 
+按 F2 进入文本选择模式，拖选文字后使用终端的复制快捷键（macOS 为 Cmd-C）；再按 F2 返回。选择期间画面保持不变，模型运行和日志记录继续，返回后显示最新内容并恢复思考标题的点击操作。
+
 终端中的 Agent 正文渲染 Markdown，包括标题、加粗、斜体、列表、引用、链接、代码和表格。消息区默认跟随最新输出，向上滚动可以阅读此前内容。`history` 命令直接渲染完整正文和可读思考；重定向输出和日志保留 Markdown 源文。
 
 stdin 每行作为一轮输入，EOF 退出。需要将多行任务作为一次输入并执行到结束时，使用下方的 benchmark 入口。
