@@ -19,7 +19,7 @@ class SkillsAgentConfig:
     tokenizer_encoding: str | None = None
     model_context_window: int | None = None
     max_output_tokens: int = 32768
-    summary_output_tokens: int = 32768
+    summary_output_tokens: int = 8192
     skill_dirs: list[str] = field(default_factory=list)
 
     def __post_init__(self):

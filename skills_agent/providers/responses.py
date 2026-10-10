@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .base import (
     ProviderError, ProviderConnectionError, ProviderOutputLimitError, blocks,
-    encoded_file, parse_arguments, post_stream, validate_calls, validate_tool_pairs,
+    encoded_file, parse_arguments, post_stream, stream_ended, stream_error, received_text, validate_calls, tool_feedback_messages,
 )
 
 
@@ -54,10 +54,9 @@ def _normalized(output):
 
 
 class ResponsesMixin:
-    def _responses_payload(self, system, messages, tools):
-        validate_tool_pairs(messages)
+    def _responses_payload(self, system, messages, tools, *, disable_thinking=False):
         items = []
-        for message in messages:
+        for message in tool_feedback_messages(messages):
             role = message['role']
             if role == 'tool':
                 items.append({'type': 'function_call_output', 'call_id': message['tool_call_id'],
@@ -79,10 +78,13 @@ class ResponsesMixin:
             payload['tools'] = [{'type': 'function', 'name': t['name'],
                                  'description': t['description'], 'parameters': t['parameters'],
                                  'strict': False} for t in tools]
+        if disable_thinking:
+            payload['reasoning'] = {'effort': 'none'}
         return payload
 
-    def _complete_responses(self, system, messages, tools, *, on_event=None, max_output_tokens=None):
-        payload = self._responses_payload(system, messages, tools)
+    def _complete_responses(self, system, messages, tools, *, on_event=None, max_output_tokens=None,
+                            disable_thinking=False):
+        payload = self._responses_payload(system, messages, tools, disable_thinking=disable_thinking)
         limit = self.max_output_tokens if max_output_tokens is None else max_output_tokens
         if limit <= 0:
             raise ValueError('max_output_tokens must be positive')
@@ -123,12 +125,23 @@ class ResponsesMixin:
                         completed = True
                         break
                     if kind in {'response.failed', 'response.incomplete'}:
+                        response = event.get('response', {})
+                        reason = response.get('incomplete_details', {}).get('reason', kind)
+                        error_type = (ProviderOutputLimitError
+                                      if kind == 'response.incomplete' and response.get('status') == 'incomplete'
+                                      and reason == 'max_output_tokens' else ProviderError)
+                        failure = stream_error(event, f'OpenAI Responses stopped: {reason}',
+                                               self.base_url + '/responses',
+                                               {'Authorization': f'Bearer {self.api_key}'}, error_type=error_type)
+                        raw['stream_events'][-1] = deepcopy(event)
                         raw.update(deepcopy(event.get('response', {})))
-                        reason = raw.get('incomplete_details', {}).get('reason', kind)
-                        error_type = ProviderOutputLimitError if reason == 'max_output_tokens' else ProviderError
-                        raise error_type(f'OpenAI Responses stopped: {reason}')
+                        raise failure
                     if kind == 'error':
-                        raise ProviderError('Responses stream returned an error')
+                        failure = stream_error(event, 'Responses stream returned an error',
+                                               self.base_url + '/responses',
+                                               {'Authorization': f'Bearer {self.api_key}'})
+                        raw['stream_events'][-1] = deepcopy(event)
+                        raise failure
                     if kind in {'response.created', 'response.in_progress'}:
                         raw.update(deepcopy(event.get('response', {})))
                     elif kind in {'response.output_text.delta', 'response.refusal.delta'}:
@@ -145,7 +158,7 @@ class ResponsesMixin:
                         on_event({'type': 'tool_call_delta', 'index': event['output_index'],
                                   'arguments': event['delta']})
             if not completed:
-                raise ProviderConnectionError('OpenAI Responses stream ended before response.completed')
+                raise stream_ended(stream, 'OpenAI Responses stream ended before response.completed')
             content, calls = _normalized(raw['output'])
             result = {'role': 'assistant', 'content': content, '_raw': raw,
                       '_responses_output': deepcopy(raw['output'])}
@@ -155,6 +168,17 @@ class ResponsesMixin:
         except (ProviderError, KeyboardInterrupt) as exc:
             exc.raw = raw
             exc.partial_content = partial
+            if isinstance(exc, ProviderOutputLimitError) and not any(
+                block.get('type') == 'text' and block.get('text') for block in partial
+            ):
+                terminal_text = []
+                for item in raw.get('output', []):
+                    if isinstance(item, dict) and item.get('type') == 'message':
+                        terminal_text.extend(
+                            {**block, 'type': 'text' if block.get('type') == 'output_text' else block.get('type')}
+                            for block in item.get('content', []) if isinstance(block, dict)
+                        )
+                exc.partial_content = received_text(terminal_text)
             raise
         except (AttributeError, KeyError, IndexError, TypeError, ValueError):
             raise ProviderError('Invalid OpenAI Responses stream', raw, partial) from None

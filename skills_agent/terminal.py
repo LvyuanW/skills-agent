@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from io import StringIO
 import os
 import signal
+import subprocess
+import sys
 from threading import Condition as ThreadCondition, Event, RLock, Thread
 from time import monotonic
 
@@ -107,17 +109,24 @@ class _Transcript(UIControl):
 
     def mouse_handler(self, event):
         view = self.view
+        if view._selecting:
+            return NotImplemented
         if event.event_type == MouseEventType.SCROLL_UP:
             view.scroll(-3)
         elif event.event_type == MouseEventType.SCROLL_DOWN:
             view.scroll(3)
         elif event.event_type == MouseEventType.MOUSE_UP and event.button == MouseButton.LEFT:
             with view._lock:
-                block = view._headers.get(event.position.y)
-                if block is None:
-                    return NotImplemented
-                block["expanded"] = not block["expanded"]
-                view._follow_tail = False
+                link = view._image_links.get(event.position.y)
+                path = link[2] if link and link[0] <= event.position.x < link[1] else None
+                if path is None:
+                    block = view._headers.get(event.position.y)
+                    if block is None:
+                        return NotImplemented
+                    block["expanded"] = not block["expanded"]
+                    view._follow_tail = False
+            if path is not None:
+                view.open_image(path)
             view.flush()
         else:
             return NotImplemented
@@ -131,6 +140,7 @@ class TerminalView:
         self._stream = None
         self._response = []
         self._headers = {}
+        self._image_links = {}
         self._scroll = self._bottom = 0
         self._height = 1
         self._follow_tail = True
@@ -363,6 +373,27 @@ class TerminalView:
             self.blocks.append({"kind": "line", "text": str(text), "role": role})
         self.flush()
 
+    def append_image_link(self, label, path):
+        with self._lock:
+            self.finish_stream()
+            self.blocks.append({"kind": "line", "text": f"  {label}", "role": "tool",
+                                "image_path": path})
+        self.flush()
+
+    def open_image(self, path):
+        def open_file():
+            try:
+                if sys.platform == "win32":
+                    os.startfile(path)
+                else:
+                    command = "open" if sys.platform == "darwin" else "xdg-open"
+                    subprocess.run([command, path], check=True, timeout=5,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except (OSError, subprocess.SubprocessError):
+                self.append_line(f"· 图片打开失败：{path}", "tool")
+
+        Thread(target=open_file, daemon=True).start()
+
     def _body(self, text, channel, live):
         block = {"kind": channel, "text": text, "expanded": channel != "thinking" or live,
                  "complete": not live}
@@ -411,7 +442,10 @@ class TerminalView:
             output = StringIO()
             console = Console(file=output, width=width, height=1, force_terminal=True,
                               color_system="standard", no_color=False, highlight=False)
-            renderable = (Text(block["text"], style=_STYLES[block["role"]]) if block["kind"] == "line"
+            line_style = _STYLES.get(block.get("role"), "")
+            if "image_path" in block:
+                line_style += " underline"
+            renderable = (Text(block["text"], style=line_style) if block["kind"] == "line"
                           else _Body(block["text"], thinking=block["kind"] == "thinking"))
             console.print(renderable)
             lines = list(split_lines(to_formatted_text(ANSI(output.getvalue()))))
@@ -424,6 +458,7 @@ class TerminalView:
     def _lines(self, width):
         lines = []
         self._headers = {}
+        self._image_links = {}
         blocks = self.blocks
         activity_row = None
         if self._activity:
@@ -458,6 +493,13 @@ class TerminalView:
             else:
                 rows = [[(style, "assistant:")]] if block["kind"] == "text" else []
                 rows.extend(self._render(block, max(1, width)))
+            if "image_path" in block:
+                for index, row in enumerate(rows):
+                    text = fragment_list_to_text(row)
+                    start, end = len(text) - len(text.lstrip()), len(text.rstrip())
+                    if start < end:
+                        # Window already converts terminal cells to character indices.
+                        self._image_links[len(lines) + index] = (start, end, block["image_path"])
             # Paint blank lines and row tails with the message's own background.
             lines.extend([*row, (style, " " * max(0, width - fragment_list_width(row)))]
                          for row in rows)

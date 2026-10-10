@@ -27,7 +27,7 @@ def create_agent(*args, **kwargs):
     agent.context.sync()
     agent.context.max_tokens = 1000
     agent.model.count_tokens = lambda system, messages, tools: 900 if len(messages) > 11 else 100
-    def compress(previous, records, current_user):
+    def compress(previous, records, current_user, *, output_tokens=None):
         while not gate.exists():
             time.sleep(0.02)
         if gate.read_text() == 'fail':

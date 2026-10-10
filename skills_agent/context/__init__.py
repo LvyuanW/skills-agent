@@ -7,6 +7,8 @@ import json
 import re
 from copy import deepcopy
 
+from ..feedback import replace_result_text
+
 
 DEFAULT_CONTEXT_TOKENS = 1_000_000
 
@@ -255,10 +257,10 @@ class WorkingContext:
             for record in reversed(self.records):
                 if not record.get("pending_direct"):
                     continue
-                record["message"]["content"] = json.dumps({
+                replace_result_text(record["message"], json.dumps({
                     "notice": "Requested original result does not fit the active context. Read a narrower range.",
                     "source": record["source"],
-                }, ensure_ascii=False)
+                }, ensure_ascii=False))
                 record.pop("pending_direct", None)
                 count = self._count(system, tools)
                 if count <= limit:
@@ -267,24 +269,46 @@ class WorkingContext:
         can_compact = getattr(self.model, "can_compact", lambda messages: True)
         if count >= trigger and can_compact([record["message"] for record in self.records]):
             older, kept = self._protected()
-            if older:
+            if older or self.state["summary"]:
                 try:
                     self.on_activity({"kind": "compression"})
-                    compacted = self.model.compact_messages([record["message"] for record in kept])
+                    compacted = self.model.compact_messages([deepcopy(record["message"]) for record in kept])
                     if len(compacted) != len(kept):
                         # Pairing by position would silently misattribute results.
                         self.save()
                         raise ContextBudgetError(
                             "Provider compaction changed the message count; kept records cannot be paired")
                     candidate = [{**record, "message": message} for record, message in zip(kept, compacted)]
+                    record_groups(candidate)
                     if self._count(system, tools, candidate, summary="") > limit:
                         self.save()
                         raise ContextBudgetError("Protected context (latest user and 10 model calls) exceeds the token budget")
-                    summary = self.auxiliary.compress(self.state["summary"], older, self.latest_user())
-                    count = self._count(system, tools, candidate, summary)
-                    if count > limit:
-                        self.save()
-                        raise ContextBudgetError("Verified summary and protected context exceed the token budget")
+                    # Count the summary's system wrapper before choosing its
+                    # generation allowance; protected records remain intact.
+                    wrapped_count = self._count(system, tools, candidate, summary="\n")
+                    output_tokens = min(getattr(self.auxiliary, "output_tokens", 8192), limit - wrapped_count)
+                    if output_tokens < 1:
+                        raise ContextBudgetError(
+                            f"Protected context and summary wrapper need {wrapped_count} input tokens; "
+                            f"available budget is {limit}. No room remains for a nonempty summary.")
+                    current_user = self.latest_user()
+                    summary = self.auxiliary.compress(self.state["summary"], older, current_user,
+                                                      output_tokens=output_tokens)
+                    compressed_count = self._count(system, tools, candidate, summary)
+                    while compressed_count > limit:
+                        if output_tokens == 1:
+                            raise ContextBudgetError(
+                                f"Protected context and the smallest generated summary need {compressed_count} "
+                                f"input tokens; available budget is {limit}. Protected messages were not shortened.")
+                        # Re-summarize only the derived working summary. A
+                        # decreasing allowance converges without replaying raw
+                        # history or turning citation/format issues into errors.
+                        output_tokens = max(1, min(output_tokens // 2,
+                                                   output_tokens - (compressed_count - limit)))
+                        summary = self.auxiliary.compress(summary, [], current_user,
+                                                          output_tokens=output_tokens)
+                        compressed_count = self._count(system, tools, candidate, summary)
+                    count = compressed_count
                     self.state["summary"] = summary
                     self.state["covered_event_ids"].extend(record["event_id"] for record in older)
                     self.state["records"] = candidate

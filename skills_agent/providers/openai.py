@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from .base import (
     DEFAULT_MAX_OUTPUT_TOKENS, HTTPProvider, ProviderError, ProviderConnectionError, ProviderOutputLimitError,
     blocks, encoded_file, parse_arguments, input_token_count, post_json,
-    post_stream, validate_calls, validate_tool_pairs,
+    post_stream, stream_ended, stream_error, validate_calls, tool_feedback_messages,
 )
 from .responses import ResponsesMixin
 
@@ -41,13 +41,20 @@ class OpenAIProvider(ResponsesMixin, HTTPProvider):
     def __init__(self, model: str, api_key: str, base_url: str | None = None,
                  max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS, *, api_format: str = "auto",
                  token_counter: str = "auto", tokenizer_path: str | None = None,
-                 tokenizer_encoding: str | None = None, model_context_window: int | None = None):
+                 tokenizer_encoding: str | None = None, model_context_window: int | None = None,
+                 deepseek_effort: str | None = None):
         super().__init__(model, api_key, base_url, max_output_tokens,
                          model_context_window=model_context_window)
         host = urlparse(self.base_url).hostname
         if api_format not in {"auto", "responses", "chat"}:
             raise ValueError("api_format must be auto, responses, or chat")
         self.api_format = ("responses" if host == "api.openai.com" else "chat") if api_format == "auto" else api_format
+        # This setting currently applies only to DeepSeek's official Chat endpoint.
+        self.deepseek_effort = None
+        if host == "api.deepseek.com" and self.api_format == "chat":
+            if deepseek_effort is not None and deepseek_effort not in {"none", "low", "high", "max"}:
+                raise ValueError("DeepSeek effort must be one of: none, low, high, max")
+            self.deepseek_effort = deepseek_effort
         if token_counter not in {"auto", "official", "deepseek"}:
             raise ValueError("token_counter must be auto, official, or deepseek")
         self.token_counter = token_counter
@@ -57,15 +64,18 @@ class OpenAIProvider(ResponsesMixin, HTTPProvider):
         self.tokenizer_encoding = tokenizer_encoding
         self._deepseek_counter = None
 
-    def count_tokens(self, system: str, messages: list[dict], tools: list[dict]) -> int:
+    def count_tokens(self, system: str, messages: list[dict], tools: list[dict],
+                     *, disable_thinking: bool = False) -> int:
         if self.token_counter == "deepseek":
             if self.api_format != "chat":
                 raise ProviderError("DeepSeek counting requires api_format=chat")
-            return self._counter().count_request(self._chat_payload(system, messages, tools))
+            return self._counter().count_request(self._chat_payload(
+                system, messages, tools, disable_thinking=disable_thinking))
         if self.api_format != "responses":
             raise ProviderError("Chat gateway needs a matching token counter; use Responses with its official count endpoint or configure DeepSeek tokenizer")
         return input_token_count(post_json(self.base_url + "/responses/input_tokens",
-                                           self._responses_payload(system, messages, tools),
+                                           self._responses_payload(system, messages, tools,
+                                                                   disable_thinking=disable_thinking),
                                            {"Authorization": f"Bearer {self.api_key}"}))
 
     def _counter(self):
@@ -79,10 +89,10 @@ class OpenAIProvider(ResponsesMixin, HTTPProvider):
             return self._counter().count_text(text)
         return super().count_text(text)
 
-    def _chat_payload(self, system: str, messages: list[dict], tools: list[dict]) -> dict:
-        validate_tool_pairs(messages)
+    def _chat_payload(self, system: str, messages: list[dict], tools: list[dict],
+                      *, disable_thinking: bool = False) -> dict:
         converted = [{"role": "system", "content": system}] if system else []
-        for message in messages:
+        for message in tool_feedback_messages(messages):
             role = message["role"]
             item = {"role": role}
             if role == "tool":
@@ -105,14 +115,20 @@ class OpenAIProvider(ResponsesMixin, HTTPProvider):
                 "name": tool["name"], "description": tool["description"],
                 "parameters": tool["parameters"],
             }} for tool in tools]
+        if disable_thinking or self.deepseek_effort == "none":
+            payload["thinking"] = {"type": "disabled"}
+        elif self.deepseek_effort is not None:
+            payload["reasoning_effort"] = self.deepseek_effort
         return payload
 
     def complete(self, system: str, messages: list[dict], tools: list[dict],
-                 *, on_event=None, max_output_tokens: int | None = None) -> dict:
+                 *, on_event=None, max_output_tokens: int | None = None,
+                 disable_thinking: bool = False) -> dict:
         if self.api_format == "responses":
             return self._complete_responses(system, messages, tools, on_event=on_event,
-                                            max_output_tokens=max_output_tokens)
-        payload = self._chat_payload(system, messages, tools)
+                                            max_output_tokens=max_output_tokens,
+                                            disable_thinking=disable_thinking)
+        payload = self._chat_payload(system, messages, tools, disable_thinking=disable_thinking)
         limit = self.max_output_tokens if max_output_tokens is None else max_output_tokens
         if limit <= 0:
             raise ValueError("max_output_tokens must be positive")
@@ -153,7 +169,8 @@ class OpenAIProvider(ResponsesMixin, HTTPProvider):
                         break
                     raw["stream_events"].append(event)
                     if "error" in event:
-                        raise ProviderError("API returned an error")
+                        raise stream_error(event, "API returned an error", self.base_url + "/chat/completions",
+                                           {"Authorization": f"Bearer {self.api_key}"})
                     for key, value in event.items():
                         if key != "choices":
                             if key != "usage" or value is not None:
@@ -255,7 +272,7 @@ class OpenAIProvider(ResponsesMixin, HTTPProvider):
                             raise ProviderError("Duplicate OpenAI finish reason")
                         choice["finish_reason"] = reason
             if not done:
-                raise ProviderConnectionError("OpenAI stream ended before [DONE]")
+                raise stream_ended(stream, "OpenAI stream ended before [DONE]")
             reason = choice["finish_reason"]
             if reason == "length":
                 raise ProviderOutputLimitError(f"OpenAI response stopped: {reason}")

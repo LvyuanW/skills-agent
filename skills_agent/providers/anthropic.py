@@ -5,7 +5,7 @@ import json
 from .base import (
     DEFAULT_MAX_OUTPUT_TOKENS, HTTPProvider, ProviderError, ProviderConnectionError, ProviderOutputLimitError,
     blocks, encoded_file, parse_arguments, input_token_count, post_json,
-    post_stream, received_text, validate_calls, validate_tool_pairs,
+    post_stream, stream_ended, stream_error, received_text, validate_calls, tool_feedback_messages,
 )
 
 
@@ -66,17 +66,19 @@ class AnthropicProvider(HTTPProvider):
         return not any(block.get("type") in {"thinking", "redacted_thinking"}
                        for block in content)
 
-    def count_tokens(self, system: str, messages: list[dict], tools: list[dict]) -> int:
+    def count_tokens(self, system: str, messages: list[dict], tools: list[dict],
+                     *, disable_thinking: bool = False) -> int:
         return input_token_count(post_json(self.base_url + "/messages/count_tokens",
-                                           self._payload(system, messages, tools), self._headers()))
+                                           self._payload(system, messages, tools,
+                                                         disable_thinking=disable_thinking), self._headers()))
 
     def _headers(self):
         return {"x-api-key": self.api_key, "anthropic-version": "2023-06-01"}
 
-    def _payload(self, system: str, messages: list[dict], tools: list[dict]) -> dict:
-        validate_tool_pairs(messages)
+    def _payload(self, system: str, messages: list[dict], tools: list[dict],
+                 *, disable_thinking: bool = False) -> dict:
         converted = []
-        for message in messages:
+        for message in tool_feedback_messages(messages):
             role = message["role"]
             if role == "tool":
                 role = "user"
@@ -104,11 +106,14 @@ class AnthropicProvider(HTTPProvider):
         if tools:
             payload["tools"] = [{"name": tool["name"], "description": tool["description"],
                                  "input_schema": tool["parameters"]} for tool in tools]
+        if disable_thinking:
+            payload["thinking"] = {"type": "disabled"}
         return payload
 
     def complete(self, system: str, messages: list[dict], tools: list[dict], *,
-                 on_event=None, max_output_tokens: int | None = None) -> dict:
-        payload = self._payload(system, messages, tools)
+                 on_event=None, max_output_tokens: int | None = None,
+                 disable_thinking: bool = False) -> dict:
+        payload = self._payload(system, messages, tools, disable_thinking=disable_thinking)
         limit = self.max_output_tokens if max_output_tokens is None else max_output_tokens
         if limit <= 0:
             raise ValueError("max_output_tokens must be positive")
@@ -125,7 +130,10 @@ class AnthropicProvider(HTTPProvider):
                     raw["stream_events"].append(deepcopy(event))
                     kind = event["type"]
                     if kind == "error":
-                        raise ProviderError("Anthropic stream returned an error")
+                        failure = stream_error(event, "Anthropic stream returned an error",
+                                               self.base_url + "/messages", self._headers())
+                        raw["stream_events"][-1] = deepcopy(event)
+                        raise failure
                     if kind == "message_start":
                         if started or event["message"].get("content") != []:
                             raise ProviderError("Invalid Anthropic message start")
@@ -207,7 +215,7 @@ class AnthropicProvider(HTTPProvider):
                         stopped = True
                         break
             if not stopped:
-                raise ProviderConnectionError("Anthropic stream ended before message_stop")
+                raise stream_ended(stream, "Anthropic stream ended before message_stop")
             reason = raw["stop_reason"]
             if reason in {"max_tokens", "model_context_window_exceeded"}:
                 raise ProviderOutputLimitError(f"Anthropic response stopped: {reason}")

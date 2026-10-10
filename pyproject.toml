@@ -20,4 +20,5 @@ include = ["skills_agent*"]
 
 [tool.setuptools.package-data]
 skills_agent = ["builtin_skills/*/SKILL.md", "builtin_skills/*/scripts/*.py", "builtin_skills/*/scripts/*.sh",
+                "builtin_skills/*/references/*.md",
                 "context/history_skill/SKILL.md", "context/history_skill/scripts/*.py"]

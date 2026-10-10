@@ -97,6 +97,18 @@ def _subagent_summary(event, output):
         _print(f"sub-agent {action}：{_brief(event.get('goal', '子任务'))}", "tool", output)
 
 
+def _tool_images(blocks, output):
+    paths = [block.get("source_path") or block.get("path") for block in blocks
+             if isinstance(block, dict) and block.get("type") == "image"]
+    paths = [path for path in paths if isinstance(path, str) and path]
+    for index, path in enumerate(paths, 1):
+        label = "[图片]" if len(paths) == 1 else f"[图片{index}]"
+        if hasattr(output, "append_image_link"):
+            output.append_image_link(label, path)
+        else:
+            _print(f"  {label} {path}", "tool", output)
+
+
 def _render_full_event(event, output):
     """Render original public content; child calls/results stay in the session log."""
     output = output or sys.stdout
@@ -124,8 +136,12 @@ def _render_full_event(event, output):
             for block in blocks:
                 if block["type"] == "text":
                     _print(block["text"], role, output)
+                elif role == "tool" and block["type"] == "image":
+                    continue
                 else:
                     _print(f"[{block['type']}] {block['path']}", role, output)
+            if role == "tool":
+                _tool_images(blocks, output)
         for call in message.get("tool_calls", []):
             if call["name"] == "subagent":
                 _print(_tool_call_summary(call["name"], _arguments(call)), "tool", output)
@@ -186,8 +202,14 @@ def render_event(event, output=None, *, full=False, echo_user=True, tool_names=N
         if role == "tool":
             if message.get("name") == "subagent":
                 return
+            content = message.get("content")
+            blocks = content if isinstance(content, list) else []
+            result_text = content
+            if isinstance(content, list):
+                result_text = next((block.get("text") for block in blocks
+                                    if isinstance(block, dict) and block.get("type") == "text"), None)
             try:
-                result = json.loads(message["content"])
+                result = json.loads(result_text)
             except (ValueError, TypeError):
                 result = None
             status = "结果已记录"
@@ -200,9 +222,15 @@ def render_event(event, output=None, *, full=False, echo_user=True, tool_names=N
                     lines = sum(len(str(result.get(key, "")).splitlines()) for key in ("stdout", "stderr"))
                     if lines:
                         status += f"，输出 {lines} 行"
+                if result.get("feedback_errors"):
+                    status += "，反馈获取失败"
+            images = sum(isinstance(block, dict) and block.get("type") == "image" for block in blocks)
+            if images:
+                status += f"，图片 {images} 张"
             purpose = _purpose(message, "task_name") or (tool_names or {}).get(message.get("tool_call_id"))
             label = f"{message['name']}「{purpose}」" if purpose else message["name"]
             _print(f"· {label}：{status}", "tool", output)
+            _tool_images(blocks, output)
         elif role == "assistant":
             _assistant_content(message, output)
             for call in message.get("tool_calls", []):
@@ -325,8 +353,8 @@ class ConsoleRenderer:
                         text = "· 正在压缩上下文"
                         if activity.get("batch"):
                             text += f" · 第 {activity['batch']} 批"
-                        stage = {"waiting": "等待模型", "thinking": "思考", "summary": "摘要",
-                                 "checking": "检查来源引用"}.get(activity.get("phase"))
+                        stage = {"waiting": "等待模型", "thinking": "思考", "summary": "摘要"}.get(
+                            activity.get("phase"))
                         if stage:
                             text += f" · {stage}"
                         preview = " ".join(activity.get("preview", "").split())

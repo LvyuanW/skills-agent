@@ -14,7 +14,7 @@ DEFAULTS = {
     "context_tokens": DEFAULT_CONTEXT_TOKENS,
     "model_context_window": None,
     "max_output_tokens": DEFAULT_MAX_OUTPUT_TOKENS,
-    "summary_output_tokens": 32768,
+    "summary_output_tokens": 8192,
     "api_format": "auto", "token_counter": "auto",
     "tokenizer_path": None, "tokenizer_encoding": None,
     "skill_dirs": [], "sandbox_image": None,

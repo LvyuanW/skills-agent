@@ -32,14 +32,20 @@ class Counter:
 
 
 class Summarizer:
-    def __init__(self, result="verified summary"):
+    output_tokens = 8192
+
+    def __init__(self, result="context summary"):
         self.calls = []
+        self.output_limits = []
         self.result = result
 
-    def compress(self, previous, records, current_user):
+    def compress(self, previous, records, current_user, *, output_tokens=None):
         self.calls.append(copy.deepcopy((previous, records, current_user)))
+        self.output_limits.append(output_tokens)
         if isinstance(self.result, Exception):
             raise self.result
+        if callable(self.result):
+            return self.result(previous, records, current_user, output_tokens)
         return self.result
 
 
@@ -172,7 +178,7 @@ class ContextTests(unittest.TestCase):
         activity = []
         context = self.context(max_tokens=1000, on_activity=activity.append)
         context.sync()
-        counts = iter([899, 900, 100, 200])
+        counts = iter([899, 900, 100, 120, 200])
         self.counter.count_tokens = lambda *args: next(counts)
         context.prepare("large system", [{"name": "tool"}])
         self.assertFalse(self.summary.calls)
@@ -191,15 +197,15 @@ class ContextTests(unittest.TestCase):
         self.append({"role": "user", "content": "task"})
         for index in range(11):
             self.append({"role": "assistant", "content": str(index)})
-        for error in (RuntimeError("quality check failed"), KeyboardInterrupt()):
+        for error in (RuntimeError("summary program interrupted"), KeyboardInterrupt()):
             with self.subTest(error=type(error).__name__):
                 activity = []
                 context = self.context(max_tokens=1000, on_activity=activity.append)
                 context.sync()
                 before = context.path.read_bytes()
-                counts = iter([900, 100])
+                counts = iter([900, 100, 120])
                 self.counter.count_tokens = lambda *args: next(counts)
-                def compress(*args):
+                def compress(*args, **kwargs):
                     self.assertEqual(activity, [{"kind": "compression"}])
                     raise error
                 with patch.object(self.summary, "compress", side_effect=compress):
@@ -214,7 +220,7 @@ class ContextTests(unittest.TestCase):
             self.append({"role": "assistant", "content": "first " * 20})
         context = self.context(max_tokens=260)
         context.sync()
-        counts = iter([250, 100, 150])
+        counts = iter([250, 100, 120, 150])
         self.counter.count_tokens = lambda *args: next(counts)
         context.prepare("sys", [])
         covered = set(context.state["covered_event_ids"])
@@ -223,7 +229,7 @@ class ContextTests(unittest.TestCase):
         self.counter.count_tokens = lambda system, messages, tools: 250 if len(messages) > 11 else 150
         context.prepare("sys", [])
         previous, displaced, _ = self.summary.calls[-1]
-        self.assertEqual(previous, "verified summary")
+        self.assertEqual(previous, "context summary")
         self.assertTrue(covered.isdisjoint(r["event_id"] for r in displaced))
 
     def test_failed_summary_does_not_replace_old_context_or_recall_raw(self):
@@ -233,11 +239,147 @@ class ContextTests(unittest.TestCase):
         context = self.context(max_tokens=280)
         context.sync()
         before = context.path.read_bytes()
-        self.summary.result = RuntimeError("quality check failed")
-        with self.assertRaisesRegex(RuntimeError, "quality"):
+        self.summary.result = RuntimeError("summary program interrupted")
+        with self.assertRaisesRegex(RuntimeError, "program"):
             context.prepare("sys", [])
         self.assertEqual(context.path.read_bytes(), before)
         self.assertEqual(context.state["summary"], "")
+
+    def test_usable_summary_need_not_reduce_input_token_count(self):
+        self.append({"role": "user", "content": "latest task"})
+        for index in range(11):
+            self.append(*pair(index))
+        for final_count in (900, 950):
+            with self.subTest(final_count=final_count):
+                context = self.context(max_tokens=1000)
+                context.sync()
+                context.state["summary"] = "previous summary"
+                context.save()
+                history = (self.session.path / "events.jsonl").read_bytes()
+                counts = iter([900, 100, 120, final_count])
+                self.counter.count_tokens = lambda *args: next(counts)
+                context.prepare("sys", [])
+                self.assertEqual(context.state["summary"], "context summary")
+                self.assertEqual(context.state["token_count"], final_count)
+                self.assertEqual(len(context.records), 21)
+                self.assertEqual((self.session.path / "events.jsonl").read_bytes(), history)
+
+    def test_oversized_summary_is_shortened_with_a_decreasing_allowance_before_commit(self):
+        self.append({"role": "user", "content": "latest task"})
+        for index in range(11):
+            self.append(*pair(index))
+        activity = []
+        context = self.context(max_tokens=1000, on_activity=activity.append)
+        context.sync()
+        context.state["summary"] = "previous summary"
+        context.save()
+        before = copy.deepcopy(context.state)
+        saved = context.path.read_bytes()
+        history = (self.session.path / "events.jsonl").read_bytes()
+        counts = iter([900, 100, 120, 1500, 1200, 950])
+        self.counter.count_tokens = lambda *args: next(counts)
+        drafts = iter(["large summary", "smaller summary", "fitting summary"])
+        def compress(previous, records, current_user, output_tokens):
+            self.assertEqual(context.state, before)
+            self.assertEqual(context.path.read_bytes(), saved)
+            return next(drafts)
+        self.summary.result = compress
+        context.prepare("sys", [])
+        self.assertEqual(self.summary.output_limits, [880, 380, 180])
+        self.assertEqual(self.summary.calls[0][0], "previous summary")
+        self.assertEqual(self.summary.calls[1][0:2], ("large summary", []))
+        self.assertEqual(self.summary.calls[2][0:2], ("smaller summary", []))
+        self.assertTrue(all(call[2] == before["records"][0]["message"] for call in self.summary.calls))
+        self.assertEqual(context.state["summary"], "fitting summary")
+        self.assertEqual(context.state["token_count"], 950)
+        self.assertEqual(context.records, [before["records"][0], *before["records"][-20:]])
+        self.assertEqual(context.state["covered_event_ids"], [record["event_id"] for record in before["records"][1:3]])
+        self.assertEqual(activity, [{"kind": "compression"}, None])
+        self.assertEqual((self.session.path / "events.jsonl").read_bytes(), history)
+        self.assertEqual(self.context(max_tokens=1000).state, context.state)
+
+    def test_summary_generation_allowance_reserves_wrapper_and_honors_configured_cap(self):
+        self.append({"role": "user", "content": "latest task"})
+        for index in range(11):
+            self.append({"role": "assistant", "content": str(index)})
+        self.summary.output_tokens = 60
+        context = self.context(max_tokens=1000)
+        context.sync()
+        counts = iter([900, 100, 120, 200])
+        self.counter.count_tokens = lambda *args: next(counts)
+        context.prepare("sys", [])
+        self.assertEqual(self.summary.output_limits, [60])
+
+    def test_existing_summary_can_be_shortened_when_all_records_are_protected(self):
+        self.append({"role": "user", "content": "latest task"})
+        for index in range(10):
+            self.append(*pair(index))
+        context = self.context(max_tokens=1000)
+        context.sync()
+        context.state["summary"] = "existing large summary"
+        context.state["covered_event_ids"] = ["event-previous"]
+        before = copy.deepcopy(context.records)
+        counts = iter([900, 100, 120, 200])
+        self.counter.count_tokens = lambda *args: next(counts)
+        context.prepare("sys", [])
+        self.assertEqual(self.summary.calls[0][0:2], ("existing large summary", []))
+        self.assertEqual(context.records, before)
+        self.assertEqual(context.state["covered_event_ids"], ["event-previous"])
+        self.assertEqual(context.state["summary"], "context summary")
+
+    def test_no_space_for_summary_wrapper_is_reported_before_generation(self):
+        self.append({"role": "user", "content": "latest task"})
+        for index in range(11):
+            self.append(*pair(index))
+        context = self.context(max_tokens=1000)
+        context.sync()
+        before = copy.deepcopy(context.state)
+        saved = context.path.read_bytes()
+        counts = iter([1100, 980, 1000])
+        self.counter.count_tokens = lambda *args: next(counts)
+        with self.assertRaisesRegex(ContextBudgetError, "No room remains for a nonempty summary"):
+            context.prepare("sys", [])
+        self.assertFalse(self.summary.calls)
+        self.assertEqual(context.state, before)
+        self.assertEqual(context.path.read_bytes(), saved)
+
+    def test_shortening_exception_preserves_previous_context_and_raw_history(self):
+        self.append({"role": "user", "content": "latest task"})
+        for index in range(11):
+            self.append(*pair(index))
+        context = self.context(max_tokens=1000)
+        context.sync()
+        context.state["summary"] = "previous summary"
+        context.save()
+        before = copy.deepcopy(context.state)
+        saved = context.path.read_bytes()
+        history = (self.session.path / "events.jsonl").read_bytes()
+        counts = iter([900, 100, 120, 1001])
+        self.counter.count_tokens = lambda *args: next(counts)
+        def compress(previous, records, current_user, output_tokens):
+            if not records:
+                raise RuntimeError("connection interrupted")
+            return "large summary"
+        self.summary.result = compress
+        with self.assertRaisesRegex(RuntimeError, "connection interrupted"):
+            context.prepare("sys", [])
+        self.assertEqual(context.state, before)
+        self.assertEqual(context.path.read_bytes(), saved)
+        self.assertEqual((self.session.path / "events.jsonl").read_bytes(), history)
+
+    def test_one_token_allowance_that_cannot_fit_reports_physical_budget(self):
+        self.append({"role": "user", "content": "latest task"})
+        for index in range(11):
+            self.append(*pair(index))
+        context = self.context(max_tokens=1000)
+        context.sync()
+        before = copy.deepcopy(context.state)
+        counts = iter([1100, 998, 999, 1001])
+        self.counter.count_tokens = lambda *args: next(counts)
+        with self.assertRaisesRegex(ContextBudgetError, "smallest generated summary"):
+            context.prepare("sys", [])
+        self.assertEqual(self.summary.output_limits, [1])
+        self.assertEqual(context.state, before)
 
     def test_protected_user_and_calls_are_not_trimmed_on_overflow(self):
         self.append({"role": "user", "content": "large " * 500})
@@ -449,12 +591,10 @@ class ContextTests(unittest.TestCase):
 
 
     def test_awkward_call_ids_yield_citable_and_distinct_references(self):
-        from skills_agent.context.auxiliary import _REFERENCES
         identifiers = ["call.1", "call-1", "调用-1", "call:1"]
         references = [recovered_id("event-7", identifier) for identifier in identifiers]
         self.assertEqual(len(references), len(set(references)))
         for identifier, reference in zip(identifiers, references):
-            self.assertEqual(_REFERENCES.findall(f"[{reference}]"), [reference], identifier)
             self.assertRegex(reference, r"^recovered-[0-9]+-[A-Za-z0-9_-]+$")
 
     def test_compaction_that_changes_the_message_count_is_rejected(self):
@@ -470,6 +610,22 @@ class ContextTests(unittest.TestCase):
             context.prepare("system", [])
         self.assertFalse(self.summary.calls)
         self.assertTrue(context.state["records"])
+
+    def test_provider_rewrite_cannot_break_protected_tool_pairs_or_mutate_working_records(self):
+        self.append({"role": "user", "content": "task"})
+        for index in range(12):
+            self.append(*pair(index, "raw hidden output " * 80))
+        context = self.context(max_tokens=3000)
+        context.sync()
+        before = copy.deepcopy(context.records)
+        def compact(messages):
+            messages[2]["tool_call_id"] = "different-call"
+            return messages
+        self.counter.compact_messages = compact
+        with self.assertRaisesRegex(ValueError, "unfinished"):
+            context.prepare("system", [])
+        self.assertEqual(context.records, before)
+        self.assertFalse(self.summary.calls)
 
 
     def test_rewritten_call_ids_never_collide_with_the_rewritten_form_of_another(self):

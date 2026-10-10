@@ -50,7 +50,13 @@ def _message_text(message: dict) -> str:
     elif isinstance(content, list):
         for block in content:
             if block.get("type") == "text":
-                parts.append(block["text"])
+                text = block["text"]
+                if message.get("role") == "tool":
+                    try:
+                        text = json.loads(text)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                parts.append(_value_text(text))
             elif block.get("type") == "thinking":
                 parts.append("Thinking:\n" + block.get("thinking", ""))
             elif block.get("type") in {"image", "file"}:

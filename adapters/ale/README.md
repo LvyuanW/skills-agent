@@ -40,7 +40,7 @@ export OPENAI_API_KEY='你的密钥'
 | `tokenizer_encoding` | 未设置；匹配实际 DeepSeek 模型的 `v4` 或 `v41` 编码器 |
 | `model_context_window` | 未设置；实际模型窗口上限，用于校验输入与输出额度之和 |
 | `max_output_tokens` | `32768`；单次输出额度，包含思考与回答 |
-| `summary_output_tokens` | `32768`；辅助生成额度，摘要目标篇幅另为 `8192` tokens |
+| `summary_output_tokens` | `8192`；辅助生成额度，压缩摘要关闭思考并以此限制单次生成长度 |
 | `skill_dirs` | `[]`；额外技能目录，必须已在任务容器内可见 |
 
 ALE 继续通过 `skills_agent.yaml` 的 `config` 字段配置，由适配器传给 benchmark 入口；无需依赖宿主机的 `skills-agent.toml`。

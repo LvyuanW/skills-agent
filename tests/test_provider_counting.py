@@ -60,6 +60,49 @@ class CounterTests(unittest.TestCase):
         self.assertEqual(payload['max_tokens'], 16000)
         self.assertEqual(count.call_args.args[1], {k: v for k, v in payload.items() if k not in {'stream', 'max_tokens'}})
 
+    def test_disabled_thinking_is_shared_by_official_count_and_generation(self):
+        output = [{'type': 'message', 'role': 'assistant', 'content': [
+            {'type': 'output_text', 'text': 'summary', 'annotations': []},
+        ]}]
+        cases = [
+            (OpenAIProvider('model', 'key'), 'openai', 'responses',
+             list(responses_stream(output)), {'stream', 'store', 'max_output_tokens', 'include'},
+             'reasoning', {'effort': 'none'}),
+            (AnthropicProvider('model', 'key'), 'anthropic', 'anthropic',
+             list(response_events(anthropic_response())), {'stream', 'max_tokens'},
+             'thinking', {'type': 'disabled'}),
+        ]
+        for provider, count_module, stream_module, events, output_fields, field, setting in cases:
+            with self.subTest(provider=type(provider).__name__), patch(
+                f'skills_agent.providers.{count_module}.post_json', return_value={'input_tokens': 42},
+            ) as count, patch(
+                f'skills_agent.providers.{stream_module}.post_stream',
+                return_value=(deepcopy(event) for event in events),
+            ) as send:
+                self.assertEqual(provider.count_tokens('sys', [], [], disable_thinking=True), 42)
+                provider.complete('sys', [], [], disable_thinking=True)
+            payload = send.call_args.args[1]
+            self.assertEqual(payload[field], setting)
+            self.assertEqual(count.call_args.args[1], {
+                key: value for key, value in payload.items() if key not in output_fields
+            })
+
+    def test_deepseek_counts_the_disabled_thinking_request_it_generates(self):
+        provider = OpenAIProvider('deepseek-flash', 'key', 'https://api.deepseek.com')
+        counter = Mock()
+        counter.count_request.return_value = 42
+        with patch.object(provider, '_counter', return_value=counter), patch(
+            'skills_agent.providers.openai.post_stream',
+            return_value=(event for event in [chunk({'content': 'summary'}, 'stop'), None]),
+        ) as send:
+            self.assertEqual(provider.count_tokens('sys', [], [], disable_thinking=True), 42)
+            provider.complete('sys', [], [], disable_thinking=True)
+        payload = send.call_args.args[1]
+        self.assertEqual(payload['thinking'], {'type': 'disabled'})
+        self.assertEqual(counter.count_request.call_args.args[0], {
+            key: value for key, value in payload.items() if key not in {'stream', 'stream_options', 'max_tokens'}
+        })
+
     def test_official_text_count_uses_valid_request_and_keeps_envelope(self):
         for cls, module in [(OpenAIProvider, 'openai'), (AnthropicProvider, 'anthropic')]:
             provider = cls('model', 'key')
@@ -136,6 +179,36 @@ class CounterTests(unittest.TestCase):
 
 
 class ResponsesTests(unittest.TestCase):
+    def test_failed_or_invalid_terminal_status_is_not_an_output_limit(self):
+        output = [{'type': 'message', 'role': 'assistant', 'content': [
+            {'type': 'output_text', 'text': 'must not be accepted', 'annotations': []},
+        ]}]
+        for kind, status in [('response.failed', 'failed'), ('response.failed', 'incomplete'),
+                             ('response.incomplete', 'failed'), ('response.incomplete', None)]:
+            response = {'output': output, 'incomplete_details': {'reason': 'max_output_tokens'}}
+            if status is not None:
+                response['status'] = status
+            event = {'type': kind, 'response': response}
+            with self.subTest(kind=kind, status=status), patch(
+                'skills_agent.providers.responses.post_stream', return_value=(e for e in [event]),
+            ), self.assertRaises(ProviderError) as raised:
+                OpenAIProvider('model', 'key').complete('', [], [], disable_thinking=True)
+            self.assertNotIsInstance(raised.exception, ProviderOutputLimitError)
+
+    def test_output_limit_keeps_summary_from_deltas_or_terminal_output(self):
+        output = [{'type': 'message', 'role': 'assistant', 'content': [
+            {'type': 'output_text', 'text': 'partial summary', 'annotations': []},
+        ]}, {'type': 'function_call', 'call_id': 'a', 'name': 'shell', 'arguments': '{private'}]
+        terminal = list(responses_stream(output, 'incomplete', incomplete_details={'reason': 'max_output_tokens'}))
+        delta = {'type': 'response.output_text.delta', 'output_index': 0,
+                 'content_index': 0, 'delta': 'partial summary'}
+        for events in (terminal, [delta, *terminal]):
+            with self.subTest(deltas=len(events) > 1), patch(
+                'skills_agent.providers.responses.post_stream', return_value=(deepcopy(e) for e in events),
+            ), self.assertRaises(ProviderOutputLimitError) as raised:
+                OpenAIProvider('model', 'key').complete('', [], [], disable_thinking=True)
+            self.assertEqual(raised.exception.partial_content, [{'type': 'text', 'text': 'partial summary'}])
+
     def test_summary_assistant_uses_easy_input_message_schema(self):
         provider = OpenAIProvider('model', 'key')
         payload = provider._responses_payload('', [

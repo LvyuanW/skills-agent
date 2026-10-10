@@ -143,6 +143,42 @@ class DisplayTests(unittest.TestCase):
                                      name="shell", task_name="检查配置", tool_call_id="c1")])
         self.assertEqual(output, "· shell「检查配置」：完成\n")
 
+    def test_multimodal_tool_result_preserves_exit_status_without_dumping_feedback(self):
+        for exit_code in (0, 7):
+            with self.subTest(exit_code=exit_code):
+                content = [
+                    {"type": "text", "text": json.dumps({"exit_code": exit_code,
+                     "stdout": "RAW_FEEDBACK\n", "stderr": "RAW_DIAGNOSTIC\n"})},
+                    {"type": "text", "text": "Attachment source: PRIVATE_SOURCE"},
+                    {"type": "image", "path": "/PRIVATE_IMAGE.png", "data": "PRIVATE_IMAGE_BYTES"},
+                    {"type": "image", "path": "/PRIVATE_SECOND_IMAGE.png"},
+                ]
+                event = message("tool", content, name="shell", task_name="检查反馈", tool_call_id="c1")
+                original = copy.deepcopy(event)
+                output = self.render([event])
+                status = "完成" if exit_code == 0 else "失败（退出码 7）"
+                self.assertEqual(output, f"· shell「检查反馈」：{status}，输出 2 行，图片 2 张\n"
+                                 "  [图片1] /PRIVATE_IMAGE.png\n  [图片2] /PRIVATE_SECOND_IMAGE.png\n")
+                self.assertNotIn("RAW_", output)
+                self.assertNotIn("PRIVATE_IMAGE_BYTES", output)
+                self.assertNotIn("PRIVATE_SOURCE", output)
+                self.assertEqual(event, original)
+
+    def test_feedback_acquisition_failure_is_visible_even_when_shell_succeeds(self):
+        result = {"exit_code": 0, "stdout": "RAW_FEEDBACK", "stderr": "",
+                  "feedback_errors": ["PRIVATE_IMAGE acquisition failed"]}
+        for content in (json.dumps(result), [
+            {"type": "text", "text": json.dumps(result)},
+            {"type": "image", "path": "/valid-image.png"},
+        ]):
+            with self.subTest(multimodal=isinstance(content, list)):
+                output = self.render([message("tool", content, name="shell", tool_call_id="c1")])
+                self.assertIn("完成，输出 1 行，反馈获取失败", output)
+                self.assertEqual("图片 1 张" in output, isinstance(content, list))
+                self.assertNotIn("RAW_", output)
+                self.assertNotIn("PRIVATE_", output)
+                self.assertEqual(len(output.splitlines()), 2 if isinstance(content, list) else 1)
+
     def test_non_json_or_non_object_tool_result_does_not_break_display(self):
         for content in ("RAW_LEGACY_OUTPUT", "[]", "null", '"RAW_TEXT"'):
             with self.subTest(content=content):

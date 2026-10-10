@@ -52,18 +52,27 @@ class Session:
     def messages(self) -> list[dict]:
         return [event["message"] for event in self.events() if event.get("type") == "message"]
 
+    def save_attachment(self, supplied_path: Path, *, data: bytes | None = None) -> dict:
+        """Save one immutable input or tool-feedback snapshot in this session."""
+        source = Path(supplied_path).expanduser().resolve(strict=True)
+        if not source.is_file():
+            raise ValueError(f"Attachment is not a file: {source}")
+        attachment_dir = self.path / "attachments"
+        attachment_dir.mkdir(exist_ok=True)
+        destination = attachment_dir / f"{uuid4().hex}_{source.name}"
+        if data is None:
+            shutil.copyfile(source, destination)
+        else:
+            destination.write_bytes(data)
+        mime_type = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
+        return {"path": str(destination), "name": source.name, "mime_type": mime_type}
+
     def make_user_message(self, text: str, paths: list[Path]) -> dict:
         content = [{"type": "text", "text": text}] if text else []
         for supplied_path in paths:
-            source = Path(supplied_path).expanduser().resolve(strict=True)
-            if not source.is_file():
-                raise ValueError(f"Attachment is not a file: {source}")
-            attachment_dir = self.path / "attachments"
-            attachment_dir.mkdir(exist_ok=True)
-            destination = attachment_dir / f"{uuid4().hex}_{source.name}"
-            shutil.copyfile(source, destination)
-            mime_type = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
-            metadata = {"path": str(destination), "name": source.name, "mime_type": mime_type}
+            metadata = self.save_attachment(supplied_path)
+            destination = Path(metadata["path"])
+            mime_type = metadata["mime_type"]
             if mime_type in {"image/png", "image/jpeg", "image/gif", "image/webp"}:
                 content.append({"type": "image", **metadata})
             elif mime_type == "application/pdf":
@@ -74,7 +83,7 @@ class Session:
                     file_text = data.decode("utf-8") if b"\0" not in data else None
                 except UnicodeDecodeError:
                     file_text = None
-                label = f"Attachment: {source.name}\nPath: {destination}\n"
+                label = f"Attachment: {metadata['name']}\nPath: {destination}\n"
                 body = file_text if file_text is not None else f"Binary file ({len(data)} bytes; {mime_type}). Read it using a script."
                 content.append({"type": "text", "text": label + "\n" + body, "attachment": True, **metadata})
         if not content:

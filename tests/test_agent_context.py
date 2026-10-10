@@ -9,6 +9,7 @@ from skills_agent.agent import Agent
 from skills_agent.benchmark import parser as benchmark_parser
 from skills_agent.cli import parser as cli_parser
 from skills_agent.context import ContextBudgetError
+from skills_agent.providers.base import ProviderConnectionError
 from skills_agent.runtime import create_agent
 from skills_agent.session import Session
 from skills_agent.skills import SkillRegistry
@@ -21,7 +22,7 @@ class ScriptedModel(Counter):
         self.replies = iter(replies)
         self.calls = []
 
-    def complete(self, system, messages, tools, *, on_event=None, max_output_tokens=None):
+    def complete(self, system, messages, tools, *, on_event=None, max_output_tokens=None, disable_thinking=False):
         self.calls.append(copy.deepcopy((system, messages, tools)))
         reply = next(self.replies)
         if callable(reply):
@@ -117,16 +118,51 @@ class AgentContextTests(unittest.TestCase):
             self.session.append(final(str(index)))
         agent.context.sync()
         before = (self.session.path / "events.jsonl").read_bytes()
-        counts = iter([900, 100, 200])
+        counts = iter([900, 100, 120, 200])
         model.count_tokens = lambda *args: next(counts)
-        def compress(*args):
+        def compress(*args, **kwargs):
             self.assertEqual(events, [{"type": "activity", "activity": {"kind": "compression"}}])
-            return "verified summary"
+            return "context summary"
         agent.auxiliary.compress = compress
         agent.context.prepare("sys", [])
         self.assertEqual(events, [{"type": "activity", "activity": {"kind": "compression"}},
                                   {"type": "activity", "activity": None}])
         self.assertEqual((self.session.path / "events.jsonl").read_bytes(), before)
+
+    def test_failed_compression_keeps_model_fragments_in_private_log(self):
+        def fail(system, messages, tools, on_event):
+            on_event({"type": "thinking_delta", "text": "PRIVATE_SUMMARY_THOUGHT"})
+            raise ProviderConnectionError(
+                "Summary connection lost", raw={"private": "PRIVATE_SUMMARY_RAW"},
+                partial_content=[{"type": "text", "text": "PRIVATE_SUMMARY_FRAGMENT"}])
+        model = ScriptedModel([fail, fail, fail])
+        agent = self.agent(model, context_tokens=1000)
+        events = []
+        agent.on_event = events.append
+        self.session.append({"role": "user", "content": "old task"})
+        for index in range(11):
+            self.session.append(final(str(index)))
+        agent.context.sync()
+        before = (self.session.path / "events.jsonl").read_bytes()
+        model.count_tokens = lambda system, messages, tools, **options: 950 if tools else 100
+        with self.assertRaisesRegex(ProviderConnectionError, "after 3 attempts"):
+            agent.run({"role": "user", "content": "latest task"})
+        main_log = (self.session.path / "events.jsonl").read_bytes()
+        self.assertTrue(main_log.startswith(before))
+        self.assertNotIn("PRIVATE_SUMMARY", main_log.decode())
+        persistent = [event for event in events if event.get("type") != "activity"]
+        self.assertNotIn("PRIVATE_SUMMARY", json.dumps(persistent))
+        self.assertTrue(any(event.get("activity", {}).get("preview") == "PRIVATE_SUMMARY_THOUGHT"
+                            for event in events if event.get("activity")))
+        self.assertNotIn("PRIVATE_SUMMARY_RAW", json.dumps(events))
+        self.assertNotIn("PRIVATE_SUMMARY_FRAGMENT", json.dumps(events))
+        self.assertEqual(agent.context.state["summary"], "")
+        self.assertEqual(len(model.calls), 3)
+        self.assertEqual(self.session.events()[-1]["message"], "Auxiliary connection failed after 3 attempts")
+        private = "".join(path.read_text() for path in
+                          (self.session.path / "subagents").glob("*/events.jsonl"))
+        for fragment in ("PRIVATE_SUMMARY_THOUGHT", "PRIVATE_SUMMARY_RAW", "PRIVATE_SUMMARY_FRAGMENT"):
+            self.assertIn(fragment, private)
 
     def test_long_raw_result_saved_before_report_and_never_replaces_raw_log(self):
         model = ScriptedModel([call("shell", {"name": "inspect log", "command": "ignored"}), final("done")])

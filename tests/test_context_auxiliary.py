@@ -15,14 +15,6 @@ def reply(text):
     return {"role": "assistant", "content": [{"type": "text", "text": text}]}
 
 
-def verdict(payload, issues=None, ids=None):
-    issues = issues or []
-    return reply(json.dumps({"passed": not issues, "issues": issues,
-                             "checked_event_ids": ids if ids is not None else [
-                                 record["event_id"] for record in payload["records"]],
-                             "checked_previous_summary": True}))
-
-
 class Model:
     model_context_window = None
 
@@ -32,19 +24,21 @@ class Model:
         self.model_context_window = window
         self.calls = []
         self.counted = []
+        self.count_options = []
 
-    def count_tokens(self, system, messages, tools):
+    def count_tokens(self, system, messages, tools, *, disable_thinking=False):
         validate_tool_pairs(messages)
         self.counted.append(copy.deepcopy(messages))
+        self.count_options.append(disable_thinking)
         return (len(system) + len(json.dumps(messages, ensure_ascii=False))
                 + len(json.dumps(tools, ensure_ascii=False))) // 4 + 1
 
     def count_text(self, text):
         return len(text) // 4 + bool(text)
 
-    def complete(self, system, messages, tools, *, on_event=None, max_output_tokens=None):
+    def complete(self, system, messages, tools, *, on_event=None, max_output_tokens=None, disable_thinking=False):
         record = {"system": system, "messages": copy.deepcopy(messages),
-                  "tools": tools, "max_output_tokens": max_output_tokens}
+                  "tools": tools, "max_output_tokens": max_output_tokens, "disable_thinking": disable_thinking}
         self.calls.append(record)
         if self.handler:
             response = self.handler(system, messages, tools)
@@ -60,7 +54,7 @@ class Model:
         if isinstance(response, str):
             response = reply(response)
         if on_event:
-            on_event({"type": "thinking_delta", "text": "PRIVATE_REVIEW_THOUGHT"})
+            on_event({"type": "thinking_delta", "text": "PRIVATE_SUMMARY_THOUGHT"})
         return response
 
 
@@ -81,140 +75,94 @@ class AuxiliaryTests(unittest.TestCase):
         return [json.loads(line) for path in (self.session.path / "subagents").glob("*/events.jsonl")
                 for line in path.read_text().splitlines()]
 
-    def test_compression_uses_selected_working_records_and_independent_complete_review(self):
+    def test_compression_uses_selected_working_records_with_one_private_generation(self):
         selected = copy.deepcopy(self.records)
         selected[1]["message"]["content"] = "Selected report, not complete raw tool output"
         original = copy.deepcopy(selected)
-        model = Model([self.summary, verdict])
+        model = Model([self.summary])
         raw_before = (self.session.path / "events.jsonl").read_bytes()
         result = Auxiliary(model, self.session).compress("", selected, {"role": "user", "content": "当前任务"})
         self.assertEqual(result, self.summary)
-        self.assertEqual(len(model.calls), 2)
-        self.assertEqual(model.calls[0]["max_output_tokens"], 32768)
+        self.assertEqual(len(model.calls), 1)
+        self.assertEqual(model.calls[0]["max_output_tokens"], 8192)
         self.assertEqual(json.loads(model.calls[0]["messages"][0]["content"])["records"], selected)
         self.assertNotIn("建议修改配置，尚未得到采纳。", str(model.calls))
-        self.assertIn("Check BOTH directions", model.calls[1]["system"])
-        self.assertEqual(len(model.calls[1]["messages"]), 1)
+        self.assertEqual(model.calls[0]["tools"], [])
+        self.assertEqual(len(model.calls[0]["messages"]), 1)
         self.assertEqual(selected, original)
         self.assertEqual((self.session.path / "events.jsonl").read_bytes(), raw_before)
         self.assertTrue(any(event.get("type") == "thinking_delta" for event in self.private_events()))
 
-    def test_summary_quality_failure_gets_one_revision_and_new_independent_review(self):
-        bad = "修改配置已被采纳 [event-2]。"
-        issue = "event-1 禁止修改，event-2 的助手建议没有采纳依据"
-        model = Model([bad, lambda p: verdict(p, [issue]), self.summary, verdict])
-        result = Auxiliary(model, self.session).compress("", self.records, None)
-        self.assertEqual(result, self.summary)
-        self.assertEqual(len(model.calls), 4)
-        repair = json.loads(model.calls[2]["messages"][0]["content"])
-        self.assertEqual(repair["verification_issues"], [issue])
-        self.assertEqual(repair["records"], self.records)
-        self.assertEqual(json.loads(model.calls[3]["messages"][0]["content"])["draft"], self.summary)
-
-    def test_failed_second_review_does_not_modify_parent_history(self):
+    def test_citation_and_format_errors_never_reject_a_nonempty_summary(self):
+        drafts = (
+            '用户说 [event-1]「PRIVATE_SUMMARY_QUOTE」 [event-999]',
+            '用户要求不要修改配置。',
+            '{"summary":"错误中的 event-120、recovered-999-call-9 是示例【R1】",'
+            '"references":{"R1":["event-999"]}}',
+            '{"summary":"重要约束【R1】", "references":',
+            '```json\n{"summary":"约束", "references":{}}\n```',
+        )
         before = (self.session.path / "events.jsonl").read_bytes()
-        fail = lambda p: verdict(p, ["event-1 用户约束仍被遗漏"])
-        model = Model(["bad", fail, "still bad", fail])
-        with self.assertRaisesRegex(ProviderError, "after one revision"):
-            Auxiliary(model, self.session).compress("", self.records, None)
-        self.assertEqual(len(model.calls), 4)
+        original = copy.deepcopy(self.records)
+        for draft in drafts:
+            with self.subTest(draft=draft):
+                model = Model([draft])
+                result = Auxiliary(model, self.session).compress("", self.records, None)
+                self.assertEqual(result, draft)
+                self.assertEqual(len(model.calls), 1)
+                self.assertTrue(model.calls[0]["disable_thinking"])
+                self.assertTrue(all(model.count_options))
+        self.assertEqual(self.records, original)
         self.assertEqual((self.session.path / "events.jsonl").read_bytes(), before)
+        self.assertTrue(any(event.get("type") == "auxiliary_result" for event in self.private_events()))
+        self.assertFalse(any(event.get("type") == "history_read" for event in self.private_events()))
 
-    def test_unknown_reference_and_changed_literal_quote_override_model_approval(self):
-        draft = "用户说 [event-1]「可以修改配置」 [event-999]"
-        model = Model([draft, verdict, self.summary, verdict])
-        self.assertEqual(Auxiliary(model, self.session).compress("", self.records, None), self.summary)
-        issues = json.loads(model.calls[2]["messages"][0]["content"])["verification_issues"]
-        self.assertTrue(any("Unknown source reference: event-999" in issue for issue in issues))
-        self.assertTrue(any("Quote does not match event-1" in issue for issue in issues))
+    def test_structured_summary_and_legacy_baseline_remain_model_readable_text(self):
+        previous = '用户要求 [event-1]「不要修改配置」。'
+        draft = '{"summary":"用户要求不要修改配置【R1】。助手提案尚未采纳【R2】。",' \
+                '"references":{"R1":["event-1"],"R2":["event-2"]}}'
+        model = Model([draft])
+        auxiliary = Auxiliary(model, self.session)
+        self.assertEqual(auxiliary.compress(previous, self.records, None, output_tokens=2048), draft)
+        generated = json.loads(model.calls[0]["messages"][0]["content"])
+        self.assertEqual(generated["previous_summary"], previous)
+        self.assertEqual(generated["output_budget_tokens"], 2048)
+        self.assertEqual(model.calls[0]["max_output_tokens"], 2048)
+        self.assertIn('"references"', model.calls[0]["system"])
+        self.assertIn('【R1】', model.calls[0]["system"])
 
-    def recovered_records(self):
-        return [
-            {"event_id": "event-1", "message": {"role": "user", "content": "不要修改配置"}},
-            {"event_id": "event-2", "message": {"role": "assistant", "content": "", "tool_calls": [
-                {"id": "call-1", "name": "shell", "arguments": '{"name":"inspect","command":"ls"}'}]}},
-            {"event_id": "recovered-2-call-1",
-             "recovered_from": {"event_id": "event-2", "tool_call_id": "call-1"},
-             "message": {"role": "tool", "name": "shell", "tool_call_id": "call-1", "task_name": "inspect",
-                         "content": json.dumps({"error": "Execution interrupted; no completed result was recorded."})}},
-        ]
+    def test_normal_token_limit_with_summary_text_is_accepted_without_repair(self):
+        draft = '{"summary":"保留用户禁止修改配置的要求【R1】。'
+        model = Model([ProviderOutputLimitError("length", raw={"finish_reason": "length"},
+                                               partial_content=[{"type": "text", "text": draft}])])
+        self.assertEqual(Auxiliary(model, self.session).compress("", self.records, None), draft)
+        self.assertEqual(len(model.calls), 1)
+        events = self.private_events()
+        self.assertFalse(any(event.get("type") == "error" for event in events))
+        self.assertTrue(any(event.get("type") == "message" and
+                            event["message"].get("finish_reason") == "length" for event in events))
 
-    def test_derived_recovery_record_is_citable_directly_and_through_its_call(self):
-        records = self.recovered_records()
-        draft = ("中断的调用已补记 [recovered-2-call-1]，原调用见 [event-2]；"
-                 "用户要求 [event-1]「不要修改配置」。")
-        model = Model([draft, verdict])
-        self.assertEqual(Auxiliary(model, self.session).compress("", records, None), draft)
-        self.assertEqual(len(model.calls), 2)      # 没有触发修订，说明来源校验未报错
-
-    def test_derived_reference_from_previous_summary_is_not_treated_as_raw_evidence(self):
-        previous = "历史摘要记录了补记结果 [recovered-2-call-1]「Execution interrupted」"
-        draft = "继续，用户要求 [event-1]「不要修改配置」。"
-        model = Model([draft, verdict])
-        self.assertEqual(Auxiliary(model, self.session).compress(previous, self.records, None), draft)
-        self.assertEqual(len(model.calls), 2)
-
-    def test_unknown_derived_reference_is_still_flagged(self):
-        draft = "引用不存在的恢复记录 [recovered-9-call-9] 和 [event-1]"
-        model = Model([draft, verdict, self.summary, verdict])
-        self.assertEqual(Auxiliary(model, self.session).compress("", self.records, None), self.summary)
-        issues = json.loads(model.calls[2]["messages"][0]["content"])["verification_issues"]
-        self.assertTrue(any("Unknown source reference: recovered-9-call-9" in issue for issue in issues))
-
-    def test_call_event_encoded_in_a_verified_derived_reference_stays_citable(self):
-        previous = "已覆盖的补记记录 [recovered-120-call-1]"
-        draft = "原调用见 [event-120]，用户要求 [event-1]「不要修改配置」。"
-        model = Model([draft, verdict])
-        self.assertEqual(Auxiliary(model, self.session).compress(previous, self.records, None), draft)
-        self.assertEqual(len(model.calls), 2)      # 未触发修订
-
-    def test_unrelated_or_invented_references_are_still_rejected(self):
-        previous = "已覆盖的补记记录 [recovered-120-call-1]"
-        draft = "见 [event-999] 与 [recovered-999-call-9]，用户要求 [event-1]「不要修改配置」。"
-        model = Model([draft, verdict, self.summary, verdict])
-        self.assertEqual(Auxiliary(model, self.session).compress(previous, self.records, None), self.summary)
-        issues = json.loads(model.calls[2]["messages"][0]["content"])["verification_issues"]
-        self.assertTrue(any("Unknown source reference: event-999" in issue for issue in issues))
-        self.assertTrue(any("Unknown source reference: recovered-999-call-9" in issue for issue in issues))
-
-    def test_review_inventory_resolves_a_derived_reference_to_its_call_event(self):
-        previous = "历史摘要 [recovered-2-call-1]"
-        draft = "原调用见 [event-2]，用户要求 [event-1]「不要修改配置」。"
-        def read_response(payload):
-            return {"role": "assistant", "content": [], "tool_calls": [
-                {"id": "read-1", "name": "read_history", "arguments": '{"event_id":"recovered-2-call-1"}'}]}
-        model = Model([draft, read_response, verdict])
-        self.assertEqual(Auxiliary(model, self.session).compress(previous, self.records, None), draft)
-        inventory = json.loads(model.calls[1]["messages"][0]["content"])["source_inventory"]
-        self.assertIn("event-2", inventory)
-        continued = model.calls[2]["messages"]
-        self.assertIn("不要修改配置", continued[2]["content"])       # 派生引用解析到原调用事件
-        reads = [event for event in self.private_events() if event.get("type") == "history_read"]
-        self.assertEqual(reads[-1]["arguments"]["resolved_event_id"], "event-2")
-
-    def test_quote_attached_to_a_derived_record_is_flagged(self):
-        issue = "Quote attached to a derived recovery record: recovered-2-call-1"
-        quoted = "补记 [recovered-2-call-1]「用户要求不要修改配置」，另见 [event-1]「不要修改配置」。"
-        cases = (("派生记录仍在素材中", "", self.recovered_records()),
-                 ("派生记录只剩在上一轮摘要里", "历史摘要 [recovered-2-call-1]", self.records))
-        for label, previous, records in cases:
-            with self.subTest(state=label):
-                model = Model([quoted, verdict, self.summary, verdict])
-                self.assertEqual(Auxiliary(model, self.session).compress(previous, records, None), self.summary)
-                issues = json.loads(model.calls[2]["messages"][0]["content"])["verification_issues"]
-                self.assertTrue(any(issue in item for item in issues), issues)
-
-    def test_review_must_cover_every_supplied_record(self):
-        model = Model([self.summary, lambda p: verdict(p, ids=["event-1"])])
-        with self.assertRaisesRegex(ProviderError, "complete source material"):
+    def test_disconnect_never_adopts_partial_summary_text(self):
+        model = Model([ProviderConnectionError("broken", partial_content=[
+            {"type": "text", "text": "UNFINISHED_SUMMARY"}]) for _ in range(3)])
+        with self.assertRaises(ProviderConnectionError):
             Auxiliary(model, self.session).compress("", self.records, None)
-        self.assertEqual(len(model.calls), 2)
+        self.assertFalse(any(event.get("type") == "auxiliary_result" for event in self.private_events()))
+
+    def test_summary_text_is_used_without_executing_unexpected_tool_calls(self):
+        response = reply("用户约束仍然有效。")
+        response["tool_calls"] = [{"id": "unexpected", "name": "shell", "arguments": "{}"}]
+        model = Model([response])
+        self.assertEqual(Auxiliary(model, self.session).compress("", self.records, None), "用户约束仍然有效。")
+        self.assertEqual(len(model.calls), 1)
+        self.assertEqual(model.calls[0]["tools"], [])
 
     def test_connection_retry_reuses_input_and_does_not_join_incomplete_fragments(self):
         model = Model([ProviderConnectionError("broken"), ProviderConnectionError("broken again"),
-                       self.summary, verdict])
+                       self.summary])
         result = Auxiliary(model, self.session).compress("", self.records, None)
         self.assertEqual(result, self.summary)
+        self.assertEqual(len(model.calls), 3)
         self.assertEqual(model.calls[0]["messages"], model.calls[1]["messages"])
         self.assertEqual(model.calls[1]["messages"], model.calls[2]["messages"])
         self.assertNotIn("PRIVATE_INCOMPLETE_FRAGMENT", str(model.calls))
@@ -234,22 +182,26 @@ class AuxiliaryTests(unittest.TestCase):
                     Auxiliary(model, self.session).compress("", self.records, None)
                 self.assertEqual(len(model.calls), 1)
 
-    def test_review_can_read_multiple_cited_original_events_privately(self):
-        def read_response(payload):
-            return {"role": "assistant", "content": [], "tool_calls": [
+    def test_response_without_summary_text_is_rejected_without_followup(self):
+        responses = (
+            (reply(" \n"), "no text"),
+            ({"role": "assistant", "content": [{"type": "thinking", "thinking": "private"}]}, "no text"),
+            ({"role": "assistant", "content": [], "tool_calls": [
                 {"id": "read-1", "name": "read_history", "arguments": '{"event_id":"event-1"}'},
-                {"id": "read-2", "name": "read_history", "arguments": '{"event_id":"event-2"}'},
-            ]}
-        model = Model([self.summary, read_response, verdict])
-        before = self.session.events()
-        self.assertEqual(Auxiliary(model, self.session).compress("", self.records, None), self.summary)
-        continued = model.calls[2]["messages"]
-        self.assertEqual([message["role"] for message in continued], ["user", "assistant", "tool", "tool"])
-        self.assertIn("不要修改配置", continued[2]["content"])
-        self.assertEqual(self.session.events(), before)
-        self.assertEqual(sum(event.get("type") == "history_read" for event in self.private_events()), 2)
+            ]}, "no text"),
+        )
+        for response, error in responses:
+            with self.subTest(response=response):
+                model = Model([response])
+                before = (self.session.path / "events.jsonl").read_bytes()
+                with self.assertRaisesRegex(ProviderError, error):
+                    Auxiliary(model, self.session).compress("", self.records, None)
+                self.assertEqual(len(model.calls), 1)
+                self.assertEqual(model.calls[0]["tools"], [])
+                self.assertEqual((self.session.path / "events.jsonl").read_bytes(), before)
+        self.assertFalse(any(event.get("type") == "auxiliary_result" for event in self.private_events()))
 
-    def test_large_compression_material_keeps_call_result_groups_and_reviews_all_records(self):
+    def test_large_compression_material_keeps_complete_groups_and_passes_draft_forward(self):
         records = []
         for number in range(12):
             call = {"id": f"call-{number}", "name": "shell", "arguments": '{"command":"pwd"}'}
@@ -259,20 +211,25 @@ class AuxiliaryTests(unittest.TestCase):
                 {"event_id": f"event-{number * 2 + 11}", "message": {
                     "role": "tool", "name": "shell", "tool_call_id": call["id"], "content": "result " * 180}},
             ])
+        summaries = []
         def handler(system, messages, tools):
             payload = json.loads(messages[0]["content"])
-            return verdict(payload) if tools else reply("Preserved important findings [event-10].")
+            self.assertEqual(tools, [])
+            self.assertEqual(payload["draft"], summaries[-1] if summaries else "")
+            summary = f"Merged {len(summaries) + 1} batches [event-10]."
+            summaries.append(summary)
+            return reply(summary)
         model = Model(handler=handler, window=3000)
-        Auxiliary(model, self.session, output_tokens=1000).compress("", records, None)
-        generations = [json.loads(call["messages"][0]["content"])["records"]
-                       for call in model.calls if not call["tools"]]
-        reviews = [json.loads(call["messages"][0]["content"])["records"]
-                   for call in model.calls if call["tools"]]
+        result = Auxiliary(model, self.session, output_tokens=1000).compress("", records, None)
+        generations = [json.loads(call["messages"][0]["content"])["records"] for call in model.calls]
         self.assertGreater(len(generations), 1)
-        for batches in (generations, reviews):
-            self.assertEqual([item for batch in batches for item in batch], records)
-            for batch in batches:
-                validate_tool_pairs([item["message"] for item in batch])
+        self.assertEqual([item for batch in generations for item in batch], records)
+        for batch in generations:
+            validate_tool_pairs([item["message"] for item in batch])
+        self.assertEqual(result, summaries[-1])
+        results = [event for event in self.private_events() if event.get("type") == "auxiliary_result"]
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["summary"], result)
 
     def test_indivisible_group_is_not_silently_truncated(self):
         record = {"event_id": "event-big", "message": {"role": "user", "content": "x" * 20000}}
@@ -280,6 +237,44 @@ class AuxiliaryTests(unittest.TestCase):
         with self.assertRaisesRegex(ProviderError, "indivisible"):
             Auxiliary(model, self.session).compress("", [record], None)
         self.assertEqual(model.calls, [])
+
+    def test_failed_later_batch_never_publishes_an_earlier_partial_summary(self):
+        records = [{"event_id": f"event-{index + 10}", "message": {
+            "role": "user", "content": "evidence " * 600,
+        }} for index in range(3)]
+        before = (self.session.path / "events.jsonl").read_bytes()
+        original = copy.deepcopy(records)
+        model = Model(["First batch findings [event-10].", ProviderOutputLimitError("length")], window=3000)
+        with self.assertRaises(ProviderOutputLimitError):
+            Auxiliary(model, self.session, output_tokens=1000).compress("", records, None)
+        self.assertEqual(len(model.calls), 2)
+        self.assertEqual(records, original)
+        self.assertEqual((self.session.path / "events.jsonl").read_bytes(), before)
+        self.assertFalse(any(event.get("type") == "auxiliary_result" for event in self.private_events()))
+
+    def test_duplicate_references_and_invalid_call_groups_are_rejected_before_generation(self):
+        call = {"id": "call-1", "name": "shell", "arguments": '{"command":"pwd"}'}
+        assistant = {"event_id": "event-10", "message": {
+            "role": "assistant", "content": "", "tool_calls": [call],
+        }}
+        result = {"event_id": "event-11", "message": {
+            "role": "tool", "name": "shell", "tool_call_id": "call-1", "content": "result",
+        }}
+        duplicate_calls = copy.deepcopy(assistant)
+        duplicate_calls["message"]["tool_calls"].append(copy.deepcopy(call))
+        cases = (
+            ("duplicate references", [self.records[0], self.records[0]], "unique event references"),
+            ("duplicate calls", [duplicate_calls, result], "duplicate tool call IDs"),
+            ("orphan result", [result], "orphan"),
+            ("missing result", [assistant], "unfinished"),
+            ("split group", [assistant, self.records[0], result], "split"),
+        )
+        for label, records, error in cases:
+            with self.subTest(case=label):
+                model = Model()
+                with self.assertRaisesRegex(ProviderError, error):
+                    Auxiliary(model, self.session).compress("", records, None)
+                self.assertEqual(model.calls, [])
 
     def test_tool_report_rewrites_over_budget_without_truncating(self):
         model = Model(["x" * 10000, "退出码 0，已生成结果 /tmp/report.csv [event-2]。"])
@@ -337,18 +332,16 @@ class AuxiliaryTests(unittest.TestCase):
                 result = Auxiliary(model, self.session, **options).tool_report("evidence", {}, {}, {})
                 self.assertEqual(result, "complete report")
                 self.assertEqual(len(model.calls), 1)
-                self.assertEqual(model.calls[0]["max_output_tokens"], 32768)
+                self.assertEqual(model.calls[0]["max_output_tokens"], 8192)
 
-    def test_previous_verified_baseline_is_separate_from_unverified_draft(self):
+    def test_previous_summary_is_supplied_separately_from_new_draft(self):
         baseline = "历史约束仍然有效 [event-1]。"
-        model = Model([self.summary, verdict])
+        model = Model([self.summary])
         Auxiliary(model, self.session).compress(baseline, self.records, None)
         generated = json.loads(model.calls[0]["messages"][0]["content"])
-        reviewed = json.loads(model.calls[1]["messages"][0]["content"])
-        self.assertEqual(generated["previous_verified_summary"], baseline)
+        self.assertEqual(generated["previous_summary"], baseline)
         self.assertEqual(generated["draft"], "")
-        self.assertEqual(reviewed["previous_verified_summary"], baseline)
-        self.assertEqual(reviewed["draft"], self.summary)
+        self.assertEqual(len(model.calls), 1)
 
     def test_large_tool_report_background_keeps_latest_user_task(self):
         model = Model(["结果 [event-2]"], window=1500)
@@ -358,15 +351,6 @@ class AuxiliaryTests(unittest.TestCase):
         supplied = json.loads(model.calls[0]["messages"][0]["content"])
         self.assertEqual(supplied["background"], {"current_user_task": {"role": "user", "content": "current intent"}})
         self.assertEqual(supplied["output"], "actual tool evidence")
-
-    def test_citation_without_evidence_lookup_stays_within_selected_source_inventory(self):
-        def read_response(payload):
-            return {"role": "assistant", "content": [], "tool_calls": [{
-                "id": "read-1", "name": "read_history", "arguments": '{"event_id":"event-999"}',
-            }]}
-        model = Model([self.summary, read_response, verdict])
-        Auxiliary(model, self.session).compress("", self.records, None)
-        self.assertIn("Only cited working-context events", model.calls[2]["messages"][-1]["content"])
 
     def test_compression_removes_protocol_duplicates_only_from_its_evidence_copy(self):
         records = copy.deepcopy(self.records)
@@ -382,7 +366,7 @@ class AuxiliaryTests(unittest.TestCase):
             ],
         })
         original = copy.deepcopy(records)
-        model = Model([self.summary, verdict])
+        model = Model([self.summary])
         Auxiliary(model, self.session).compress("", records, None)
         for call in model.calls:
             supplied = call["messages"][0]["content"]
@@ -400,7 +384,7 @@ class AuxiliaryTests(unittest.TestCase):
             {"type": "text", "text": "附件中的要求需要保留"}, image,
         ]}}]
         current = {"role": "user", "content": [{"type": "text", "text": "当前文档"}, pdf]}
-        model = Model(["附件中的要求 [event-1]", verdict])
+        model = Model(["附件中的要求 [event-1]"])
         Auxiliary(model, self.session).compress("", records, current)
         for call in model.calls:
             content = call["messages"][0]["content"]

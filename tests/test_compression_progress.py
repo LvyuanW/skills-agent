@@ -33,7 +33,7 @@ class StreamingModel:
         self.calls = []
         self.summary_attempts = 0
 
-    def count_tokens(self, *args):
+    def count_tokens(self, *args, **kwargs):
         return 100
 
     def count_text(self, text):
@@ -42,10 +42,11 @@ class StreamingModel:
     def compact_messages(self, messages):
         return copy.deepcopy(messages)
 
-    def complete(self, system, messages, tools, *, on_event, max_output_tokens=None):
+    def complete(self, system, messages, tools, *, on_event, max_output_tokens=None, disable_thinking=False):
         payload = payload_of(messages)
         self.calls.append((system, copy.deepcopy(messages), copy.deepcopy(tools), max_output_tokens))
         if system.startswith("Summarize only"):
+            assert disable_thinking
             self.summary_attempts += 1
             on_event({"type": "thinking_delta", "text": "较早的思考 " * 100})
             on_event({"type": "thinking_delta", "text": "\n\t最新结论\x1b[31mTAIL\x1b[0m\x00"})
@@ -92,7 +93,7 @@ class CompressionProgressTests(unittest.TestCase):
         self.assertTrue(all("\n" not in a.get("preview", "") and "\x1b" not in a.get("preview", "")
                             and "\x00" not in a.get("preview", "") for a in activities))
         self.assertEqual([a["preview"] for a in activities if a["phase"] == "summary"], [result])
-        self.assertEqual(activities[-1], {"kind": "compression", "phase": "checking"})
+        self.assertEqual(activities[-1]["phase"], "summary")
         self.assertNotIn("PRIVATE", json.dumps(activities))
         self.assertEqual((self.session.path / "events.jsonl").read_bytes(), original)
         logs = "\n".join(path.read_text() for path in self.session.path.glob("subagents/*/events.jsonl"))
@@ -108,11 +109,11 @@ class CompressionProgressTests(unittest.TestCase):
         auxiliary = Auxiliary(model, self.session, on_activity=activity.append)
         original_batches = auxiliary._batches
 
-        def batches(records, system, payload, tools=None):
+        def batches(records, system, payload, **options):
             if system.startswith("Summarize only"):
                 yield from ([record] for record in records)
             else:
-                yield from original_batches(records, system, payload, tools)
+                yield from original_batches(records, system, payload, **options)
 
         auxiliary._batches = batches
         auxiliary.compress("", self.records, None)

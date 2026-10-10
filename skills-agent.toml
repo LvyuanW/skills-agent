@@ -1,8 +1,10 @@
 # CLI options override this file. API keys stay in the environment or .env.
-context_tokens = 1000000
-model_context_window = 1000000
-max_output_tokens = 32768
-summary_output_tokens = 32768
+context_tokens = 524000 # 272000 / 524000 / 1000000
+model_context_window = 524000
+max_output_tokens = 65536 # 32768 / 65536 / 131072
+summary_output_tokens = 8192
+
+# V4.1-Flash 官方支持约 1M 上下文、最高 393216 输出
 
 # Optional connection settings; omitted values use the existing environment.
 # provider = "openai"

@@ -102,6 +102,36 @@ class ProviderTests(unittest.TestCase):
                             self.assertNotIn(other_key, payload)
                         send.assert_called_once()
 
+    def test_disable_thinking_is_a_per_call_option(self):
+        responses_events = [{"type": "response.completed", "response": {
+            "status": "completed", "output": [{"type": "message", "role": "assistant", "content": [
+                {"type": "output_text", "text": "done", "annotations": []},
+            ]}],
+        }}]
+        cases = [
+            (NativeOpenAIProvider("model", "key", api_format="chat"), "openai",
+             list(response_events(openai_response())), "thinking", {"type": "disabled"}),
+            (NativeOpenAIProvider("model", "key"), "responses", responses_events,
+             "reasoning", {"effort": "none"}),
+            (NativeOpenAIProvider("deepseek-flash", "key", "https://api.deepseek.com"), "openai",
+             list(response_events(openai_response())), "thinking", {"type": "disabled"}),
+            (AnthropicProvider("model", "key"), "anthropic",
+             list(response_events(anthropic_response())), "thinking", {"type": "disabled"}),
+        ]
+        for provider, module, events, field, value in cases:
+            for disabled in (False, True, False):
+                with self.subTest(api=module, disabled=disabled), patch(
+                    f"skills_agent.providers.{module}.post_stream",
+                    return_value=(deepcopy(event) for event in events),
+                ) as send:
+                    provider.complete("system", [{"role": "user", "content": "summarize"}], [],
+                                      disable_thinking=disabled)
+                    payload = send.call_args.args[1]
+                    if disabled:
+                        self.assertEqual(payload[field], value)
+                    else:
+                        self.assertNotIn(field, payload)
+
     def test_openai_request_and_raw_response(self):
         raw = openai_response()
         with patch("skills_agent.providers.base.request.urlopen", return_value=response_stream(raw)) as send:

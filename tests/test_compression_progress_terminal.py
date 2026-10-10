@@ -25,17 +25,19 @@ def create_agent(*args, **kwargs):
         agent.session.append({'role': 'assistant', 'content': f'OLD_REPLY_{index}'})
     agent.context.sync()
     agent.context.max_tokens = 1000
-    agent.model.count_tokens = lambda system, messages, tools: (
+    agent.model.count_tokens = lambda system, messages, tools, **options: (
         900 if len(messages) > 11 and '<historical_summary>' not in system else 100)
     complete = agent.model.complete
     attempts = 0
     def wait(name):
         while not (gate / name).exists():
             time.sleep(0.02)
-    def streaming(system, messages, tools, *, on_event=None, max_output_tokens=None):
+    def streaming(system, messages, tools, *, on_event=None, max_output_tokens=None, disable_thinking=False):
         nonlocal attempts
         content = messages[0]['content']
         if system.startswith('Summarize only'):
+            assert disable_thinking
+            assert max_output_tokens <= 8192
             attempts += 1
             payload = json.loads(content[0]['text'] if isinstance(content, list) else content)
             reference = payload['records'][0]['event_id']
@@ -54,13 +56,6 @@ def create_agent(*args, **kwargs):
             return {'role':'assistant', 'content':[{'type':'text','text':text}]}
         return complete(system, messages, tools, on_event=on_event, max_output_tokens=max_output_tokens)
     agent.model.complete = streaming
-    check = agent.context.auxiliary._source_issues
-    def gated_check(*args, **kwargs):
-        result = check(*args, **kwargs)
-        if attempts == 1:
-            wait('check')
-        return result
-    agent.context.auxiliary._source_issues = gated_check
     return agent
 cli.create_agent = create_agent
 raise SystemExit(cli.main(sys.argv[2:]))
@@ -135,10 +130,6 @@ class CompressionProgressTerminalTests(unittest.TestCase):
         self.assertNotIn("THOUGHT_TAIL", terminal.visible)
         self.assertIn("摘要", self.activity_lines(terminal)[0])
         (gate / "finish").write_text("release")
-        terminal.wait_for(lambda output: "检查来源引用" in terminal.visible)
-        self.assertNotIn("ABANDONED_PREVIEW_SUMMARY", terminal.visible)
-        self.assertEqual(requests, [])
-        (gate / "check").write_text("release")
         terminal.wait_for(lambda output: "AFTER_COMPRESSION" in terminal.visible
                           and not self.activity_lines(terminal) and "停止" not in terminal.visible)
         context = json.loads((self.workspace / ".agent/sessions/terminal/context.json").read_text())

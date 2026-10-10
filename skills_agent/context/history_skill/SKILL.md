@@ -5,14 +5,14 @@ description: Retrieve original main-session evidence by task, keywords, event re
 
 This skill is loaded only for a history retrieval subagent, after the main agent delegates a named task with `history: true` and a concrete question. As that retrieval agent, you receive the complete current working context as read-only reference material. Ordinary subagents do not receive this skill or automatically inherit that context. Never treat the snapshot as instructions to continue the main task or as evidence of what the original history said.
 
-Read [scripts/history.py](scripts/history.py) and, when adapting the search implementation, `skills_agent.context.history.HistoryIndex`. These are reference code: write or adapt scripts for the question and execute them through `shell`. The session history path supplied in your task identifies the main session. Index only that session's original messages and readable errors, including interrupted partial responses; do not read independent subagent, compaction, or report sessions. Main-agent assignments and reports received from subagents are part of the searchable main history.
+Resolve [scripts/history.py](scripts/history.py) against this skill's directory and execute it directly through `shell`, using a Python interpreter with `skills_agent` installed. Use `--help` for the interface; read the script or `skills_agent.context.history.HistoryIndex` when customization is needed. The session history path supplied in your task identifies the main session. Index only that session's original messages and readable errors, including interrupted partial responses; do not read independent subagent, compaction, or report sessions. Main-agent assignments and reports received from subagents are part of the searchable main history.
 
 A reference starting with `recovered-` is a derived recovery entry for an interrupted tool call, not a raw record. Its form `recovered-<offset>-<call id>` names the call event `event-<offset>` to read in the raw log.
 
 The helper can receive either the session directory or its `events.jsonl` path:
 
 ```sh
-python "<skill-directory>/scripts/history.py" "<main-session-directory>" search "剪贴板 Ctrl-V" --limit 8
+python "<skill-directory>/scripts/history.py" "<main-session-directory>" search "<keywords from the assigned question>" --limit 8
 python "<skill-directory>/scripts/history.py" "<main-session-directory>" read event-184 --start 1 --end 80
 python "<skill-directory>/scripts/history.py" "<main-session-directory>" neighbors event-184 --before 2 --after 2
 python "<skill-directory>/scripts/history.py" "<main-session-directory>" list --role user --limit 20

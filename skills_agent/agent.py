@@ -6,6 +6,8 @@ from uuid import uuid4
 from .context import DEFAULT_CONTEXT_TOKENS, WorkingContext, interrupted_result
 from .context.auxiliary import Auxiliary
 from .context.history import HistoryIndex, _message_text
+from .feedback import feedback_content, replace_result_text
+from .providers.base import blocks
 from .session import Session
 from .skills import SkillRegistry
 from .tools import ToolRegistry
@@ -21,7 +23,7 @@ def _arguments(call):
 
 class Agent:
     def __init__(self, model, session, skills, workspace, *, context_tokens=DEFAULT_CONTEXT_TOKENS,
-                 summary_output_tokens=32768, sandbox=None, on_event=None,
+                 summary_output_tokens=8192, sandbox=None, on_event=None,
                  allow_subagent=True, instructions=""):
         self.model, self.session, self.skills = model, session, skills
         self.workspace = Path(workspace).resolve()
@@ -41,6 +43,16 @@ class Agent:
         self.on_event({"type": "activity", "activity": activity})
 
     def _system(self):
+        communication = (
+            "Before a task requiring multiple tool steps, tell the user what you will do in one or "
+            "two sentences. During execution, give brief updates on important findings, changes of "
+            "direction, limitations, or after sustained work, including what you will do next. "
+            "A progress update does not end the task: continue while authorized work remains and "
+            "you can proceed. When an update requires a next tool step, issue the tool call in the "
+            "same response. Do not narrate every tool call, repeat updates, or reproduce internal "
+            "reasoning in user-facing text. Answer simple requests directly. When finished, report "
+            "the results, relevant verification, and remaining limitations.\n\n"
+        ) if self.tools.subagent else ""
         delegation = (
             "Use named subagent tasks for independent work. Ordinary subagents do not inherit "
             "the parent conversation; supply the goal, relevant constraints, necessary materials, "
@@ -61,14 +73,43 @@ class Agent:
             "already available; repeat a check only when it can provide new information. "
             "Match conclusions and completion claims to observed evidence and the scope actually verified. "
             "Complete necessary follow-through within the authorized task, and state unresolved limitations. "
-            "Reply with task results, without greetings or unrelated commentary.\n\n"
-            "Skills provide methods "
-            "and constraints; their scripts are reference source to learn from, adapt, or reuse. "
-            "When relevant, read SKILL.md and needed source with shell result_mode=direct. "
+            "Keep replies focused on the task, without greetings or unrelated commentary.\n\n"
+            "For substantial tasks that require tools, work in coherent, verifiable increments. "
+            "Establish the intended outcome and acceptance conditions, then detail only the next useful "
+            "step; adapt later steps to observed results. Once enough information is available for the "
+            "next action, use a tool to obtain evidence or save useful work instead of repeatedly "
+            "rehearsing the whole solution or drafting the complete deliverable in reasoning. For "
+            "implementation work, save coherent, useful changes early. When creating a new artifact, "
+            "start with a minimal useful version and extend it in meaningful stages.\n\n"
+            "After a substantive stage, inspect the relevant result and verify in proportion to the "
+            "change. Keep completed artifacts, their locations, important verification results, "
+            "unresolved issues and the next step recoverable through existing task files, tool results "
+            "and concise factual progress notes. Keep tightly related changes together and batch "
+            "independent reads. Do not fragment simple work or create checkpoint files by default. "
+            "Continue through subsequent stages until the authorized task is complete or a genuine "
+            "blocker prevents further progress.\n\n"
+            f"{communication}"
+            "Skills provide reusable operations, their contracts and decision criteria. Choose "
+            "capabilities for the current task, and derive artifacts, step boundaries and acceptance "
+            "conditions from the user's goal. Skill examples explain operation mechanics; adapt them "
+            "without treating an example's deliverable or sequence as a required task plan. When a "
+            "task matches a skill, read SKILL.md with shell result_mode=direct. For creating or changing text "
+            "or code artifacts, consult the file-editing skill when available. Prefer a documented "
+            "helper for an operation it already supports; run it directly through shell and use "
+            "--help when needed. Read or adapt its source when customization is necessary. "
             "Resolve relative resources against SKILL.md's directory.\n\n"
+            "For reviewing generated or changed artifacts, consult the feedback skill when "
+            "available. Obtain actual file, text or visual observations appropriate to the "
+            "acceptance conditions, and inspect them before deciding what to change next or "
+            "claiming the result is verified. A file path or a successful write or rendering "
+            "command alone does not establish the artifact's contents or visual correctness.\n\n"
+            "For work that needs a process to remain active across shell calls, consult the "
+            "process-management skill when available. Use its saved process reference to "
+            "inspect actual status, readiness and logs, and stop the process when its work is "
+            "finished. Distinguish process startup, service readiness and verified task behavior.\n\n"
             "Shell runs on the host; sandbox runs in the configured Docker container. "
-            "Write arbitrary task-specific "
-            "scripts directly; no existing script or registered entry point is required. "
+            "Write task-specific scripts when existing methods do not fit; no registered "
+            "entry point is required. "
             "Name every shell/sandbox call by its purpose. Inspect exit status, stdout, stderr "
             "and generated files; revise as needed. Preserve failure signals when composing commands "
             "or filtering results.\n\n"
@@ -95,10 +136,14 @@ class Agent:
         source = {"event_id": record["event_id"], "path": str(self.session.path / "events.jsonl"),
                   "start_line": 1, "end_line": max(1, len(source_text.splitlines()))}
         record["source"] = source
-        if mode == "report" or (mode == "auto" and self.model.count_text(message["content"]) > 8192):
+        countable = message["content"] if isinstance(message["content"], str) else source_text
+        if mode == "report" or (mode == "auto" and self.model.count_text(countable) > 8192):
+            media = [block for block in blocks(message["content"])
+                     if block.get("type") in {"image", "file"}]
             report = self.auxiliary.tool_report(source_text, call, source,
-                                                self.report_background or {"current_user_task": self.context.latest_user()})
-            message["content"] = json.dumps({"report": report, "source": source}, ensure_ascii=False)
+                                                self.report_background or {"current_user_task": self.context.latest_user()},
+                                                **({"attachments": media} if media else {}))
+            replace_result_text(message, json.dumps({"report": report, "source": source}, ensure_ascii=False))
         elif mode == "direct":
             record["pending_direct"] = True
         return record
@@ -212,6 +257,8 @@ class Agent:
                 while pending:
                     call = pending[0]
                     result = self.tools.execute(call["name"], call["arguments"])
+                    if call["name"] == "shell":
+                        result = feedback_content(result, self.session)
                     pending.pop(0)
                     self._message({"role": "tool", "name": call["name"], "tool_call_id": call["id"],
                                    "task_name": _arguments(call).get("name", call["name"]), "content": result})
@@ -220,7 +267,9 @@ class Agent:
             for call in pending:
                 self.session.append(interrupted_result(call))
             event = {"type": "error", "message": "Interrupted" if isinstance(exc, KeyboardInterrupt) else str(exc)}
-            if receiving_response or not isinstance(exc, KeyboardInterrupt):
+            if getattr(exc, "diagnostics", None) is not None:
+                event["diagnostics"] = deepcopy(exc.diagnostics)
+            if receiving_response:
                 if getattr(exc, "raw", None) is not None:
                     event["_raw"] = exc.raw
                 if getattr(exc, "partial_content", None):

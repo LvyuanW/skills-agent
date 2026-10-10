@@ -19,7 +19,7 @@ def add_agent_arguments(parser):
     parser.add_argument("--max-output-tokens", type=int,
                         help="单次输出额度（包含思考），默认 32768")
     parser.add_argument("--summary-output-tokens", type=int,
-                        help="辅助生成的输出额度；摘要目标篇幅另为8192 tokens")
+                        help="辅助生成的输出上限，默认8192 tokens；摘要调用关闭思考")
     parser.add_argument("--api-format", choices=["auto", "responses", "chat"])
     parser.add_argument("--token-counter", choices=["auto", "official", "deepseek"])
     parser.add_argument("--tokenizer-path")
@@ -45,6 +45,7 @@ def create_agent(args, session, *, on_event=None):
         api_format=args.api_format, token_counter=args.token_counter,
         tokenizer_path=args.tokenizer_path, tokenizer_encoding=args.tokenizer_encoding,
         model_context_window=args.model_context_window,
+        deepseek_effort=os.environ.get("effort") or None,
     )
     skills = SkillRegistry([
         Path(__file__).parent / "builtin_skills", workspace / "skills", *args.skill_dirs,
