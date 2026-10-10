@@ -28,7 +28,7 @@ class Agent:
         self.context_tokens, self.summary_output_tokens = context_tokens, summary_output_tokens
         self.on_event = on_event or (lambda event: None)
         self.auxiliary = Auxiliary(model, session, output_tokens=summary_output_tokens,
-                                   context_tokens=context_tokens)
+                                   context_tokens=context_tokens, on_activity=self._activity)
         self.context = WorkingContext(session, model, self.auxiliary, max_tokens=context_tokens,
                                       on_activity=self._activity)
         self.sandbox, self.instructions = sandbox, instructions

@@ -318,9 +318,20 @@ class ConsoleRenderer:
                 activity = event.get("activity")
                 text = None
                 task = None
+                preview = None
+                thinking = False
                 if activity:
                     if activity["kind"] == "compression":
                         text = "· 正在压缩上下文"
+                        if activity.get("batch"):
+                            text += f" · 第 {activity['batch']} 批"
+                        stage = {"waiting": "等待模型", "thinking": "思考", "summary": "摘要",
+                                 "checking": "检查来源引用"}.get(activity.get("phase"))
+                        if stage:
+                            text += f" · {stage}"
+                        preview = " ".join(activity.get("preview", "").split())
+                        preview = "".join(char for char in preview if char.isprintable())
+                        thinking = activity.get("phase") == "thinking"
                     elif activity["name"] == "subagent":
                         task = activity["task_name"]
                         stage = {"tool": "正在执行工具", "compression": "正在压缩上下文"}.get(
@@ -328,7 +339,7 @@ class ConsoleRenderer:
                         text = f"· sub-agent「{_purpose(activity, 'task_name')}」：{stage}"
                     else:
                         text = f"· {activity['name']}「{_purpose(activity, 'task_name')}」：执行中"
-                self.output.set_activity(text, task=task)
+                self.output.set_activity(text, task=task, preview=preview, thinking=thinking)
             return
         if event.get("type") in {"text_delta", "thinking_delta"}:
             self._had_deltas = self._had_deltas or bool(event["text"])

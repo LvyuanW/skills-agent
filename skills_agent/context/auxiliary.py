@@ -195,7 +195,8 @@ def _groups(records):
 
 
 class Auxiliary:
-    def __init__(self, model, session, output_tokens=32768, *, context_tokens=DEFAULT_CONTEXT_TOKENS):
+    def __init__(self, model, session, output_tokens=32768, *, context_tokens=DEFAULT_CONTEXT_TOKENS,
+                 on_activity=None):
         if output_tokens <= 0:
             raise ValueError("Auxiliary output_tokens must be positive")
         if context_tokens <= 0:
@@ -205,6 +206,34 @@ class Auxiliary:
         self.window = min(context_tokens, getattr(model, "model_context_window", None) or context_tokens)
         self.reserve = min(output_tokens, max(1, self.window // 4))
         self.history = HistoryIndex(session.path)
+        self.on_activity = on_activity or (lambda activity: None)
+
+    def _compression_progress(self, batch):
+        phase, recent = "waiting", ""
+
+        def receive(event=None):
+            nonlocal phase, recent
+            if event is None:
+                phase, recent = "waiting", ""
+            else:
+                next_phase = {"thinking_delta": "thinking", "text_delta": "summary"}.get(event.get("type"))
+                text = event.get("text")
+                if next_phase is None or not isinstance(text, str) or not text:
+                    return
+                if next_phase != phase:
+                    recent = ""
+                phase = next_phase
+                recent = (recent + text)[-512:]
+            activity = {"kind": "compression", "phase": phase, "batch": batch}
+            if recent:
+                # Preview data is plain, single-line text; the private log keeps
+                # the original stream, including whitespace and control bytes.
+                clean = re.sub(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))", "", recent)
+                clean = "".join(char for char in clean if char.isprintable() or char.isspace())
+                activity["preview"] = " ".join(clean.split())[-256:]
+            self.on_activity(activity)
+
+        return receive
 
     def _private_session(self, purpose):
         log = Session(self.session.path / "subagents", uuid4().hex)
@@ -233,7 +262,7 @@ class Auxiliary:
                           "result": result})
         return result
 
-    def _call(self, log, system, payload, *, allowed=None):
+    def _call(self, log, system, payload, *, allowed=None, on_progress=None):
         tools = _READ_TOOL if allowed is not None else []
         messages = _messages(payload)
         log.append(messages[0])
@@ -241,6 +270,8 @@ class Auxiliary:
             response = None
             for attempt in range(3):
                 try:
+                    if on_progress:
+                        on_progress()
                     count = self.model.count_tokens(system, messages, tools)
                     available = self.window - count
                     if available <= 0:
@@ -249,8 +280,13 @@ class Auxiliary:
                     log.append_event({"type": "model_request", "system": system,
                                       "messages": deepcopy(messages), "tools": tools,
                                       "max_output_tokens": budget})
+                    def receive(event):
+                        log.append_event(event)
+                        if on_progress:
+                            on_progress(event)
+
                     response = self.model.complete(system, deepcopy(messages), tools,
-                                                   on_event=log.append_event, max_output_tokens=budget)
+                                                   on_event=receive, max_output_tokens=budget)
                     break
                 except ProviderConnectionError as exc:
                     log.append_event({"type": "error", "message": str(exc),
@@ -313,6 +349,7 @@ class Auxiliary:
             yield batch
 
     def _source_issues(self, draft, records, previous_summary, log):
+        self.on_activity({"kind": "compression", "phase": "checking"})
         selected = {record["event_id"]: record["message"] for record in records}
         # A derived recovery record may be cited directly, or through the call
         # event that stays readable in the raw log.
@@ -383,8 +420,9 @@ class Auxiliary:
         def payload(batch):
             return {"previous_verified_summary": previous_summary, "draft": draft, "records": batch,
                     "current_user_task": current_user}
-        for batch in self._batches(records, _SUMMARY, payload):
-            draft = self._call(log, _SUMMARY, payload(batch))
+        for number, batch in enumerate(self._batches(records, _SUMMARY, payload), 1):
+            draft = self._call(log, _SUMMARY, payload(batch),
+                               on_progress=self._compression_progress(number))
         issues = self._review(draft, previous_summary, records, current_user, log)
         if issues:
             # The repair sees every original selected record in complete groups.
@@ -393,8 +431,9 @@ class Auxiliary:
                 return {"previous_verified_summary": previous_summary, "draft": draft,
                         "records": batch, "current_user_task": current_user,
                         "verification_issues": issues}
-            for batch in self._batches(records, repair_system, repair_payload):
-                draft = self._call(log, repair_system, repair_payload(batch))
+            for number, batch in enumerate(self._batches(records, repair_system, repair_payload), 1):
+                draft = self._call(log, repair_system, repair_payload(batch),
+                                   on_progress=self._compression_progress(number))
             if self._review(draft, previous_summary, records, current_user, log):
                 raise ProviderError("Context compression failed verification after one revision")
         log.append_event({"type": "auxiliary_result", "summary": draft})

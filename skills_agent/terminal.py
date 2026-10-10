@@ -152,6 +152,8 @@ class TerminalView:
         self._context_usage = context_usage or (lambda: None)
         self._last_usage = None
         self._activity = None
+        self._activity_preview = None
+        self._activity_thinking = False
         self._activity_task = None
         self._activity_started = 0
         self._animation_scheduled = False
@@ -332,12 +334,14 @@ class TerminalView:
             os.kill(os.getpid(), signal.SIGINT)
         self.flush()
 
-    def set_activity(self, text, *, task=None):
+    def set_activity(self, text, *, task=None, preview=None, thinking=False):
         with self._lock:
-            if not self._activity or task is None or task != self._activity_task:
+            if not self._activity or task != self._activity_task:
                 self._activity_started = monotonic()
             self._activity = text
             self._activity_task = task if text else None
+            self._activity_preview = preview if text else None
+            self._activity_thinking = thinking
         self.flush()
 
     def _animate(self):
@@ -421,12 +425,28 @@ class TerminalView:
         lines = []
         self._headers = {}
         blocks = self.blocks
+        activity_row = None
         if self._activity:
             elapsed = monotonic() - self._activity_started
             dots = int(elapsed / 0.4) % 3 + 1
             duration = f" · {elapsed:.1f} 秒" if self._activity_task else ""
-            blocks = [*blocks, {"kind": "line", "role": "tool",
-                               "text": self._activity + "." * dots + duration}]
+            if self._activity_preview is not None:
+                suffix = "." * min(dots, width)
+                prefix = self._activity + ("：" if self._activity_preview else "")
+                prefix = set_cell_size(prefix, min(get_cwidth(prefix), max(0, width - len(suffix))))
+                available = max(0, width - get_cwidth(prefix) - len(suffix))
+                preview = self._activity_preview
+                if get_cwidth(preview) > available:
+                    while preview and get_cwidth(preview) > max(0, available - 1):
+                        preview = preview[1:]
+                    preview = ("…" + preview) if available else ""
+                style = _LINE_STYLES["tool"]
+                preview_style = _LINE_STYLES["thinking"] if self._activity_thinking else style
+                activity_row = [(style, prefix), (preview_style, preview), (style, suffix)]
+                activity_row.append((style, " " * max(0, width - fragment_list_width(activity_row))))
+            else:
+                blocks = [*blocks, {"kind": "line", "role": "tool",
+                                   "text": self._activity + "." * dots + duration}]
         for block in blocks:
             role = "thinking" if block["kind"] == "thinking" else block.get("role", "assistant")
             style = _LINE_STYLES[role]
@@ -441,6 +461,8 @@ class TerminalView:
             # Paint blank lines and row tails with the message's own background.
             lines.extend([*row, (style, " " * max(0, width - fragment_list_width(row)))]
                          for row in rows)
+        if activity_row is not None:
+            lines.append(activity_row)
         return lines or [[]]
 
     def isatty(self):
