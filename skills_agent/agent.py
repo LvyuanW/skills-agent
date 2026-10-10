@@ -144,9 +144,22 @@ class Agent:
                         seen.add(block.get("path"))
                         media.extend([{"type": "text", "text": f"Read-only attachment from {record['event_id']}:"},
                                       deepcopy(block)])
+        def child_activity(event):
+            # Forward only a stage category; child messages and tool details stay private.
+            if event.get("type") != "activity":
+                return
+            activity = event.get("activity")
+            phase = "working" if activity is None else {
+                "tool": "tool", "compression": "compression",
+            }.get(activity.get("kind"))
+            if phase:
+                self._activity({"kind": "tool", "name": "subagent", "task_name": name,
+                                "phase": phase})
+
         child = Agent(self.model, child_session, skills, self.workspace,
                       context_tokens=self.context_tokens, summary_output_tokens=self.summary_output_tokens,
-                      sandbox=self.sandbox, allow_subagent=False, instructions=instructions)
+                      sandbox=self.sandbox, allow_subagent=False, instructions=instructions,
+                      on_event=child_activity)
         if history:
             child.report_background = {"current_user_task": self.context.latest_user(),
                                        "retrieval_task": {"name": name, "task": task}}
@@ -156,7 +169,7 @@ class Agent:
             message["content"].extend(media)
             return child.run(message)
         except KeyboardInterrupt:
-            status = "failed"
+            status = "interrupted"
             # The child already logged its raw response and partial thinking privately.
             raise KeyboardInterrupt from None
         except BaseException:

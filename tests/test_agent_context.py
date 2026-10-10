@@ -83,7 +83,10 @@ class AgentContextTests(unittest.TestCase):
         agent.on_event = events.append
         self.assertEqual(agent.run({"role": "user", "content": "inspect"}), "done")
         self.assertEqual([event["activity"] for event in events if event["type"] == "activity"], [
-            {"kind": "tool", "name": "subagent", "task_name": "Inspect workspace"}, None,
+            {"kind": "tool", "name": "subagent", "task_name": "Inspect workspace"},
+            {"kind": "tool", "name": "subagent", "task_name": "Inspect workspace", "phase": "tool"},
+            {"kind": "tool", "name": "subagent", "task_name": "Inspect workspace", "phase": "working"},
+            None,
         ])
         self.assertNotIn("Private child task", json.dumps(events))
         for path in self.session.path.rglob("events.jsonl"):

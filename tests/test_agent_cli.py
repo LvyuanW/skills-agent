@@ -168,7 +168,7 @@ class AgentTests(unittest.TestCase):
                 self.assertNotIn("PRIVATE_CHILD_", root_log)
                 self.assertNotIn("PRIVATE_CHILD_", output.getvalue())
                 self.assertEqual(output.getvalue().count("parent text"), 1)
-                self.assertIn("sub-agent「统计文件」：未完成", output.getvalue())
+                self.assertIn("sub-agent「统计文件」：已中断", output.getvalue())
                 self.assertIn("error: Interrupted", output.getvalue())
                 replay = io.StringIO()
                 renderer = ConsoleRenderer(replay, full=full)

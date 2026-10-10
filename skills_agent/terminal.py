@@ -94,6 +94,7 @@ class TerminalView:
         self._context_usage = context_usage or (lambda: None)
         self._last_usage = None
         self._activity = None
+        self._activity_task = None
         self._activity_started = 0
         self._animation_scheduled = False
 
@@ -167,7 +168,7 @@ class TerminalView:
                 if ((self._activity or self._turn_started is not None)
                         and not self._selecting and not self._animation_scheduled):
                     self._animation_scheduled = True
-                    app.loop.call_later(0.1 if self._turn_started is not None else 0.4,
+                    app.loop.call_later(0.1 if self._turn_started is not None or self._activity_task else 0.4,
                                        self._animate)
 
         self.app = Application(
@@ -211,10 +212,12 @@ class TerminalView:
                 self._last_turn_status = "" if elapsed is None else f"耗时 {elapsed:.1f} 秒"
             return self._last_turn_status
 
-    def set_activity(self, text):
+    def set_activity(self, text, *, task=None):
         with self._lock:
+            if not self._activity or task is None or task != self._activity_task:
+                self._activity_started = monotonic()
             self._activity = text
-            self._activity_started = monotonic()
+            self._activity_task = task if text else None
         self.flush()
 
     def _animate(self):
@@ -301,9 +304,11 @@ class TerminalView:
         self._headers = {}
         blocks = self.blocks
         if self._activity:
-            dots = int((monotonic() - self._activity_started) / 0.4) % 3 + 1
+            elapsed = monotonic() - self._activity_started
+            dots = int(elapsed / 0.4) % 3 + 1
+            duration = f" · {elapsed:.1f} 秒" if self._activity_task else ""
             blocks = [*blocks, {"kind": "line", "role": "tool",
-                               "text": self._activity + "." * dots}]
+                               "text": self._activity + "." * dots + duration}]
         for block in blocks:
             role = "thinking" if block["kind"] == "thinking" else block.get("role", "assistant")
             style = _LINE_STYLES[role]

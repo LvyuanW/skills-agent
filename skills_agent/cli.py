@@ -89,7 +89,8 @@ def _tool_call_summary(name, arguments):
 def _subagent_summary(event, output):
     name = _purpose(event, "name")
     if name:
-        status = "已返回报告" if event.get("status") == "completed" else "未完成"
+        status = {"completed": "已返回报告", "failed": "失败", "interrupted": "已中断"}.get(
+            event.get("status"), "未完成")
         _print(f"· sub-agent「{name}」：{status}", "tool", output)
     else:
         action = "处理了" if event.get("status") == "completed" else "未完成"
@@ -295,13 +296,18 @@ class ConsoleRenderer:
             if self.live and hasattr(self.output, "set_activity"):
                 activity = event.get("activity")
                 text = None
+                task = None
                 if activity:
                     if activity["kind"] == "compression":
                         text = "· 正在压缩上下文"
+                    elif activity["name"] == "subagent":
+                        task = activity["task_name"]
+                        stage = {"tool": "正在执行工具", "compression": "正在压缩上下文"}.get(
+                            activity.get("phase"), "执行中")
+                        text = f"· sub-agent「{_purpose(activity, 'task_name')}」：{stage}"
                     else:
-                        name = "sub-agent" if activity["name"] == "subagent" else activity["name"]
-                        text = f"· {name}「{_purpose(activity, 'task_name')}」：执行中"
-                self.output.set_activity(text)
+                        text = f"· {activity['name']}「{_purpose(activity, 'task_name')}」：执行中"
+                self.output.set_activity(text, task=task)
             return
         if event.get("type") in {"text_delta", "thinking_delta"}:
             self._had_deltas = self._had_deltas or bool(event["text"])
