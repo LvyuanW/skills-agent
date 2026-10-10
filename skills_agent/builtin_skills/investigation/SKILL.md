@@ -1,16 +1,14 @@
 ---
 name: investigation
-description: Investigate a question, discrepancy, or suspected cause using traceable evidence and checks that distinguish competing explanations.
+description: Resolve uncertain claims, discrepancies or causes using source evidence and checks that distinguish competing explanations.
 ---
 
-Start with the question to resolve and the observation that would distinguish the plausible explanations. Include the possibility that the suspected problem is absent. Choose the smallest useful check; scale the investigation to the decision it supports.
+Identify the question or decision the investigation must support. Derive the required evidence from that question and the user's constraints before choosing a method. Include the possibility that the suspected problem is absent. Ordinary source lookup needs no elaborate investigation.
 
-Use original sources and existing measurement or inspection interfaces where available. For quantities, identify the measured object, unit, denominator, scope and method before comparing results. Keep estimates separate from measurements. Do not infer a property such as usefulness, causation or completion from a convenient proxy alone.
+Prefer original sources and established inspection methods. Choose a method whose assumptions can be checked, whose results can be observed and whose failures have limited consequences. Before relying on a custom measurement or classification, check known-answer inputs or independently inspect a sample. Identify the measured object, unit, denominator, scope and method; keep estimates separate from measurements.
 
-Collect enough surrounding material to interpret the finding. Keep source locations and relevant versions or times with observations, including execution status and errors. A partial read, filtered sample or failed search does not establish absence. Preserve complete evidence in accessible files when needed; return the relevant findings and precise references instead of dumping the full collection. Follow the assigned access boundaries when choosing sources.
+Ask whether the same observation could occur if the proposed explanation were false. If so, seek evidence that distinguishes the alternatives or narrow the conclusion. Confirm that an experiment reached the condition it claims to test; setup failure describes the experiment, not the suspected behavior. A precise measurement of a proxy does not establish the property or cause inferred from it.
 
-Check that an experiment actually reached the condition under investigation. A failed fixture, unavailable input or earlier error is evidence about the experiment, not proof of the suspected behavior. Prefer the real implementation over a separately re-created approximation when investigating software behavior.
+Keep source locations, relevant versions and execution status with observations. Read enough surrounding material to interpret them and look for contradictory evidence. A partial read, filtered sample or failed search does not establish absence. Preserve full evidence in accessible files when needed; return relevant findings and references. Use the assigned access route, including delegated retrieval for conversation-history analysis.
 
-Use new results to revise the explanation. Follow up on contradictions and check decisive claims at their sources. Repeat a check only when an input, method or unresolved question gives it a reason to produce new information. Independent, bounded investigations can be delegated with the question, available evidence, constraints and expected report; use their evidence rather than a completion claim alone.
-
-Report observations, supported conclusions and remaining uncertainty distinctly. State limitations that affect the answer. Stop when the evidence is sufficient for the requested decision; do not add speculative fixes or broaden the assignment to fill gaps that do not matter to it.
+Distinguish observations, assumptions and conclusions. Check the evidence for each step from a finding to a recommendation; certainty does not carry automatically between them. Revise the explanation when evidence conflicts. Seek an independent check when a consequential uncertainty remains; agreement alone is not evidence. Continue only when another check can materially inform the decision. Stop when the question is supported sufficiently, or state what remains unknown without expanding the task or claiming more than the evidence shows.
