@@ -5,6 +5,7 @@ import os
 from queue import Queue
 import signal
 from threading import Event, RLock, Thread
+from time import monotonic
 
 from prompt_toolkit.application import Application
 from prompt_toolkit.buffer import Buffer
@@ -83,13 +84,17 @@ class TerminalView:
         self._busy = False
         self._selecting = False
         self._submitted = Queue()
+        self._submitted_at = None
+        self._turn_started = None
+        self._turn_elapsed = None
+        self._last_turn_status = ""
         self._ready = Event()
         self._thread = None
         self._failure = None
         self._context_usage = context_usage or (lambda: None)
         self._last_usage = None
         self._activity = None
-        self._activity_phase = 0
+        self._activity_started = 0
         self._animation_scheduled = False
 
         self.buffer = Buffer(multiline=False, history=InMemoryHistory(),
@@ -107,6 +112,8 @@ class TerminalView:
         usage = Window(FormattedTextControl(self._context_status), height=1,
                        dont_extend_width=True, align=WindowAlign.RIGHT,
                        style="fg:ansibrightblack bg:default")
+        elapsed = Window(FormattedTextControl(self._turn_status), height=1,
+                         style="fg:ansibrightblack bg:default")
         bindings = KeyBindings()
 
         @bindings.add("f2")
@@ -157,13 +164,15 @@ class TerminalView:
             if not app.is_done:
                 app.output.set_cursor_shape(CursorShape.BLINKING_BEAM)
                 app.output.flush()
-                if self._activity and not self._selecting and not self._animation_scheduled:
+                if ((self._activity or self._turn_started is not None)
+                        and not self._selecting and not self._animation_scheduled):
                     self._animation_scheduled = True
-                    app.loop.call_later(0.4, self._animate)
+                    app.loop.call_later(0.1 if self._turn_started is not None else 0.4,
+                                       self._animate)
 
         self.app = Application(
             layout=Layout(HSplit([
-                self.window, Window(height=1, style="bg:default"),
+                self.window, elapsed,
                 editor, Window(height=1, style="bg:default"), VSplit([hint, usage], height=1),
             ]), focused_element=editor),
             key_bindings=merge_key_bindings(merged), full_screen=True,
@@ -180,24 +189,46 @@ class TerminalView:
             return "上下文窗口 —"
         return f"上下文窗口 {usage['tokens'] / usage['limit'] * 100:.1f}%"
 
+    def start_turn(self):
+        with self._lock:
+            self._turn_started = self._submitted_at if self._submitted_at is not None else monotonic()
+            self._submitted_at = None
+            self._turn_elapsed = None
+        self.flush()
+
+    def finish_turn(self):
+        with self._lock:
+            if self._turn_started is not None:
+                self._turn_elapsed = monotonic() - self._turn_started
+                self._turn_started = None
+        self.flush()
+
+    def _turn_status(self):
+        with self._lock:
+            if not self._selecting:
+                elapsed = (monotonic() - self._turn_started if self._turn_started is not None
+                           else self._turn_elapsed)
+                self._last_turn_status = "" if elapsed is None else f"耗时 {elapsed:.1f} 秒"
+            return self._last_turn_status
+
     def set_activity(self, text):
         with self._lock:
             self._activity = text
-            self._activity_phase = 0
+            self._activity_started = monotonic()
         self.flush()
 
     def _animate(self):
         self._animation_scheduled = False
         with self._lock:
-            if not self._activity or self._selecting:
+            if self._selecting or (not self._activity and self._turn_started is None):
                 return
-            self._activity_phase = (self._activity_phase + 1) % 3
         self.flush()
 
     def _submit(self, buffer):
         if not self._busy and not self._selecting:
             self._busy = True
             self._follow_tail = True
+            self._submitted_at = monotonic()
             self._submitted.put(buffer.text)
         return False
 
@@ -270,8 +301,9 @@ class TerminalView:
         self._headers = {}
         blocks = self.blocks
         if self._activity:
+            dots = int((monotonic() - self._activity_started) / 0.4) % 3 + 1
             blocks = [*blocks, {"kind": "line", "role": "tool",
-                               "text": self._activity + "." * (self._activity_phase + 1)}]
+                               "text": self._activity + "." * dots}]
         for block in blocks:
             role = "thinking" if block["kind"] == "thinking" else block.get("role", "assistant")
             style = _LINE_STYLES[role]

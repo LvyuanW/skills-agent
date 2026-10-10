@@ -284,6 +284,39 @@ class TerminalTests(unittest.TestCase):
         self.assertEqual(requests, [])
         self.assert_reset(finished)
 
+    def test_timer_updates_above_input_while_waiting_for_model_then_freezes(self):
+        release = threading.Event()
+
+        def respond(payload, count):
+            release.wait(timeout=5)
+            return self.response("TIMED_RESPONSE")
+
+        terminal, requests = self.terminal(respond)
+        self.addCleanup(release.set)
+        self.assertNotIn("耗时", terminal.visible)
+        terminal.send("timed request\n")
+        timer_row = terminal.screen.lines - 4
+
+        def timer_text():
+            return terminal.screen.display[timer_row].strip()
+
+        terminal.wait_for(lambda output: timer_text().startswith("耗时 "))
+        first = timer_text()
+        terminal.wait_for(lambda output: timer_text() != first, timeout=2)
+        self.assertRegex(timer_text(), r"^耗时 \d+\.\d 秒$")
+        self.assertEqual(terminal.screen.display[timer_row + 1].strip(), ">")
+        self.assertEqual(terminal.screen.buffer[timer_row][0].bg, "default")
+        release.set()
+        terminal.prompt("TIMED_RESPONSE")
+        # Allow the final response and finish_turn redraws to reach the PTY.
+        terminal.read(0.1)
+        final = timer_text()
+        for _ in range(3):
+            terminal.read(0.1)
+        self.assertEqual(timer_text(), final)
+        self.assertEqual(len(requests), 1)
+        self.assertNotIn("耗时", json.dumps(self.events(), ensure_ascii=False))
+
     def test_input_edits_with_cursor_keys_and_submits_only_edited_text(self):
         terminal, requests = self.terminal(
             lambda payload, count: self.response(f"**EDIT_DONE_{count}**"))
@@ -384,7 +417,8 @@ class TerminalTests(unittest.TestCase):
                       terminal.screen.buffer[y][x].fg,
                       terminal.screen.buffer[y][x].bg)
                      for x in range(terminal.screen.columns)]
-                    for y in range(terminal.screen.lines)]
+                    # Elapsed time belongs to this run, not replayed messages.
+                    for y in range(terminal.screen.lines) if y != terminal.screen.lines - 4]
 
         live_view = viewport(terminal)
         self.assertIn("粘贴的第二行", terminal.visible)
