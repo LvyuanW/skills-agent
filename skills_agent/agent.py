@@ -3,7 +3,7 @@ from copy import deepcopy
 from pathlib import Path
 from uuid import uuid4
 
-from .context import DEFAULT_CONTEXT_TOKENS, WorkingContext
+from .context import DEFAULT_CONTEXT_TOKENS, WorkingContext, interrupted_result
 from .context.auxiliary import Auxiliary
 from .context.history import HistoryIndex, _message_text
 from .session import Session
@@ -210,9 +210,7 @@ class Agent:
         except (Exception, KeyboardInterrupt) as exc:
             # Keep the protocol usable after cancellation, without rerunning a script.
             for call in pending:
-                self.session.append({"role": "tool", "name": call["name"], "tool_call_id": call["id"],
-                                     "task_name": _arguments(call).get("name", call["name"]),
-                                     "content": json.dumps({"error": "Execution interrupted; no completed result was recorded."})})
+                self.session.append(interrupted_result(call))
             event = {"type": "error", "message": "Interrupted" if isinstance(exc, KeyboardInterrupt) else str(exc)}
             if getattr(exc, "raw", None) is not None:
                 event["_raw"] = exc.raw

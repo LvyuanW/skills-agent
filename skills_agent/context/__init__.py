@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 from copy import deepcopy
 
 
@@ -57,6 +59,88 @@ def record_groups(records):
             raise ValueError("Cannot send or compress an unfinished tool call group")
         groups.append(group)
     return groups
+
+
+def interrupted_result(call: dict) -> dict:
+    """The recorded tool result for a call that never produced one."""
+    try:
+        arguments = json.loads(call.get("arguments") or "{}")
+    except (TypeError, ValueError):
+        arguments = {}
+    task_name = arguments.get("name") if isinstance(arguments, dict) else None
+    return {"role": "tool", "name": call.get("name"), "tool_call_id": call.get("id"),
+            "task_name": task_name or call.get("name"),
+            "content": json.dumps({"error": "Execution interrupted; no completed result was recorded."})}
+
+
+RECOVERED_PREFIX = "recovered-"
+
+
+def recovered_id(call_event_id, tool_call_id) -> str:
+    """Reference for a recovered result that stays unique and is not an original event.
+
+    The caller event identifies the response, because a tool call id alone may
+    repeat across responses. ``event-`` is stripped so this id never contains a
+    substring that could be mistaken for an original event reference. The call id
+    is reduced to the reference character set and always carries a digest of its
+    original text: appending it only when characters were replaced would let one
+    call id collide with the rewritten form of another. Distinct call ids
+    therefore keep distinct references, up to a 32-bit digest collision.
+    """
+    identifier = str(tool_call_id)
+    safe = re.sub(r"[^A-Za-z0-9_-]", "-", identifier)
+    digest = hashlib.sha256(identifier.encode("utf-8")).hexdigest()[:8]
+    return f"{RECOVERED_PREFIX}{str(call_event_id).removeprefix('event-')}-{safe}-{digest}"
+
+
+def recover_interrupted_calls(records: list[dict]) -> int:
+    """Record interrupted results for calls an earlier stopped run left unanswered.
+
+    Only groups followed by later records are repaired. The trailing group may
+    belong to a call that is still executing, and recording a result for it
+    would collide with the real one when it arrives; that group stays invalid so
+    ``record_groups`` keeps refusing to send it. The raw session is never
+    modified: the recovered record belongs to this working context only.
+    Returns the number of inserted results.
+    """
+    recovered = 0
+    index = 0
+    while index < len(records):
+        message = records[index]["message"]
+        calls = message.get("tool_calls") or []
+        if message.get("role") != "assistant" or not calls:
+            index += 1
+            continue
+        end = index + 1
+        while end < len(records) and records[end]["message"].get("role") == "tool":
+            end += 1
+        if end >= len(records):
+            return recovered
+        answered = {records[position]["message"].get("tool_call_id") for position in range(index + 1, end)}
+        caller = records[index]["event_id"]
+        used = {record["event_id"] for record in records}
+        insert_at = end
+        for call in calls:
+            identifier = call.get("id")
+            if not identifier or identifier in answered:
+                continue
+            reference = recovered_id(caller, identifier)
+            # A response that repeats a call id is rejected by record_groups; do
+            # not synthesize a duplicate reference for it meanwhile either.
+            if reference in used:
+                continue
+            used.add(reference)
+            # Derived recovery state: the reference stays unique per response and
+            # links back to the call event that can be read from the raw log.
+            records.insert(insert_at, {
+                "event_id": reference,
+                "recovered_from": {"event_id": caller, "tool_call_id": identifier},
+                "message": interrupted_result(call),
+            })
+            insert_at += 1
+            recovered += 1
+        index = insert_at
+    return recovered
 
 
 class WorkingContext:
@@ -146,6 +230,10 @@ class WorkingContext:
         return older, kept
 
     def prepare(self, system, tools):
+        # A stopped run can leave a recorded call without its result. Recover
+        # those results first so the next request has a sendable transcript;
+        # anything still unanswered here is the group being executed now.
+        recover_interrupted_calls(self.records)
         record_groups(self.records)  # Never compact while waiting for tool results.
         limit = self.max_tokens
         window = getattr(self.model, "model_context_window", None)
@@ -173,6 +261,11 @@ class WorkingContext:
                 try:
                     self.on_activity({"kind": "compression"})
                     compacted = self.model.compact_messages([record["message"] for record in kept])
+                    if len(compacted) != len(kept):
+                        # Pairing by position would silently misattribute results.
+                        self.save()
+                        raise ContextBudgetError(
+                            "Provider compaction changed the message count; kept records cannot be paired")
                     candidate = [{**record, "message": message} for record, message in zip(kept, compacted)]
                     if self._count(system, tools, candidate, summary="") > limit:
                         self.save()
@@ -201,4 +294,6 @@ class WorkingContext:
         return self._system(system), [deepcopy(record["message"]) for record in self.records]
 
 
-__all__ = ["DEFAULT_CONTEXT_TOKENS", "WorkingContext", "ContextBudgetError", "working_message", "record_groups"]
+__all__ = ["DEFAULT_CONTEXT_TOKENS", "RECOVERED_PREFIX", "WorkingContext", "ContextBudgetError",
+           "working_message", "record_groups", "interrupted_result", "recovered_id",
+           "recover_interrupted_calls"]

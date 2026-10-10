@@ -146,6 +146,19 @@ def _text(content):
     return "\n".join(block["text"] for block in content or [] if block["type"] == "text")
 
 
+def _partial_counts(content):
+    """Characters of public body and readable thinking saved before an interrupt."""
+    text = thinking = 0
+    for block in content or []:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") == "thinking":
+            thinking += len(block.get("thinking") or "")
+        elif block.get("type") == "text":
+            text += len(block.get("text") or "")
+    return text, thinking
+
+
 def render_event(event, output=None, *, full=False, echo_user=True, tool_names=None):
     """Summarize intermediate work without changing the stored events."""
     output = output or sys.stdout
@@ -156,8 +169,16 @@ def render_event(event, output=None, *, full=False, echo_user=True, tool_names=N
         _subagent_summary(event, output)
     elif kind == "error":
         if event.get("partial_content"):
-            count = len(_text(event["partial_content"]))
-            _print(f"· 回答未完成，已保存 {count} 字符", "assistant", output)
+            text, thinking = _partial_counts(event["partial_content"])
+            if text and thinking:
+                detail = f"已保存正文 {text} 字符、思考 {thinking} 字符"
+            elif text:
+                detail = f"已保存 {text} 字符"
+            elif thinking:
+                detail = f"未收到正文，已保存思考 {thinking} 字符"
+            else:
+                detail = "已保存 0 字符"
+            _print(f"· 回答未完成，{detail}", "assistant", output)
         _print(f"error: {_brief(event['message'])}", "assistant", output)
     elif kind == "message":
         message = event["message"]

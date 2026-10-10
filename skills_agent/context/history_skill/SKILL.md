@@ -7,6 +7,8 @@ This skill is loaded only for a history retrieval subagent, after the main agent
 
 Read [scripts/history.py](scripts/history.py) and, when adapting the search implementation, `skills_agent.context.history.HistoryIndex`. These are reference code: write or adapt scripts for the question and execute them through `shell`. The session history path supplied in your task identifies the main session. Index only that session's original messages and readable errors, including interrupted partial responses; do not read independent subagent, compaction, or report sessions. Main-agent assignments and reports received from subagents are part of the searchable main history.
 
+A reference starting with `recovered-` is a derived recovery entry for an interrupted tool call, not a raw record. Its form `recovered-<offset>-<call id>` names the call event `event-<offset>` to read in the raw log.
+
 The helper can receive either the session directory or its `events.jsonl` path:
 
 ```sh

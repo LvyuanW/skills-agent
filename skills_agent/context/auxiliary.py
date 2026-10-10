@@ -5,7 +5,7 @@ import json
 import re
 from uuid import uuid4
 
-from . import DEFAULT_CONTEXT_TOKENS
+from . import DEFAULT_CONTEXT_TOKENS, RECOVERED_PREFIX
 from ..providers.base import ProviderConnectionError, ProviderError, blocks
 from ..session import Session
 from .history import HistoryIndex, _message_text
@@ -31,6 +31,9 @@ Return Markdown with source references written [event-ID]. Preserve important us
 prohibitions, conditions and changed decisions as exact quotes [event-ID]「original」
 when literal text is present in the records. For image/PDF evidence use ordinary
 source-linked descriptions; the reviewer must compare them with the attached media.
+Records whose reference starts with recovered- are derived recovery entries for tool
+calls a stopped run left unanswered; they are linked to their original call event.
+Cite them as they are and do not invent their content or an original quote.
 Do not invent references or quote wording. Previous summary is a verified baseline,
 not fresh original evidence. Remove repetition and obsolete details only.
 """
@@ -49,6 +52,9 @@ claims; flag unsupported claims only when contradicted or not evidenced anywhere
 in the stated source inventory. Each factual or decision claim needs a source
 reference. Verify claims citing this batch's events here; claims citing another
 batch are verified there. Flag missing references. The old verified summary is a baseline.
+Records whose reference starts with recovered- are generated recovery state rather
+than raw evidence: verify them through their link to the original call event instead
+of demanding unseen original content, and never treat them as user text.
 Use read_history only to resolve a conflict or verify a cited detail; do not rebuild
 the summary from raw history. Return only a JSON object with keys passed (boolean),
 issues (list of specific errors/omissions with event evidence and correction),
@@ -73,12 +79,44 @@ _READ_TOOL = [{
         "end_line": {"type": "integer", "minimum": 1},
     }, "required": ["event_id"], "additionalProperties": False},
 }]
-_REFERENCES = re.compile(r"\b(event-[A-Za-z0-9_-]+)\b")
-_QUOTES = re.compile(r"\[(event-[A-Za-z0-9_-]+)\]「([^」]+)」")
+_SOURCE_REFERENCE = r"(?:event-|recovered-)[A-Za-z0-9_-]+"
+_REFERENCES = re.compile(rf"\b({_SOURCE_REFERENCE})\b")
+_QUOTES = re.compile(rf"\[({_SOURCE_REFERENCE})\]「([^」]+)」")
 
 
 def _json(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def call_event_of(identifier):
+    """The call event encoded in a derived reference, e.g. recovered-120-call-1 -> event-120."""
+    if not isinstance(identifier, str) or not identifier.startswith(RECOVERED_PREFIX):
+        return None
+    offset = identifier.removeprefix(RECOVERED_PREFIX).split("-", 1)[0]
+    return f"event-{offset}" if offset.isdigit() else None
+
+
+def linked_call_events(records):
+    """Original call events behind derived recovery records in this material."""
+    links = [record["recovered_from"] for record in records
+             if isinstance(record.get("recovered_from"), dict)]
+    return {link["event_id"] for link in links if isinstance(link.get("event_id"), str)}
+
+
+def referenced_call_events(references):
+    """Call events encoded in accepted derived references.
+
+    Only references already taken from the verified baseline are resolved, so a
+    draft cannot introduce a call event by naming one.
+    """
+    return {event for identifier in references if (event := call_event_of(identifier))}
+
+
+def allowed_sources(records, previous_summary):
+    """Every reference the deterministic check and the reviewer both accept."""
+    verified = set(_REFERENCES.findall(previous_summary))
+    return (set(record["event_id"] for record in records) | verified
+            | linked_call_events(records) | referenced_call_events(verified))
 
 
 def _text(message):
@@ -183,13 +221,16 @@ class Auxiliary:
                     raise ProviderConnectionError("Auxiliary token counting connection failed after 3 attempts") from exc
 
     def _read(self, log, arguments, allowed):
-        event_id = arguments.get("event_id")
-        if event_id not in allowed:
+        reference = arguments.get("event_id")
+        if reference not in allowed:
             raise ValueError("Only cited working-context events may be read")
+        event_id = call_event_of(reference) or reference
         start = arguments.get("start_line", 1)
         end = arguments.get("end_line", start + 79)
         result = self.history.read(event_id, start, end)
-        log.append_event({"type": "history_read", "arguments": arguments, "result": result})
+        log.append_event({"type": "history_read",
+                          "arguments": {**arguments, "resolved_event_id": event_id},
+                          "result": result})
         return result
 
     def _call(self, log, system, payload, *, allowed=None):
@@ -273,7 +314,9 @@ class Auxiliary:
 
     def _source_issues(self, draft, records, previous_summary, log):
         selected = {record["event_id"]: record["message"] for record in records}
-        allowed = set(selected) | set(_REFERENCES.findall(previous_summary))
+        # A derived recovery record may be cited directly, or through the call
+        # event that stays readable in the raw log.
+        allowed = allowed_sources(records, previous_summary)
         issues = [f"Unknown source reference: {event_id}"
                   for event_id in sorted(set(_REFERENCES.findall(draft)) - allowed)]
         if records and not _REFERENCES.search(draft):
@@ -283,6 +326,11 @@ class Auxiliary:
                 continue
             # User constraints are quoted verbatim. Other source types may have
             # been selected into a derived report rather than retained raw.
+            if event_id.startswith(RECOVERED_PREFIX):
+                # Derived recovery state is generated, never user text: an
+                # original quote cannot be attached to it in any state.
+                issues.append(f"Quote attached to a derived recovery record: {event_id}")
+                continue
             message = selected.get(event_id)
             if message is not None:
                 text = _message_text(message)
@@ -299,7 +347,7 @@ class Auxiliary:
         return issues
 
     def _review(self, draft, previous_summary, records, current_user, log):
-        allowed = {record["event_id"] for record in records} | set(_REFERENCES.findall(previous_summary))
+        allowed = allowed_sources(records, previous_summary)
         issues = self._source_issues(draft, records, previous_summary, log)
         def payload(batch):
             return {"draft": draft, "previous_verified_summary": previous_summary,

@@ -5,7 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from skills_agent.context import ContextBudgetError, WorkingContext, record_groups, working_message
+from skills_agent.context import (ContextBudgetError, WorkingContext, record_groups,
+                                  recover_interrupted_calls, recovered_id, working_message)
 from skills_agent.session import Session
 
 
@@ -332,6 +333,171 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(selected["_responses_output"], message["_responses_output"])
         self.assertNotIn("_raw", selected)
         self.assertEqual(message, original)
+
+
+    def test_stopped_run_recovers_missing_result_before_sending(self):
+        calls = [{"id": "call-0", "name": "shell", "arguments": '{"name":"inspect","command":"ls"}'},
+                 {"id": "call-1", "name": "subagent", "arguments": '{"name":"retrieve","task":"find"}'}]
+        self.append({"role": "user", "content": "task"},
+                    {"role": "assistant", "content": "", "tool_calls": calls},
+                    {"role": "tool", "name": "shell", "tool_call_id": "call-0", "content": "partial"},
+                    {"role": "user", "content": "continue"})
+        log = (self.session.path / "events.jsonl").read_bytes()
+        context = self.context()
+        context.sync()
+        # 恢复发生在准备发送时，不在同步时：同步只搬运日志里已有的记录。
+        self.assertEqual([record["message"]["role"] for record in context.records],
+                         ["user", "assistant", "tool", "user"])
+        context.prepare("sys", [])
+        self.assertEqual([record["message"]["role"] for record in context.records],
+                         ["user", "assistant", "tool", "tool", "user"])
+        recovered = context.records[3]
+        caller = context.records[1]["event_id"]
+        self.assertTrue(recovered["event_id"].startswith(f"recovered-{caller.removeprefix('event-')}-call-1"))
+        self.assertEqual(recovered["recovered_from"], {"event_id": caller, "tool_call_id": "call-1"})
+        self.assertNotIn("event-", recovered["event_id"].removeprefix("recovered-").split("-")[0])
+        self.assertEqual(recovered["message"]["tool_call_id"], "call-1")
+        self.assertEqual(recovered["message"]["task_name"], "retrieve")
+        self.assertEqual(json.loads(recovered["message"]["content"])["error"],
+                         "Execution interrupted; no completed result was recorded.")
+        self.assertEqual(self.counter.requests[0][1][-2]["tool_call_id"], "call-1")
+        self.assertEqual(len(context.records), 5)
+        self.assertEqual((self.session.path / "events.jsonl").read_bytes(), log)
+        self.assertEqual(self.context().state, context.state)
+
+    def test_trailing_group_being_executed_is_never_preempted(self):
+        self.append({"role": "user", "content": "task"},
+                    {"role": "assistant", "content": "", "tool_calls": [
+                        {"id": "call-0", "name": "shell", "arguments": '{"name":"inspect","command":"ls"}'}]})
+        context = self.context()
+        context.sync()
+        self.assertEqual(len(context.records), 2)
+        with self.assertRaisesRegex(ValueError, "unfinished"):
+            context.prepare("sys", [])
+        self.assertEqual(len(context.records), 2)
+
+    def test_recovery_is_idempotent_and_deterministic_across_rebuilds(self):
+        self.append({"role": "user", "content": "task"}, pair(3)[0],
+                    {"role": "user", "content": "continue"})
+        context = self.context()
+        context.sync()
+        context.prepare("sys", [])
+        self.assertEqual(len(context.records), 4)
+        context.prepare("sys", [])
+        self.assertEqual(len(context.records), 4)
+        rebuilt = WorkingContext(self.session, self.counter, self.summary)
+        rebuilt.sync()
+        rebuilt.prepare("sys", [])
+        self.assertEqual(rebuilt.records, context.records)
+
+
+    def test_recovery_ids_stay_unique_and_compression_accepts_them(self):
+        # 两个不同的模型响应重复使用同一个调用 ID，且都没有结果
+        # 两次停止运行留下同一调用 ID；随后是足够多的完整调用组
+        for index in range(2):
+            self.append({"role": "user", "content": f"crashed turn {index}"})
+            self.append({"role": "assistant", "content": "", "tool_calls": [
+                {"id": "call-1", "name": "shell", "arguments": '{"name":"inspect","command":"ls"}'}]})
+        for index in range(12):
+            self.append({"role": "user", "content": f"complete turn {index}"})
+            self.append(*pair(100 + index, "raw hidden output " * 80))
+        context = self.context(max_tokens=100000)     # 第一步只做恢复
+        context.sync()
+        context.prepare("system", [])
+        self.assertFalse(self.summary.calls)
+        recovered = [record["event_id"] for record in context.records
+                     if record["event_id"].startswith("recovered-")]
+        self.assertEqual(len(recovered), 2, recovered)
+        self.assertEqual(len(set(recovered)), 2)
+        self.assertFalse(any("event-" in identifier for identifier in recovered))
+        event_ids = {event["event_id"] for event in self.session.events()}
+        for record in context.records:
+            link = record.get("recovered_from")
+            if not link:
+                continue
+            self.assertEqual(link["tool_call_id"], "call-1")
+            self.assertIn(link["event_id"], event_ids)          # 链接指向可回查的原调用事件
+        context.max_tokens = 3000                            # 第二步：让含恢复记录的旧记录进入压缩
+        context.prepare("system", [])
+        self.assertEqual(len(self.summary.calls), 1)
+        _, older, _ = self.summary.calls[0]
+        older_ids = [record["event_id"] for record in older]
+        self.assertEqual(len(older_ids), len(set(older_ids)))   # 压缩引用唯一
+        self.assertEqual(sorted(set(recovered) & set(older_ids)), sorted(recovered))
+        # 用新的读取者打开落盘状态，检查被覆盖范围也记录了这些派生引用
+        reloaded = self.context(max_tokens=3000)
+        self.assertEqual(reloaded.records, context.records)
+        self.assertEqual(reloaded.state["covered_event_ids"], context.state["covered_event_ids"])
+        for identifier in recovered:
+            self.assertIn(identifier, reloaded.state["covered_event_ids"])
+        record_groups(reloaded.records)
+
+
+    def test_repeated_call_ids_in_one_response_never_synthesize_duplicate_references(self):
+        records = [
+            {"event_id": "event-0", "message": {"role": "user", "content": "task"}},
+            {"event_id": "event-9", "message": {"role": "assistant", "content": "", "tool_calls": [
+                {"id": "call-1", "name": "shell", "arguments": "{}"},
+                {"id": "call-1", "name": "shell", "arguments": "{}"}]}},
+            {"event_id": "event-30", "message": {"role": "user", "content": "next"}},
+        ]
+        self.assertEqual(recover_interrupted_calls(records), 1)
+        identifiers = [record["event_id"] for record in records]
+        self.assertEqual(len(identifiers), len(set(identifiers)))
+        with self.assertRaisesRegex(ValueError, "Duplicate tool call IDs"):
+            record_groups(records)
+
+
+    def test_awkward_call_ids_yield_citable_and_distinct_references(self):
+        from skills_agent.context.auxiliary import _REFERENCES
+        identifiers = ["call.1", "call-1", "调用-1", "call:1"]
+        references = [recovered_id("event-7", identifier) for identifier in identifiers]
+        self.assertEqual(len(references), len(set(references)))
+        for identifier, reference in zip(identifiers, references):
+            self.assertEqual(_REFERENCES.findall(f"[{reference}]"), [reference], identifier)
+            self.assertRegex(reference, r"^recovered-[0-9]+-[A-Za-z0-9_-]+$")
+
+    def test_compaction_that_changes_the_message_count_is_rejected(self):
+        self.append({"role": "user", "content": "task"})
+        for index in range(12):
+            self.append(*pair(index, "raw hidden output " * 80))
+        class DroppingCounter(Counter):
+            def compact_messages(self, messages):
+                return messages[1:]
+        context = WorkingContext(self.session, DroppingCounter(), self.summary, max_tokens=3000)
+        context.sync()
+        with self.assertRaisesRegex(ContextBudgetError, "cannot be paired"):
+            context.prepare("system", [])
+        self.assertFalse(self.summary.calls)
+        self.assertTrue(context.state["records"])
+
+
+    def test_rewritten_call_ids_never_collide_with_the_rewritten_form_of_another(self):
+        # “call.1”经字符替换后与字面量 “call-1-<digest>” 曾得到同一引用
+        rewritten = recovered_id("event-7", "call.1")
+        literal = "call-1-" + rewritten.rsplit("-", 1)[1]
+        self.assertNotEqual(rewritten, recovered_id("event-7", literal))
+        identifiers = ["call.1", "call-1", literal, "call_1", "调用-1", "call:1"]
+        references = [recovered_id("event-7", identifier) for identifier in identifiers]
+        self.assertEqual(len(references), len(set(references)), references)
+
+    def test_two_stopped_responses_with_rewritten_call_ids_are_both_recovered(self):
+        self.append({"role": "user", "content": "first"})
+        self.append({"role": "assistant", "content": "", "tool_calls": [
+            {"id": "call.1", "name": "shell", "arguments": '{"name":"inspect"}'}]})
+        self.append({"role": "user", "content": "second"})
+        self.append({"role": "assistant", "content": "", "tool_calls": [
+            {"id": "call-1-" + recovered_id("event-0", "call.1").rsplit("-", 1)[1],
+             "name": "shell", "arguments": '{"name":"inspect"}'}]})
+        self.append({"role": "user", "content": "latest user"})
+        context = self.context()
+        context.sync()
+        context.prepare("system", [])
+        recovered = [record for record in context.records
+                     if str(record["event_id"]).startswith("recovered-")]
+        self.assertEqual(len(recovered), 2, recovered)
+        self.assertEqual(len({record["event_id"] for record in recovered}), 2)
+        record_groups(context.records)
 
 
 if __name__ == "__main__":

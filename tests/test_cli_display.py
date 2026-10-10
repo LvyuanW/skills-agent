@@ -27,6 +27,12 @@ class DisplayTests(unittest.TestCase):
             render_event(event, output, **options)
         return output.getvalue()
 
+    def test_incomplete_response_reports_saved_thinking_separately(self):
+        output = io.StringIO()
+        render_event({"type": "error", "message": "OpenAI stream ended before completion",
+                      "partial_content": [{"type": "thinking", "thinking": "思" * 1854}]}, output)
+        self.assertIn("回答未完成，未收到正文，已保存思考 1854 字符", output.getvalue())
+
     def test_terminal_roles_have_distinct_colors_and_plain_output_has_none(self):
         class TTY(io.StringIO):
             def isatty(self):

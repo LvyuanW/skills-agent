@@ -72,6 +72,21 @@ class AgentContextTests(unittest.TestCase):
                     self.assertEqual(factory.call_args.kwargs["model_context_window"], window)
                     self.assertEqual(factory.call_args.kwargs["max_output_tokens"], 32768)
 
+    def test_turn_after_killed_run_recovers_missing_tool_result(self):
+        self.session.append({"role": "user", "content": "old task"})
+        self.session.append(call("shell", {"name": "inspect", "command": "ls"}))
+        raw = (self.session.path / "events.jsonl").read_bytes()
+        model = ScriptedModel([final("recovered")])
+        self.assertEqual(self.agent(model).run({"role": "user", "content": "next"}), "recovered")
+        sent = model.calls[0][1]
+        self.assertEqual([message["role"] for message in sent], ["user", "assistant", "tool", "user"])
+        self.assertEqual(sent[2]["tool_call_id"], "call-1")
+        self.assertEqual(json.loads(sent[2]["content"])["error"],
+                         "Execution interrupted; no completed result was recorded.")
+        self.assertTrue((self.session.path / "events.jsonl").read_bytes().startswith(raw))
+        # 用户消息、被中断的调用、恢复的结果、新用户消息、本轮回答
+        self.assertEqual(len(json.loads((self.session.path / "context.json").read_text())["records"]), 5)
+
     def test_activity_uses_current_listener_and_does_not_log_or_expose_child_work(self):
         model = ScriptedModel([
             call("subagent", {"name": "Inspect workspace", "task": "Read files"}),

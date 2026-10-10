@@ -128,6 +128,82 @@ class AuxiliaryTests(unittest.TestCase):
         self.assertTrue(any("Unknown source reference: event-999" in issue for issue in issues))
         self.assertTrue(any("Quote does not match event-1" in issue for issue in issues))
 
+    def recovered_records(self):
+        return [
+            {"event_id": "event-1", "message": {"role": "user", "content": "不要修改配置"}},
+            {"event_id": "event-2", "message": {"role": "assistant", "content": "", "tool_calls": [
+                {"id": "call-1", "name": "shell", "arguments": '{"name":"inspect","command":"ls"}'}]}},
+            {"event_id": "recovered-2-call-1",
+             "recovered_from": {"event_id": "event-2", "tool_call_id": "call-1"},
+             "message": {"role": "tool", "name": "shell", "tool_call_id": "call-1", "task_name": "inspect",
+                         "content": json.dumps({"error": "Execution interrupted; no completed result was recorded."})}},
+        ]
+
+    def test_derived_recovery_record_is_citable_directly_and_through_its_call(self):
+        records = self.recovered_records()
+        draft = ("中断的调用已补记 [recovered-2-call-1]，原调用见 [event-2]；"
+                 "用户要求 [event-1]「不要修改配置」。")
+        model = Model([draft, verdict])
+        self.assertEqual(Auxiliary(model, self.session).compress("", records, None), draft)
+        self.assertEqual(len(model.calls), 2)      # 没有触发修订，说明来源校验未报错
+
+    def test_derived_reference_from_previous_summary_is_not_treated_as_raw_evidence(self):
+        previous = "历史摘要记录了补记结果 [recovered-2-call-1]「Execution interrupted」"
+        draft = "继续，用户要求 [event-1]「不要修改配置」。"
+        model = Model([draft, verdict])
+        self.assertEqual(Auxiliary(model, self.session).compress(previous, self.records, None), draft)
+        self.assertEqual(len(model.calls), 2)
+
+    def test_unknown_derived_reference_is_still_flagged(self):
+        draft = "引用不存在的恢复记录 [recovered-9-call-9] 和 [event-1]"
+        model = Model([draft, verdict, self.summary, verdict])
+        self.assertEqual(Auxiliary(model, self.session).compress("", self.records, None), self.summary)
+        issues = json.loads(model.calls[2]["messages"][0]["content"])["verification_issues"]
+        self.assertTrue(any("Unknown source reference: recovered-9-call-9" in issue for issue in issues))
+
+    def test_call_event_encoded_in_a_verified_derived_reference_stays_citable(self):
+        previous = "已覆盖的补记记录 [recovered-120-call-1]"
+        draft = "原调用见 [event-120]，用户要求 [event-1]「不要修改配置」。"
+        model = Model([draft, verdict])
+        self.assertEqual(Auxiliary(model, self.session).compress(previous, self.records, None), draft)
+        self.assertEqual(len(model.calls), 2)      # 未触发修订
+
+    def test_unrelated_or_invented_references_are_still_rejected(self):
+        previous = "已覆盖的补记记录 [recovered-120-call-1]"
+        draft = "见 [event-999] 与 [recovered-999-call-9]，用户要求 [event-1]「不要修改配置」。"
+        model = Model([draft, verdict, self.summary, verdict])
+        self.assertEqual(Auxiliary(model, self.session).compress(previous, self.records, None), self.summary)
+        issues = json.loads(model.calls[2]["messages"][0]["content"])["verification_issues"]
+        self.assertTrue(any("Unknown source reference: event-999" in issue for issue in issues))
+        self.assertTrue(any("Unknown source reference: recovered-999-call-9" in issue for issue in issues))
+
+    def test_review_inventory_resolves_a_derived_reference_to_its_call_event(self):
+        previous = "历史摘要 [recovered-2-call-1]"
+        draft = "原调用见 [event-2]，用户要求 [event-1]「不要修改配置」。"
+        def read_response(payload):
+            return {"role": "assistant", "content": [], "tool_calls": [
+                {"id": "read-1", "name": "read_history", "arguments": '{"event_id":"recovered-2-call-1"}'}]}
+        model = Model([draft, read_response, verdict])
+        self.assertEqual(Auxiliary(model, self.session).compress(previous, self.records, None), draft)
+        inventory = json.loads(model.calls[1]["messages"][0]["content"])["source_inventory"]
+        self.assertIn("event-2", inventory)
+        continued = model.calls[2]["messages"]
+        self.assertIn("不要修改配置", continued[2]["content"])       # 派生引用解析到原调用事件
+        reads = [event for event in self.private_events() if event.get("type") == "history_read"]
+        self.assertEqual(reads[-1]["arguments"]["resolved_event_id"], "event-2")
+
+    def test_quote_attached_to_a_derived_record_is_flagged(self):
+        issue = "Quote attached to a derived recovery record: recovered-2-call-1"
+        quoted = "补记 [recovered-2-call-1]「用户要求不要修改配置」，另见 [event-1]「不要修改配置」。"
+        cases = (("派生记录仍在素材中", "", self.recovered_records()),
+                 ("派生记录只剩在上一轮摘要里", "历史摘要 [recovered-2-call-1]", self.records))
+        for label, previous, records in cases:
+            with self.subTest(state=label):
+                model = Model([quoted, verdict, self.summary, verdict])
+                self.assertEqual(Auxiliary(model, self.session).compress(previous, records, None), self.summary)
+                issues = json.loads(model.calls[2]["messages"][0]["content"])["verification_issues"]
+                self.assertTrue(any(issue in item for item in issues), issues)
+
     def test_review_must_cover_every_supplied_record(self):
         model = Model([self.summary, lambda p: verdict(p, ids=["event-1"])])
         with self.assertRaisesRegex(ProviderError, "complete source material"):
