@@ -116,7 +116,7 @@ class TerminalViewTests(unittest.TestCase):
             try:
                 input.send_text("你好\x1b[D！\r")
                 self.assertEqual(view.prompt(), "你！好")
-                self.assertTrue(view.buffer.read_only())
+                self.assertFalse(view.buffer.read_only())
                 self.assertIn("你！好", view.buffer.history.get_strings())
             finally:
                 view.close()

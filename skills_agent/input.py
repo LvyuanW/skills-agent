@@ -49,6 +49,6 @@ class ClipboardDraft:
     def attachments(self, text):
         """Only intact markers in the submitted text attach their files."""
         return sorted(
-            ((marker, path) for marker, path in self._files.items() if marker in text),
+            ((marker, path) for marker, path in self._files.copy().items() if marker in text),
             key=lambda item: text.index(item[0]),
         )

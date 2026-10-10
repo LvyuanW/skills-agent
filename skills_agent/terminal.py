@@ -1,10 +1,11 @@
 """Interactive terminal transcript with expandable thinking blocks."""
 
+from collections import deque
+from dataclasses import dataclass
 from io import StringIO
 import os
-from queue import Queue
 import signal
-from threading import Event, RLock, Thread
+from threading import Condition as ThreadCondition, Event, RLock, Thread
 from time import monotonic
 
 from prompt_toolkit.application import Application
@@ -16,10 +17,12 @@ from prompt_toolkit.formatted_text import ANSI, fragment_list_to_text, fragment_
 from prompt_toolkit.formatted_text.utils import split_lines
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import ConditionalKeyBindings, KeyBindings, merge_key_bindings
-from prompt_toolkit.layout import HSplit, Layout, VSplit, Window, WindowAlign
+from prompt_toolkit.layout import Dimension, HSplit, Layout, VSplit, Window, WindowAlign
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl, UIContent, UIControl
 from prompt_toolkit.layout.processors import BeforeInput
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
+from prompt_toolkit.utils import get_cwidth
+from rich.cells import set_cell_size
 from rich.console import Console
 from rich.text import Text
 
@@ -32,6 +35,56 @@ _LINE_STYLES = {"user": "fg:ansiwhite bg:ansiblack",
                 "assistant": "fg:ansiblack bg:ansiwhite",
                 "tool": "fg:ansiblue bg:default",
                 "thinking": "fg:ansibrightblack bg:default"}
+
+
+@dataclass(eq=False, frozen=True)
+class _QueuedMessage:
+    text: str
+    submitted_at: float
+
+
+class _MessageQueue(UIControl):
+    def __init__(self, view):
+        self.view = view
+        self._items = []
+        self._starts = []
+
+    def items(self):
+        with self.view._lock:
+            if not self.view._selecting:
+                self._items = [item for item in self.view._submitted if isinstance(item, _QueuedMessage)]
+            return self._items
+
+    def create_content(self, width, height):
+        rows = []
+        self._starts = []
+        for item in self.items():
+            text = " ".join(item.text.split())
+            text = "".join(char for char in text if char.isprintable())
+            available = max(0, width - 8)
+            if get_cwidth(text) > available:
+                text = set_cell_size(text, max(0, available - 1)) + ("…" if available else "")
+            prefix = set_cell_size(text, max(0, width - 6))
+            self._starts.append(len(prefix))
+            hover = self.view._hovered is item
+            rows.append([("fg:ansibrightblack bg:default", prefix),
+                         ("fg:ansired bg:default" if hover else "fg:ansiblue bg:default",
+                          "撤回  " if hover else "排队中")])
+        rows = rows or [[]]
+        return UIContent(get_line=lambda index: rows[index], line_count=len(rows), show_cursor=False)
+
+    def mouse_handler(self, event):
+        if self.view._selecting:
+            return NotImplemented
+        y = event.position.y
+        if 0 <= y < len(self._items) and event.position.x >= self._starts[y]:
+            item = self._items[y]
+            self.view._hovered = item
+            if event.event_type == MouseEventType.MOUSE_UP and event.button == MouseButton.LEFT:
+                self.view.cancel_message(item)
+            self.view.flush()
+            return None
+        return NotImplemented
 
 
 class _Transcript(UIControl):
@@ -83,7 +136,9 @@ class TerminalView:
         self._follow_tail = True
         self._busy = False
         self._selecting = False
-        self._submitted = Queue()
+        self._submitted = deque()
+        self._input_ready = ThreadCondition(self._lock)
+        self._hovered = None
         self._submitted_at = None
         self._turn_started = None
         self._turn_elapsed = None
@@ -99,7 +154,7 @@ class TerminalView:
         self._animation_scheduled = False
 
         self.buffer = Buffer(multiline=False, history=InMemoryHistory(),
-                             read_only=Condition(lambda: self._busy or self._selecting),
+                             read_only=Condition(lambda: self._selecting),
                              accept_handler=self._submit)
         self.control = _Transcript(self)
         self.window = Window(self.control, get_vertical_scroll=lambda _: self._scroll,
@@ -115,6 +170,10 @@ class TerminalView:
                        style="fg:ansibrightblack bg:default")
         elapsed = Window(FormattedTextControl(self._turn_status), height=1,
                          style="fg:ansibrightblack bg:default")
+        self.queue_control = _MessageQueue(self)
+        queued = Window(self.queue_control,
+                        height=lambda: Dimension(min=0, preferred=len(self.queue_control.items())),
+                        dont_extend_height=True, wrap_lines=False, style="bg:default")
         bindings = KeyBindings()
 
         @bindings.add("f2")
@@ -140,8 +199,7 @@ class TerminalView:
                 if self.buffer.text:
                     self.buffer.delete()
                 else:
-                    self._busy = True
-                    self._submitted.put(EOFError())
+                    self._enqueue(EOFError())
 
         @bindings.add("pageup")
         def page_up(event):
@@ -158,7 +216,7 @@ class TerminalView:
         merged = [bindings]
         if key_bindings is not None:
             merged.append(ConditionalKeyBindings(
-                key_bindings, Condition(lambda: not self._busy and not self._selecting)))
+                key_bindings, Condition(lambda: not self._selecting)))
 
         def after_render(app):
             # prompt-toolkit disables blinking when showing the cursor on redraw.
@@ -173,7 +231,7 @@ class TerminalView:
 
         self.app = Application(
             layout=Layout(HSplit([
-                self.window, elapsed,
+                self.window, elapsed, queued,
                 editor, Window(height=1, style="bg:default"), VSplit([hint, usage], height=1),
             ]), focused_element=editor),
             key_bindings=merge_key_bindings(merged), full_screen=True,
@@ -181,6 +239,27 @@ class TerminalView:
             after_render=after_render,
             input=input, output=output, min_redraw_interval=0.03,
         )
+        self.app.key_processor.before_key_press += self._clear_hover
+
+    def _clear_hover(self, event):
+        if self._hovered is not None and not self._selecting:
+            self._hovered = None
+            self.flush()
+
+    def _enqueue(self, value):
+        with self._input_ready:
+            self._submitted.append(value)
+            self._input_ready.notify()
+        self.flush()
+
+    def cancel_message(self, item):
+        with self._input_ready:
+            try:
+                self._submitted.remove(item)
+            except ValueError:
+                return
+            self._hovered = None
+        self.flush()
 
     def _context_status(self):
         if not self._selecting:
@@ -228,11 +307,9 @@ class TerminalView:
         self.flush()
 
     def _submit(self, buffer):
-        if not self._busy and not self._selecting:
-            self._busy = True
+        if not self._selecting:
             self._follow_tail = True
-            self._submitted_at = monotonic()
-            self._submitted.put(buffer.text)
+            self._enqueue(_QueuedMessage(buffer.text, monotonic()))
         return False
 
     def append_line(self, text, role):
@@ -340,7 +417,10 @@ class TerminalView:
                 self._failure = exc
             finally:
                 self._ready.set()
-                self._submitted.put(self._failure or EOFError())
+                with self._input_ready:
+                    self._submitted.clear()
+                    self._submitted.append(self._failure or EOFError())
+                    self._input_ready.notify()
 
         self._thread = Thread(target=run, name="terminal-ui")
         self._thread.start()
@@ -350,13 +430,21 @@ class TerminalView:
         return self
 
     def prompt(self):
-        self._busy = False
+        with self._input_ready:
+            self._busy = False
+            self.flush()
+            while not self._submitted:
+                self._input_ready.wait()
+            value = self._submitted.popleft()
+            self._busy = True
+            if isinstance(value, _QueuedMessage):
+                self._submitted_at = value.submitted_at
+            if self._hovered is value:
+                self._hovered = None
         self.flush()
-        value = self._submitted.get()
-        self._busy = True
         if isinstance(value, BaseException):
             raise value
-        return value
+        return value.text
 
     def close(self):
         if self._thread is not None:
