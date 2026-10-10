@@ -63,6 +63,8 @@ class Agent:
             "Resolve relative resources against SKILL.md's directory. Write arbitrary task-specific "
             "scripts directly; no existing script or registered entry point is required. "
             "Inspect stdout, stderr and generated files; revise as needed. "
+            "Match conclusions and completion claims to observed evidence and the scope actually verified. "
+            "Complete necessary follow-through within the authorized task, and state unresolved limitations. "
             "Shell runs on the host; sandbox runs in the configured Docker container. "
             "Name every shell/sandbox call by its purpose. Filter large data in scripts, print "
             "relevant findings and evidence, and save full data to files. Choose result_mode: "
