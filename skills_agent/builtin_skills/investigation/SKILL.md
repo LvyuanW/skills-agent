@@ -1,6 +1,6 @@
 ---
 name: investigation
-description: Resolve uncertain claims, discrepancies or causes using source evidence and checks that distinguish competing explanations.
+description: Investigate uncertain claims, conflicting evidence, or unexplained behavior when a direct lookup is insufficient.
 ---
 
 Identify the question or decision the investigation must support. Derive the required evidence from that question and the user's constraints before choosing a method. Include the possibility that the suspected problem is absent. Ordinary source lookup needs no elaborate investigation.
