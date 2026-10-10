@@ -143,6 +143,9 @@ class TerminalView:
         self._turn_started = None
         self._turn_elapsed = None
         self._last_turn_status = ""
+        self._last_turn_controls = []
+        self._turn_id = None
+        self._stop_requested = False
         self._ready = Event()
         self._thread = None
         self._failure = None
@@ -168,7 +171,7 @@ class TerminalView:
         usage = Window(FormattedTextControl(self._context_status), height=1,
                        dont_extend_width=True, align=WindowAlign.RIGHT,
                        style="fg:ansibrightblack bg:default")
-        elapsed = Window(FormattedTextControl(self._turn_status), height=1,
+        elapsed = Window(FormattedTextControl(self._turn_controls), height=1,
                          style="fg:ansibrightblack bg:default")
         self.queue_control = _MessageQueue(self)
         queued = Window(self.queue_control,
@@ -189,7 +192,7 @@ class TerminalView:
         @bindings.add("c-c")
         def interrupt(event):
             if self._busy:
-                os.kill(os.getpid(), signal.SIGINT)
+                self.stop_turn()
             else:
                 self.buffer.reset()
 
@@ -271,6 +274,8 @@ class TerminalView:
 
     def start_turn(self):
         with self._lock:
+            self._turn_id = object()
+            self._stop_requested = False
             self._turn_started = self._submitted_at if self._submitted_at is not None else monotonic()
             self._submitted_at = None
             self._turn_elapsed = None
@@ -278,6 +283,7 @@ class TerminalView:
 
     def finish_turn(self):
         with self._lock:
+            self._turn_id = None
             if self._turn_started is not None:
                 self._turn_elapsed = monotonic() - self._turn_started
                 self._turn_started = None
@@ -290,6 +296,41 @@ class TerminalView:
                            else self._turn_elapsed)
                 self._last_turn_status = "" if elapsed is None else f"耗时 {elapsed:.1f} 秒"
             return self._last_turn_status
+
+    def _turn_controls(self):
+        with self._lock:
+            if not self._selecting:
+                fragments = [("", self._turn_status())]
+                turn_id = self._turn_id
+                if turn_id is not None:
+                    fragments.append(("", "  "))
+                    if self._stop_requested:
+                        fragments.append(("", "停止中"))
+                    else:
+                        style = "fg:ansired" if self._hovered is turn_id else "fg:ansiblue"
+                        fragments.append((style, "停止",
+                                          lambda event: self._stop_mouse(event, turn_id)))
+                self._last_turn_controls = fragments
+            return self._last_turn_controls
+
+    def _stop_mouse(self, event, turn_id):
+        with self._lock:
+            if self._selecting or self._turn_id is not turn_id or self._stop_requested:
+                return NotImplemented
+            self._hovered = turn_id
+            if event.event_type == MouseEventType.MOUSE_UP and event.button == MouseButton.LEFT:
+                self.stop_turn()
+        self.flush()
+        return None
+
+    def stop_turn(self):
+        with self._lock:
+            if self._turn_id is None or self._stop_requested:
+                return
+            self._stop_requested = True
+            # One interrupt per turn lets the existing cleanup finish undisturbed.
+            os.kill(os.getpid(), signal.SIGINT)
+        self.flush()
 
     def set_activity(self, text, *, task=None):
         with self._lock:

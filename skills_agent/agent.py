@@ -180,6 +180,7 @@ class Agent:
 
     def run(self, user_message):
         pending = []
+        receiving_response = False
         try:
             self._message(user_message)
             while True:
@@ -191,7 +192,9 @@ class Agent:
                     streamed = True
                     self._event(event)
 
+                receiving_response = True
                 reply = self.model.complete(system, messages, self.tools.schemas, on_event=receive)
+                receiving_response = False
                 pending = list(reply.get("tool_calls", []))
                 self._message(reply, streamed=streamed)
                 if not pending:
@@ -212,9 +215,17 @@ class Agent:
             for call in pending:
                 self.session.append(interrupted_result(call))
             event = {"type": "error", "message": "Interrupted" if isinstance(exc, KeyboardInterrupt) else str(exc)}
-            if getattr(exc, "raw", None) is not None:
-                event["_raw"] = exc.raw
-            if getattr(exc, "partial_content", None):
-                event["partial_content"] = exc.partial_content
+            if receiving_response or not isinstance(exc, KeyboardInterrupt):
+                if getattr(exc, "raw", None) is not None:
+                    event["_raw"] = exc.raw
+                if getattr(exc, "partial_content", None):
+                    event["partial_content"] = exc.partial_content
+            if receiving_response and isinstance(exc, KeyboardInterrupt):
+                event["response_interrupted"] = True
             self._event(event)
+            if event.get("response_interrupted"):
+                # Only stream events followed the last sync, so no tool report
+                # or other model call is needed to preserve the unfinished body.
+                # A stopped tool/report remains in raw history for next-turn selection.
+                self.context.sync()
             raise

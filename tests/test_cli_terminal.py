@@ -303,7 +303,7 @@ class TerminalTests(unittest.TestCase):
         terminal.wait_for(lambda output: timer_text().startswith("耗时 "))
         first = timer_text()
         terminal.wait_for(lambda output: timer_text() != first, timeout=2)
-        self.assertRegex(timer_text(), r"^耗时 \d+\.\d 秒$")
+        self.assertRegex(timer_text(), r"^耗时 \d+\.\d 秒  停止$")
         self.assertEqual(terminal.screen.display[timer_row + 1].strip(), ">")
         self.assertEqual(terminal.screen.buffer[timer_row][0].bg, "default")
         release.set()
@@ -311,6 +311,7 @@ class TerminalTests(unittest.TestCase):
         # Allow the final response and finish_turn redraws to reach the PTY.
         terminal.read(0.1)
         final = timer_text()
+        self.assertRegex(final, r"^耗时 \d+\.\d 秒$")
         for _ in range(3):
             terminal.read(0.1)
         self.assertEqual(timer_text(), final)

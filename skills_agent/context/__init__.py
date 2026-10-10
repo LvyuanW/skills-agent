@@ -168,11 +168,21 @@ class WorkingContext:
         temporary.replace(self.path)
 
     def sync(self, select=None):
-        """Select only newly appended raw messages, never repopulate compressed history."""
+        """Select newly appended messages and stopped response text, without replaying history."""
         saved_cursor = self.state["cursor"]
         for cursor, event in self.session.iter_events(self.state["cursor"]):
+            message = None
             if event.get("type") == "message":
                 message = working_message(event["message"])
+            elif event.get("type") == "error" and event.get("response_interrupted"):
+                # Incomplete provider state and tool arguments stay in the raw log.
+                content = [{"type": "text", "text": block["text"]}
+                           for block in event.get("partial_content", [])
+                           if block.get("type") == "text" and block.get("text")]
+                if content:
+                    content.append({"type": "text", "text": "[Response interrupted; unfinished.]"})
+                    message = {"role": "assistant", "content": content}
+            if message is not None:
                 record = {"event_id": event["event_id"], "message": message}
                 if "timestamp" in event:
                     record["timestamp"] = event["timestamp"]

@@ -443,31 +443,35 @@ def _interact(agent, files, draft, *, read_input=None, output=None):
             continue
         if not command and not pending_files:
             continue
-        if hasattr(output, "start_turn"):
-            output.start_turn()
         try:
-            pasted = draft.attachments(prompt)
-            attachments = [path for _, path in pasted] + pending_files
-            pending_files = []
             try:
-                user_message = agent.session.make_user_message(prompt, attachments)
-                blocks = [block for block in user_message["content"]
-                          if block.get("attachment") or block["type"] in {"image", "file"}]
-                for (marker, _), block in zip(pasted, blocks):
-                    block["marker"] = marker
-            except (ValueError, OSError) as exc:
-                _print(f"error: {exc}", "assistant", output or sys.stderr)
-                continue
-            try:
-                agent.run(user_message)
-            except KeyboardInterrupt:
-                _print("", "assistant", output or sys.stdout)
-            except Exception:
-                # Agent.run records and renders each turn's error.
-                continue
-        finally:
+                if hasattr(output, "start_turn"):
+                    output.start_turn()
+                pasted = draft.attachments(prompt)
+                attachments = [path for _, path in pasted] + pending_files
+                pending_files = []
+                try:
+                    user_message = agent.session.make_user_message(prompt, attachments)
+                    blocks = [block for block in user_message["content"]
+                              if block.get("attachment") or block["type"] in {"image", "file"}]
+                    for (marker, _), block in zip(pasted, blocks):
+                        block["marker"] = marker
+                except (ValueError, OSError) as exc:
+                    _print(f"error: {exc}", "assistant", output or sys.stderr)
+                    continue
+                try:
+                    agent.run(user_message)
+                except Exception:
+                    # Agent.run records and renders each turn's error.
+                    continue
+            finally:
+                if hasattr(output, "finish_turn"):
+                    output.finish_turn()
+        except KeyboardInterrupt:
+            # Cover preparation and the final redraw as well as model/tool work.
             if hasattr(output, "finish_turn"):
                 output.finish_turn()
+            _print("", "assistant", output or sys.stdout)
 
 
 def main(argv=None):
