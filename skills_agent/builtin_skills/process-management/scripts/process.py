@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import datetime as dt
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -20,6 +22,7 @@ import uuid
 
 TERMINAL = {"exited", "failed", "stopped"}
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
+SCOPE_ENV = "SKILLS_AGENT_PROCESS_SCOPE"
 
 
 def now() -> str:
@@ -63,12 +66,34 @@ def load_record(path: Path) -> dict:
     return record
 
 
+@contextmanager
+def scope_lock(value):
+    """Serialize registration with closure, including starts from background jobs."""
+    if not value:
+        yield None
+        return
+    import fcntl
+    path = Path(value).resolve(strict=True)
+    if load_json(path / "scope.json").get("version") != 1:
+        raise ValueError("Invalid agent process scope")
+    with (path / "lock").open("a+b") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield path
+
+
+def save_record(path, record):
+    # A separate copy per ownership token survives reuse of the public name.
+    if record.get("process_scope"):
+        atomic_json(Path(record["process_scope"]) / "runs" / f"{record['token']}.json", record)
+    atomic_json(path, record)
+
+
 def pid_identity(pid: int) -> dict | None:
     """Creation time plus the exact private supervisor argument identifies ownership."""
     if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 1:
         return None
     result = subprocess.run(
-        ["ps", "-p", str(pid), "-o", "lstart=", "-o", "command="],
+        ["ps", "-ww", "-p", str(pid), "-o", "lstart=", "-o", "command="],
         capture_output=True, text=True, timeout=3, env={**os.environ, "LC_ALL": "C"},
     )
     parts = result.stdout.strip().split(None, 5)
@@ -79,12 +104,18 @@ def pid_identity(pid: int) -> dict | None:
 
 def supervisor_owned(record: dict) -> bool:
     identity = pid_identity(record.get("supervisor_pid"))
+    scope = record.get("process_scope")
     return bool(
         identity
         and identity == record.get("supervisor_identity")
         and " _supervise " in f" {identity['command']} "
         and f" --token {record['token']} " in f" {identity['command']} "
+        and (not scope or f" --scope-id {scope_id(scope)} " in f" {identity['command']} ")
     )
+
+
+def scope_id(scope):
+    return hashlib.sha256(str(Path(scope).resolve()).encode("utf-8")).hexdigest()
 
 
 def observed_record(record: dict) -> dict:
@@ -150,17 +181,28 @@ def start(args: argparse.Namespace) -> int:
             "supervisor_log": str(artifacts / "supervisor.log"),
             "supervisor_pid": None, "child_pid": None, "returncode": None,
         }
-        atomic_json(path, record)
         try:
-            with (artifacts / "supervisor.log").open("wb") as diagnostic:
-                subprocess.Popen(
-                    [sys.executable, str(Path(__file__).resolve()), "_supervise", "--record", str(path), "--token", token],
-                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=diagnostic,
-                    close_fds=True, start_new_session=True,
-                )
+            with scope_lock(os.environ.get(SCOPE_ENV)) as scope:
+                if scope:
+                    if (scope / "closed").exists():
+                        raise ValueError("The agent turn's process scope is closed")
+                    if args.persistent and not load_json(scope / "scope.json").get("allow_persistent"):
+                        raise ValueError("Persistent processes are not allowed in this agent run")
+                    record.update(process_scope=str(scope), persistent=args.persistent)
+                save_record(path, record)
+                with (artifacts / "supervisor.log").open("wb") as diagnostic:
+                    supervisor_args = [sys.executable, str(Path(__file__).resolve()), "_supervise",
+                                       "--record", str(path), "--token", token]
+                    if scope:
+                        supervisor_args.extend(["--scope-id", scope_id(scope)])
+                    subprocess.Popen(
+                        supervisor_args,
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=diagnostic,
+                        close_fds=True, start_new_session=True,
+                    )
         except OSError as error:
             record.update(state="failed", error=str(error), returncode=127, ended_at=now())
-            atomic_json(path, record)
+            save_record(path, record)
         deadline = time.monotonic() + args.startup_timeout
         while time.monotonic() < deadline:
             record = load_record(path)
@@ -204,6 +246,13 @@ def supervise(args: argparse.Namespace) -> int:
     if record["token"] != args.token or record["state"] != "starting":
         raise ValueError("Supervisor ownership token or initial state does not match")
     record.update(supervisor_pid=os.getpid(), supervisor_identity=pid_identity(os.getpid()))
+    scope = record.get("process_scope")
+    if (scope_id(scope) if scope else None) != args.scope_id:
+        raise ValueError("Supervisor process scope does not match its ownership arguments")
+    if scope and (Path(scope) / "closed").exists():
+        record.update(state="stopped", returncode=0, ended_at=now())
+        save_record(path, record)
+        return 0
     artifacts = Path(record["artifacts"])
     request_path = artifacts / "stop.json"
     requested_signal = [False]
@@ -214,10 +263,10 @@ def supervise(args: argparse.Namespace) -> int:
             child = subprocess.Popen(record["command"], cwd=record["cwd"], stdin=subprocess.DEVNULL, stdout=out, stderr=err, close_fds=True, start_new_session=True)
         except OSError as error:
             record.update(state="failed", error=str(error), returncode=127, ended_at=now())
-            atomic_json(path, record)
+            save_record(path, record)
             return 127
         record.update(state="running", child_pid=child.pid, started_at=now())
-        atomic_json(path, record)
+        save_record(path, record)
         stopping = False
         shutdown_deadline: float | None = None
         forced = False
@@ -232,7 +281,7 @@ def supervise(args: argparse.Namespace) -> int:
                         stopping = True
                         shutdown_deadline = time.monotonic() + grace
                         record.update(state="stopping", stop_requested_at=now())
-                        atomic_json(path, record)
+                        save_record(path, record)
                         signal_group(child, signal.SIGTERM)
                 exited = peek_exit(child)
                 if exited:
@@ -240,7 +289,7 @@ def supervise(args: argparse.Namespace) -> int:
                     if not members:
                         returncode = child.wait()
                         record.update(state="stopped" if stopping else "exited", returncode=returncode, ended_at=now(), forced=forced)
-                        atomic_json(path, record)
+                        save_record(path, record)
                         return 0
                     # A finished command does not leave its inherited children behind.
                     if shutdown_deadline is None:
@@ -255,7 +304,7 @@ def supervise(args: argparse.Namespace) -> int:
             signal_group(child, signal.SIGKILL)
             child.wait()
             record.update(state="failed", error=str(error), returncode=1, ended_at=now())
-            atomic_json(path, record)
+            save_record(path, record)
             raise
 
 
@@ -376,6 +425,48 @@ def stop(args: argparse.Namespace) -> int:
         time.sleep(min(0.1, remaining))
 
 
+def cleanup(args: argparse.Namespace) -> int:
+    """Stop only registered runs, using the same verified supervisor protocol as stop."""
+    with scope_lock(args.scope) as scope:
+        (scope / "closed").touch()
+        paths = list((scope / "runs").glob("*.json"))
+    deadline = time.monotonic() + 5
+    pending = paths
+    errors = []
+    while pending:
+        remaining = []
+        for path in pending:
+            try:
+                record = load_json(path)
+                token, name = record["token"], record["name"]
+                if (record.get("process_scope") != str(scope) or token != path.stem
+                        or not re.fullmatch(r"[0-9a-f]{32}", token) or not NAME.fullmatch(name)
+                        or record["artifacts"] != str(Path(record["record"]).parent / f"{name}.{token}")):
+                    raise ValueError("Ownership registration does not match this scope")
+                if (args.preserve_persistent and record.get("persistent")
+                        and load_json(scope / "scope.json").get("allow_persistent")):
+                    continue
+                owned = supervisor_owned(record)
+                if record["state"] in TERMINAL:
+                    if owned:
+                        remaining.append(path)  # Confirm the supervisor itself has exited too.
+                    continue
+                if owned:
+                    atomic_json(Path(record["artifacts"]) / "stop.json", {"token": token, "grace": 0.2})
+                elif record.get("supervisor_pid") is not None:
+                    raise ValueError("Supervisor identity is unavailable; cleanup cannot be confirmed")
+                remaining.append(path)  # A registered start may still be launching its supervisor.
+            except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
+                errors.append(f"{path.name}: {exc}")
+        pending = remaining
+        if not pending or time.monotonic() >= deadline:
+            break
+        time.sleep(0.05)
+    errors.extend(f"{path.name}: cleanup deadline elapsed" for path in pending)
+    emit("cleanup", ok=not errors, errors=errors)
+    return int(bool(errors))
+
+
 def positive(value: str) -> float:
     result = float(value)
     if not 0 < result <= 3600:
@@ -406,6 +497,7 @@ def parser() -> argparse.ArgumentParser:
         child.add_argument("--name", required=True, help="Local process name, not an arbitrary PID")
         if operation == "start":
             child.add_argument("--cwd", help="Working directory; defaults to this shell call's current directory")
+            child.add_argument("--persistent", action="store_true", help="After its CLI turn succeeds, keep an ongoing service across session exit; forbidden in benchmark runs")
             child.add_argument("--startup-timeout", type=positive, default=5)
             child.add_argument("command", nargs=argparse.REMAINDER, help="Arguments after -- execute directly, without a shell")
         elif operation == "wait":
@@ -424,6 +516,10 @@ def parser() -> argparse.ArgumentParser:
     supervisor = commands.add_parser("_supervise", help=argparse.SUPPRESS)
     supervisor.add_argument("--record", required=True)
     supervisor.add_argument("--token", required=True)
+    supervisor.add_argument("--scope-id")
+    cleaning = commands.add_parser("_cleanup", help=argparse.SUPPRESS)
+    cleaning.add_argument("--scope", required=True)
+    cleaning.add_argument("--preserve-persistent", action="store_true")
     return result
 
 
@@ -435,7 +531,7 @@ def main() -> int:
             raise ValueError("--match must not be empty")
         if args.operation == "wait" and args.tcp and not 1 <= int(args.tcp[1]) <= 65535:
             raise ValueError("TCP port must be between 1 and 65535")
-        return {"start": start, "status": status, "wait": wait, "logs": logs, "stop": stop, "_supervise": supervise}[args.operation](args)
+        return {"start": start, "status": status, "wait": wait, "logs": logs, "stop": stop, "_supervise": supervise, "_cleanup": cleanup}[args.operation](args)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         emit(args.operation, ok=False, error=str(error))
         print(str(error), file=sys.stderr)

@@ -8,6 +8,7 @@ from .context.auxiliary import Auxiliary
 from .context.history import HistoryIndex, _message_text
 from .feedback import feedback_content, replace_result_text
 from .providers.base import blocks
+from .processes import ProcessScope
 from .session import Session
 from .skills import SkillRegistry
 from .tools import ToolRegistry
@@ -24,7 +25,8 @@ def _arguments(call):
 class Agent:
     def __init__(self, model, session, skills, workspace, *, context_tokens=DEFAULT_CONTEXT_TOKENS,
                  summary_output_tokens=8192, sandbox=None, on_event=None,
-                 allow_subagent=True, instructions=""):
+                 allow_subagent=True, instructions="", process_scope=None,
+                 allow_persistent_processes=False):
         self.model, self.session, self.skills = model, session, skills
         self.workspace = Path(workspace).resolve()
         self.context_tokens, self.summary_output_tokens = context_tokens, summary_output_tokens
@@ -35,6 +37,10 @@ class Agent:
                                       on_activity=self._activity)
         self.sandbox, self.instructions = sandbox, instructions
         self.report_background = None
+        self.process_scope = process_scope
+        self._inherited_process_scope = process_scope is not None
+        self._process_scopes = []
+        self.allow_persistent_processes = allow_persistent_processes
         self.tools = ToolRegistry(workspace=self.workspace, sandbox=sandbox,
                                   subagent=self._subagent if allow_subagent else None,
                                   on_activity=self._activity)
@@ -209,7 +215,8 @@ class Agent:
         child = Agent(self.model, child_session, skills, self.workspace,
                       context_tokens=self.context_tokens, summary_output_tokens=self.summary_output_tokens,
                       sandbox=self.sandbox, allow_subagent=False, instructions=instructions,
-                      on_event=child_activity)
+                      on_event=child_activity, process_scope=self.process_scope,
+                      allow_persistent_processes=self.allow_persistent_processes)
         if history:
             child.report_background = {"current_user_task": self.context.latest_user(),
                                        "retrieval_task": {"name": name, "task": task}}
@@ -229,6 +236,41 @@ class Agent:
             self._event({"type": "subagent_summary", "name": name, "status": status})
 
     def run(self, user_message):
+        if self._inherited_process_scope:
+            self.tools.process_scope = self.process_scope
+            return self._run(user_message)
+        scope = ProcessScope(self.session.path, allow_persistent=self.allow_persistent_processes)
+        self._process_scopes.append(scope)
+        self.process_scope = self.tools.process_scope = scope
+        try:
+            result = self._run(user_message)
+            scope.successful = True
+            return result
+        except BaseException:
+            try:
+                scope.close()
+                self._process_scopes.remove(scope)
+            except Exception as cleanup_error:
+                self._event({"type": "error", "message": str(cleanup_error)})
+            raise
+        finally:
+            self.process_scope = self.tools.process_scope = None
+
+    def close(self):
+        """End this interaction's background work, without touching other sessions."""
+        failures = []
+        for scope in list(self._process_scopes):
+            try:
+                scope.close(preserve_persistent=self.allow_persistent_processes and scope.successful)
+                self._process_scopes.remove(scope)
+            except Exception as exc:
+                failures.append(str(exc))
+        if failures:
+            message = "; ".join(failures)
+            self._event({"type": "error", "message": message})
+            raise RuntimeError(message)
+
+    def _run(self, user_message):
         pending = []
         receiving_response = False
         try:
@@ -262,11 +304,12 @@ class Agent:
                     pending.pop(0)
                     self._message({"role": "tool", "name": call["name"], "tool_call_id": call["id"],
                                    "task_name": _arguments(call).get("name", call["name"]), "content": result})
-        except (Exception, KeyboardInterrupt) as exc:
+        except (Exception, KeyboardInterrupt, SystemExit) as exc:
             # Keep the protocol usable after cancellation, without rerunning a script.
             for call in pending:
                 self.session.append(interrupted_result(call))
-            event = {"type": "error", "message": "Interrupted" if isinstance(exc, KeyboardInterrupt) else str(exc)}
+            interrupted = isinstance(exc, (KeyboardInterrupt, SystemExit))
+            event = {"type": "error", "message": "Interrupted" if interrupted else str(exc)}
             if getattr(exc, "diagnostics", None) is not None:
                 event["diagnostics"] = deepcopy(exc.diagnostics)
             if receiving_response:
@@ -274,7 +317,7 @@ class Agent:
                     event["_raw"] = exc.raw
                 if getattr(exc, "partial_content", None):
                     event["partial_content"] = exc.partial_content
-            if receiving_response and isinstance(exc, KeyboardInterrupt):
+            if receiving_response and interrupted:
                 event["response_interrupted"] = True
             self._event(event)
             if event.get("response_interrupted"):

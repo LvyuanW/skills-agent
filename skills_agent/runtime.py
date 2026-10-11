@@ -29,7 +29,7 @@ def add_agent_arguments(parser):
     parser.add_argument("--sandbox-image", help="提供 sandbox 工具，使用指定 Docker 镜像")
 
 
-def create_agent(args, session, *, on_event=None):
+def create_agent(args, session, *, on_event=None, allow_persistent_processes=False):
     args = load_agent_config(args)
     workspace = args.workspace.expanduser().resolve()
     if not workspace.is_dir():
@@ -57,4 +57,5 @@ def create_agent(args, session, *, on_event=None):
     ) if args.sandbox_image else None
     return Agent(model, session, skills, workspace, context_tokens=args.context_tokens,
                  summary_output_tokens=args.summary_output_tokens,
-                 sandbox=sandbox, on_event=on_event)
+                 sandbox=sandbox, on_event=on_event,
+                 allow_persistent_processes=allow_persistent_processes)

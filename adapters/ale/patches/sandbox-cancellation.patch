@@ -1,0 +1,682 @@
+diff --git a/ale_run/executors/sandbox.py b/ale_run/executors/sandbox.py
+index eb7abcf..47b4aff 100644
+--- a/ale_run/executors/sandbox.py
++++ b/ale_run/executors/sandbox.py
+@@ -33,6 +33,7 @@ import json
+ import logging
+ import shlex
+ import time
++import uuid
+ from dataclasses import dataclass
+ from pathlib import Path
+ from typing import TYPE_CHECKING, Any, ClassVar
+@@ -119,6 +120,18 @@ class _TailState:
+     pending_path: Path
+ 
+ 
++class SandboxCleanupError(RuntimeError):
++    """The run may still be active; evaluation must not start."""
++
++
++@dataclass
++class _SandboxRun:
++    token: str
++    cancel_marker: str
++    pid_file: str
++    spawn_started: bool = False
++
++
+ @dataclass
+ class SandboxExecutor(BaseExecutor):
+     """In-sandbox substrate. Code is shipped + run inside the cua VM via
+@@ -129,10 +142,37 @@ class SandboxExecutor(BaseExecutor):
+     async def run_deployer(
+         self,
+         *,
+-        deployer_cls: type["BaseAgentDeployer"],
++        deployer_cls: type[BaseAgentDeployer],
+         prompt: str,
+         timeout_s: float,
+-    ) -> "AgentRunResult":
++    ) -> AgentRunResult:
++        sep = "/" if self.sandbox.is_linux else "\\"
++        token = uuid.uuid4().hex
++        state = _SandboxRun(
++            token=token,
++            cancel_marker=f"{self.work_dir.rstrip(sep)}{sep}_cancel-{token}",
++            pid_file=f"{self.work_dir.rstrip(sep)}{sep}_pid",
++        )
++        try:
++            result = await self._run_deployer(
++                deployer_cls=deployer_cls, prompt=prompt, timeout_s=timeout_s, state=state,
++            )
++        except BaseException:
++            if state.spawn_started:
++                await self._stop_run(state)
++            raise
++        if state.spawn_started and result.status in {"failed", "timeout"}:
++            await self._stop_run(state)
++        return result
++
++    async def _run_deployer(
++        self,
++        *,
++        deployer_cls: type[BaseAgentDeployer],
++        prompt: str,
++        timeout_s: float,
++        state: _SandboxRun,
++    ) -> AgentRunResult:
+         from ..base_interface import AgentRunResult
+ 
+         sb = self.sandbox
+@@ -202,6 +242,8 @@ class SandboxExecutor(BaseExecutor):
+             spec_path=spec_path,
+             pid_file=pid_file,
+             entry_log=entry_log,
++            run_token=state.token,
++            cancel_marker=state.cancel_marker,
+         )
+         await sb.write_file(launcher_path, launcher_body)
+ 
+@@ -215,6 +257,7 @@ class SandboxExecutor(BaseExecutor):
+                 f'powershell -NoProfile -ExecutionPolicy Bypass -File '
+                 f'"{launcher_path}"'
+             )
++        state.spawn_started = True
+         spawn_res = await sb.run_command(spawn_cmd, timeout=60)
+         # The launcher backgrounds the entry via setsid+disown and returns in
+         # milliseconds, so a slow cua-server can drop the spawn RPC's SSE
+@@ -311,7 +354,6 @@ class SandboxExecutor(BaseExecutor):
+             logger.warning(
+                 "sandbox: wall budget %.0fs exceeded — killing pid=%s", timeout_s, pid,
+             )
+-            await self._kill(pid)
+             entry_tail = await self._tail_log(entry_log)
+             return AgentRunResult(
+                 status="timeout",
+@@ -500,27 +542,47 @@ class SandboxExecutor(BaseExecutor):
+             await asyncio.sleep(_PID_WAIT_TICK_S)
+         return None
+ 
+-    async def _kill(self, pid: int) -> None:
+-        """TERM + KILL the in-sandbox pid; idempotent."""
++    async def _stop_run(self, state: _SandboxRun) -> None:
++        """Finish cleanup despite repeated cancellation before propagating it."""
++        cleanup = asyncio.create_task(self._stop_run_impl(state))
++        cancelled = False
++        while not cleanup.done():
++            try:
++                await asyncio.shield(cleanup)
++            except asyncio.CancelledError:
++                cancelled = True
++        cleanup.result()
++        if cancelled:
++            raise asyncio.CancelledError
++
++    async def _stop_run_impl(self, state: _SandboxRun) -> None:
++        """Stop this attempt, or raise so the lifecycle skips evaluation."""
+         sb = self.sandbox
+         try:
+             if sb.is_linux:
+-                await sb.run_command(
+-                    f"kill -TERM {pid} 2>/dev/null || true", timeout=30,
+-                )
+-                await asyncio.sleep(2)
+-                await sb.run_command(
+-                    f"kill -KILL {pid} 2>/dev/null || true", timeout=30,
++                helper = f"{_ale_src_root_for(sb)}/ale_run/executors/_sandbox_stop.py"
++                command = (
++                    f"{shlex.quote(sb.python)} {shlex.quote(helper)} "
++                    f"{shlex.quote(state.token)} {shlex.quote(state.cancel_marker)}"
+                 )
+             else:
+-                await sb.run_command(
++                await sb.write_file(state.cancel_marker, "cancelled\n")
++                pid = await self._read_pid(state.pid_file)
++                if pid is None:
++                    raise RuntimeError("cancelled launcher has not reported its PID")
++                command = (
+                     'powershell -NoProfile -Command "'
+-                    f"Stop-Process -Id {pid} -Force -ErrorAction SilentlyContinue"
+-                    '"',
+-                    timeout=30,
++                    f"if (Get-Process -Id {pid} -ErrorAction SilentlyContinue) {{ "
++                    f"taskkill /PID {pid} /T /F; exit $LASTEXITCODE }}"
++                    '"'
+                 )
+-        except Exception as e:                                      # noqa: BLE001
+-            logger.debug("_kill pid=%s failed: %s", pid, e)
++            result = await sb.run_command(command, timeout=30)
++            if result.returncode != 0:
++                raise RuntimeError(
++                    f"stop command rc={result.returncode}: {(result.stderr or '')[-500:]}"
++                )
++        except Exception as exc:
++            raise SandboxCleanupError(f"sandbox cleanup not confirmed: {exc}") from exc
+ 
+     async def _tail_log(self, entry_log: str, max_bytes: int = 1500) -> str:
+         """Tail the in-sandbox entry log for diagnostic messages.
+@@ -540,6 +602,8 @@ def _build_launcher(
+     spec_path: str,
+     pid_file: str,
+     entry_log: str,
++    run_token: str,
++    cancel_marker: str,
+ ) -> str:
+     """Compose the per-OS launcher script.
+ 
+@@ -555,6 +619,10 @@ def _build_launcher(
+         return (
+             "#!/bin/bash\n"
+             "set -u\n"
++            f"exec 9>{shlex.quote(cancel_marker + '.lock')}\n"
++            "flock -x 9 || exit 1\n"
++            f"[ ! -e {shlex.quote(cancel_marker)} ] || exit 0\n"
++            f"export ALE_SANDBOX_RUN_ID={shlex.quote(run_token)}\n"
+             f"PIDF={shlex.quote(pid_file)}\n"
+             "if [ -s \"$PIDF\" ] && kill -0 \"$(cat \"$PIDF\")\" 2>/dev/null; then\n"
+             "  exit 0\n"
+@@ -562,7 +630,7 @@ def _build_launcher(
+             f"export PYTHONPATH={shlex.quote(ale_src_root)}:${{PYTHONPATH:-}}\n"
+             f"setsid {shlex.quote(python)} -m ale_run.executors._sandbox_entry "
+             f"{shlex.quote(spec_path)} "
+-            f"</dev/null >{shlex.quote(entry_log)} 2>&1 &\n"
++            f"</dev/null >{shlex.quote(entry_log)} 2>&1 9>&- &\n"
+             "CHILD=$!\n"
+             "echo \"$CHILD\" > \"$PIDF\"\n"
+             "disown $CHILD 2>/dev/null || true\n"
+@@ -575,6 +643,7 @@ def _build_launcher(
+     spec_quoted = spec_path.replace("'", "''")
+     pid_quoted = pid_file.replace("'", "''")
+     log_quoted = entry_log.replace("'", "''")
++    cancel_quoted = cancel_marker.replace("'", "''")
+     # Idempotent guard (mirrors the Linux launcher): a dropped spawn-RPC
+     # response triggers a host-side retry that re-runs this launcher. Without
+     # the guard a second entry would spawn, and since the first entry reads +
+@@ -582,6 +651,7 @@ def _build_launcher(
+     # recorded PID is still alive.
+     return (
+         "$ErrorActionPreference = 'Continue'\n"
++        f"if (Test-Path '{cancel_quoted}') {{ exit 0 }}\n"
+         f"$pidFile = '{pid_quoted}'\n"
+         "if (Test-Path $pidFile) {\n"
+         "  $oldPid = (Get-Content $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1)\n"
+@@ -597,6 +667,7 @@ def _build_launcher(
+         f"-RedirectStandardOutput '{log_quoted}' "
+         f"-RedirectStandardError '{log_quoted}.err'\n"
+         f"$proc.Id | Out-File -FilePath $pidFile -Encoding ascii -NoNewline\n"
++        f"if (Test-Path '{cancel_quoted}') {{ taskkill /PID $($proc.Id) /T /F }}\n"
+     )
+ 
+ 
+diff --git a/ale_run/orchestration/lifecycle.py b/ale_run/orchestration/lifecycle.py
+index cb8483d..f2198d6 100644
+--- a/ale_run/orchestration/lifecycle.py
++++ b/ale_run/orchestration/lifecycle.py
+@@ -37,6 +37,7 @@ from ..base_interface import (
+ )
+ from ..environments.env import ALEEnv
+ from ..executors import DockerExecutor, LocalExecutor, SandboxExecutor
++from ..executors.sandbox import SandboxCleanupError
+ from ..tasks.loader import TaskLoader
+ from ..tasks.driver import TaskDriver
+ from .factory import EnvironmentRouter, build_config, resolve_agent
+@@ -338,7 +339,7 @@ async def run_one_unit(
+                     error=f"agent wall-budget exceeded after {timeout_s}s",
+                     duration_s=float(timeout_s),
+                 )
+-            except asyncio.CancelledError:
++            except (asyncio.CancelledError, SandboxCleanupError):
+                 raise
+             except Exception as launch_exc:
+                 import traceback as _tb
+diff --git a/ale_run/executors/_sandbox_stop.py b/ale_run/executors/_sandbox_stop.py
+new file mode 100644
+index 0000000..fdeaf6c
+--- /dev/null
++++ b/ale_run/executors/_sandbox_stop.py
+@@ -0,0 +1,90 @@
++"""Cancel one Linux sandbox attempt and confirm its processes have stopped."""
++
++from __future__ import annotations
++
++import fcntl
++import os
++import signal
++import sys
++import time
++from pathlib import Path
++
++
++def _processes(token: str, known: dict[int, str]) -> dict[int, str]:
++    marker = f"ALE_SANDBOX_RUN_ID={token}".encode()
++    records: dict[int, tuple[int, str]] = {}
++    selected: dict[int, str] = {}
++    for directory in Path("/proc").iterdir():
++        if not directory.name.isdigit():
++            continue
++        pid = int(directory.name)
++        if pid == os.getpid():
++            continue
++        try:
++            fields = (directory / "stat").read_text().rsplit(")", 1)[1].split()
++            if fields[0] == "Z":
++                continue
++            parent, start = int(fields[1]), fields[19]
++            records[pid] = (parent, start)
++            if known.get(pid) == start or marker in (directory / "environ").read_bytes().split(
++                b"\0"
++            ):
++                selected[pid] = start
++        except (FileNotFoundError, ProcessLookupError, PermissionError):
++            continue
++    # Also retain descendants that deliberately replaced their environment.
++    while True:
++        children = {
++            pid: start
++            for pid, (parent, start) in records.items()
++            if parent in selected and pid not in selected
++        }
++        if not children:
++            break
++        selected.update(children)
++    return selected
++
++
++def _signal(processes: dict[int, str], sig: signal.Signals) -> None:
++    for pid, start in processes.items():
++        try:
++            fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
++            if fields[19] == start and fields[0] != "Z":
++                os.kill(pid, sig)
++        except (FileNotFoundError, ProcessLookupError):
++            continue
++
++
++def stop(token: str, cancel_marker: Path, *, grace_s: float = 8.0) -> None:
++    """Prevent late launch and terminate only processes owned by this attempt."""
++    # The launcher holds the same lock until its child PID is written. A
++    # cancelled HTTP request may still launch later, so the marker is persistent.
++    with Path(f"{cancel_marker}.lock").open("a") as lock:
++        fcntl.flock(lock, fcntl.LOCK_EX)
++        cancel_marker.write_text("cancelled\n")
++    known: dict[int, str] = {}
++    termed: dict[int, str] = {}
++    deadline = time.monotonic() + grace_s
++    kill_deadline = deadline + 3.0
++    while True:
++        active = _processes(token, known)
++        if not active:
++            return
++        known.update(active)
++        if time.monotonic() < deadline:
++            new = {pid: start for pid, start in active.items() if termed.get(pid) != start}
++            _signal(new, signal.SIGTERM)
++            termed.update(new)
++        else:
++            # Freeze before rediscovery so a forking process cannot outrun KILL.
++            _signal(active, signal.SIGSTOP)
++            active = _processes(token, known)
++            known.update(active)
++            _signal(active, signal.SIGKILL)
++        if time.monotonic() >= kill_deadline:
++            raise RuntimeError(f"sandbox processes did not stop: {sorted(active)}")
++        time.sleep(0.05)
++
++
++if __name__ == "__main__":
++    stop(sys.argv[1], Path(sys.argv[2]))
+diff --git a/tests/ale_run/test_sandbox_cancellation.py b/tests/ale_run/test_sandbox_cancellation.py
+new file mode 100644
+index 0000000..11c1adc
+--- /dev/null
++++ b/tests/ale_run/test_sandbox_cancellation.py
+@@ -0,0 +1,348 @@
++"""Real Linux process regressions. No model API, cloud VM, or CUA server needed."""
++
++from __future__ import annotations
++
++import asyncio
++import importlib
++import os
++import signal
++import subprocess
++import sys
++import tempfile
++import unittest
++from pathlib import Path
++from unittest.mock import AsyncMock, MagicMock, patch
++
++from ale_run.base_interface import SandboxHandle
++from ale_run.executors.sandbox import SandboxCleanupError, SandboxExecutor
++
++FIXTURE = r"""
++import asyncio
++from dataclasses import dataclass
++from pathlib import Path
++import subprocess
++import sys
++from ale_run.base_interface import AgentRunResult
++
++@dataclass
++class Config:
++    model: str = "fixture"
++    completed: bool = False
++
++class Deployer:
++    def __init__(self, executor):
++        self.executor = executor
++
++    async def install(self):
++        pass
++
++    async def launch(self, prompt):
++        root = Path(self.executor.work_dir)
++        writer = "import signal,time; from pathlib import Path; signal.signal(signal.SIGTERM, signal.SIG_IGN); p=Path(" + repr(str(root / "heartbeat")) + "); " + "exec('while True:\\n p.write_text(str(time.time()))\\n time.sleep(0.02)')"
++        process = subprocess.Popen([sys.executable, "-c", writer], start_new_session=True)
++        (root / "writer.pid").write_text(str(process.pid))
++        if self.executor.config.completed:
++            return AgentRunResult(status="completed")
++        await asyncio.sleep(3600)
++"""
++
++
++class LocalSandbox(SandboxHandle):
++    def __init__(self, root: Path):
++        super().__init__(
++            id="cancellation-test",
++            endpoint="http://unused",
++            os="linux",
++            work_dir_base=str(root / ".ale"),
++            task_data_root=str(root),
++            node="node",
++            python=sys.executable,
++            mcp_server_dir=str(root),
++        )
++        self.spawn_entered = asyncio.Event()
++        self.spawn_delay = 0.0
++        self.pid_delay = 0.0
++        self.cleanup_entered = asyncio.Event()
++        self.fail_cleanup = False
++        self.pending: list[asyncio.Task] = []
++
++    async def run_command(self, command, *, timeout=60):
++        async def execute():
++            if "bash " in command and "_launcher.sh" in command:
++                self.spawn_entered.set()
++                await asyncio.sleep(self.spawn_delay)
++            if "_sandbox_stop.py" in command:
++                self.cleanup_entered.set()
++                if self.fail_cleanup:
++                    return subprocess.CompletedProcess(command, 1, "", "test transport failure")
++            process = await asyncio.create_subprocess_shell(
++                command,
++                stdout=asyncio.subprocess.PIPE,
++                stderr=asyncio.subprocess.PIPE,
++            )
++            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout)
++            return subprocess.CompletedProcess(
++                command,
++                process.returncode,
++                stdout.decode(),
++                stderr.decode(),
++            )
++
++        task = asyncio.create_task(execute())
++        self.pending.append(task)
++        # SandboxHandle uses to_thread: cancelling the await does not cancel the RPC.
++        return await asyncio.shield(task)
++
++    async def mkdir(self, path):
++        Path(path).mkdir(parents=True, exist_ok=True)
++
++    async def rm(self, paths):
++        for path in paths:
++            Path(path).unlink(missing_ok=True)
++
++    async def write_file(self, path, content):
++        if path.endswith("_launcher.sh") and self.pid_delay:
++            content = content.replace("CHILD=$!\n", f"CHILD=$!\nsleep {self.pid_delay}\n")
++        Path(path).write_bytes(content if isinstance(content, bytes) else content.encode())
++
++    async def read_text(self, path):
++        return Path(path).read_text()
++
++    async def exists(self, path):
++        return Path(path).exists()
++
++
++@unittest.skipUnless(sys.platform == "linux", "Linux process lifecycle regression")
++class CancellationTests(unittest.IsolatedAsyncioTestCase):
++    async def asyncSetUp(self):
++        self.temp = tempfile.TemporaryDirectory()
++        self.root = Path(self.temp.name)
++        source = self.root / ".ale-src"
++        source.mkdir()
++        (source / "ale_run").symlink_to(Path(__file__).resolve().parents[2] / "ale_run")
++        (source / "fixture_deployer.py").write_text(FIXTURE)
++        sys.path.insert(0, str(source))
++        self.fixture = importlib.import_module("fixture_deployer")
++        self.sb = LocalSandbox(self.root)
++        self.wd = self.root / ".ale" / "run"
++        self.executor = SandboxExecutor(
++            config=self.fixture.Config(),
++            sandbox=self.sb,
++            work_dir=str(self.wd),
++        )
++        self.ship = patch.object(SandboxExecutor, "_ship_ale_subtree", new=AsyncMock())
++        self.ship.start()
++        self.poll = patch("ale_run.executors.sandbox._POLL_INTERVAL_S", 0.02)
++        self.poll.start()
++
++    async def asyncTearDown(self):
++        agents = [
++            task
++            for task in asyncio.all_tasks()
++            if task.get_coro().__qualname__ == "SandboxExecutor.run_deployer"
++        ]
++        for task in agents:
++            task.cancel()
++        await asyncio.gather(*agents, return_exceptions=True)
++        self.ship.stop()
++        self.poll.stop()
++        await asyncio.gather(*self.sb.pending, return_exceptions=True)
++        for name in ("writer.pid", "_pid"):
++            path = self.wd / name
++            if path.exists():
++                try:
++                    os.kill(int(path.read_text()), signal.SIGKILL)
++                except ProcessLookupError:
++                    pass
++        sys.path.remove(str(self.root / ".ale-src"))
++        sys.modules.pop("fixture_deployer", None)
++        self.temp.cleanup()
++
++    async def wait_for_file(self, name):
++        async with asyncio.timeout(5):
++            while not (self.wd / name).exists():
++                await asyncio.sleep(0.01)
++
++    def run_agent(self, timeout_s=60):
++        return self.executor.run_deployer(
++            deployer_cls=self.fixture.Deployer,
++            prompt="unused",
++            timeout_s=timeout_s,
++        )
++
++    async def assert_stopped(self):
++        before = (self.wd / "heartbeat").read_text()
++        await asyncio.sleep(0.15)
++        self.assertEqual(before, (self.wd / "heartbeat").read_text())
++        pid = int((self.wd / "writer.pid").read_text())
++        path = Path(f"/proc/{pid}/stat")
++        self.assertTrue(not path.exists() or path.read_text().rsplit(")", 1)[1].split()[0] == "Z")
++
++    async def test_outer_wait_for_stops_detached_writer_before_return(self):
++        with self.assertRaises(TimeoutError):
++            await asyncio.wait_for(self.run_agent(), timeout=1.0)
++        await self.assert_stopped()
++
++    async def test_cancel_during_spawn_waits_for_late_pid(self):
++        self.sb.pid_delay = 0.5
++        task = asyncio.create_task(self.run_agent())
++        await self.wait_for_file("heartbeat")
++        self.assertFalse((self.wd / "_pid").exists())
++        task.cancel()
++        with self.assertRaises(asyncio.CancelledError):
++            await task
++        self.assertTrue((self.wd / "_pid").exists())
++        await self.assert_stopped()
++
++    async def test_cancel_before_remote_launcher_executes_prevents_late_start(self):
++        self.sb.spawn_delay = 0.5
++        task = asyncio.create_task(self.run_agent())
++        await self.sb.spawn_entered.wait()
++        task.cancel()
++        with self.assertRaises(asyncio.CancelledError):
++            await task
++        await asyncio.gather(*self.sb.pending)
++        self.assertFalse((self.wd / "writer.pid").exists())
++        self.assertFalse((self.wd / "_pid").exists())
++
++    async def test_repeated_cancel_does_not_interrupt_cleanup(self):
++        task = asyncio.create_task(self.run_agent())
++        await self.wait_for_file("heartbeat")
++        task.cancel()
++        await self.sb.cleanup_entered.wait()
++        task.cancel()
++        with self.assertRaises(asyncio.CancelledError):
++            await task
++        await self.assert_stopped()
++
++    async def test_cancel_during_setup_does_not_kill_stale_pid(self):
++        self.wd.mkdir(parents=True)
++        (self.wd / "_pid").write_text(str(os.getpid()))
++        entered = asyncio.Event()
++
++        async def delayed_ship(_):
++            entered.set()
++            await asyncio.sleep(3600)
++
++        with patch.object(SandboxExecutor, "_ship_ale_subtree", side_effect=delayed_ship):
++            task = asyncio.create_task(self.run_agent())
++            await entered.wait()
++            task.cancel()
++            with self.assertRaises(asyncio.CancelledError):
++                await task
++        self.assertFalse(self.sb.cleanup_entered.is_set())
++        (self.wd / "_pid").unlink()
++
++    async def test_normal_completion_preserves_task_service(self):
++        self.executor.config.completed = True
++        result = await self.run_agent()
++        self.assertEqual(result.status, "completed")
++        await self.wait_for_file("heartbeat")
++        before = (self.wd / "heartbeat").read_text()
++        await asyncio.sleep(0.15)
++        self.assertNotEqual(before, (self.wd / "heartbeat").read_text())
++        self.assertFalse(self.sb.cleanup_entered.is_set())
++
++    async def test_poll_exception_stops_writer_before_propagating(self):
++        original_exists = self.sb.exists
++
++        async def broken_exists(path):
++            if path.endswith("_done.marker"):
++                await self.wait_for_file("heartbeat")
++                raise RuntimeError("poll transport failed")
++            return await original_exists(path)
++
++        original_command = self.sb.run_command
++
++        async def broken_command(command, *, timeout=60):
++            if command.startswith("kill -0 "):
++                raise RuntimeError("liveness transport failed")
++            return await original_command(command, timeout=timeout)
++
++        with (
++            patch.object(self.sb, "exists", side_effect=broken_exists),
++            patch.object(
++                self.sb,
++                "run_command",
++                side_effect=broken_command,
++            ),
++            self.assertRaisesRegex(RuntimeError, "liveness transport"),
++        ):
++            await self.run_agent()
++        await self.assert_stopped()
++
++    async def test_cleanup_failure_skips_reference_staging_and_evaluation(self):
++        if importlib.util.find_spec("openenv") is None:
++            self.skipTest("requires host orchestration dependencies")
++        from ale_run.orchestration import lifecycle
++        from ale_run.orchestration.experiment_spec import AgentSpec, RunUnit
++
++        env = MagicMock()
++        env.sandbox = self.sb
++        env.reset_async = AsyncMock()
++        env.close_async = AsyncMock()
++        env.current_phase = "agent_run"
++        driver = MagicMock()
++        driver.setup = AsyncMock()
++        driver.close = AsyncMock()
++        driver.evaluate = AsyncMock()
++        executor = MagicMock()
++        executor.work_dir = str(self.wd)
++        executor.run_deployer = AsyncMock(side_effect=SandboxCleanupError("unconfirmed stop"))
++        unit = RunUnit(
++            "fixture", AgentSpec("fixture", "fixture.Deployer", executor="local"), "fixture/task", 0
++        )
++        with (
++            patch.object(
++                lifecycle,
++                "resolve_agent",
++                return_value=(
++                    self.fixture.Deployer,
++                    self.fixture.Config,
++                ),
++            ),
++            patch.object(lifecycle, "ALEEnv", return_value=env),
++            patch.object(
++                lifecycle,
++                "TaskLoader",
++            ) as loader,
++            patch.object(lifecycle, "TaskDriver", return_value=driver),
++            patch.object(
++                lifecycle,
++                "_build_executor",
++                return_value=executor,
++            ),
++            patch.object(lifecycle, "_stage_task_data", new=AsyncMock()),
++            patch.object(
++                lifecycle,
++                "stage_reference",
++                new=AsyncMock(),
++            ) as stage,
++            self.assertLogs(lifecycle.logger, level="ERROR"),
++        ):
++            loader.return_value.load.return_value = {
++                "description": "fixture",
++                "image_category": "fixture",
++            }
++            result = await lifecycle.run_one_unit(
++                unit=unit,
++                router=MagicMock(),
++                output_root=self.root / "results",
++            )
++        self.assertEqual(result.status, "failed")
++        self.assertEqual(result.eval_status, "not_executed")
++        stage.assert_not_awaited()
++        driver.evaluate.assert_not_awaited()
++        env.close_async.assert_awaited_once()
++
++    async def test_unconfirmed_cleanup_raises_distinct_failure(self):
++        self.sb.fail_cleanup = True
++        task = asyncio.create_task(self.run_agent())
++        await self.wait_for_file("heartbeat")
++        task.cancel()
++        with self.assertRaises(SandboxCleanupError):
++            await task
++
++
++if __name__ == "__main__":
++    unittest.main()

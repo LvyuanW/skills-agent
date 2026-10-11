@@ -2,6 +2,8 @@
 
 适配器使用 ALE 的 `sandbox` executor，在每道题的任务容器内执行。对应官方源码版本：[`d9abc073`](https://github.com/rdi-berkeley/agents-last-exam/tree/d9abc0734b56ea34116c5bfcbdd0b808269ab9e2)。
 
+该版本的 sandbox executor 还需应用本目录的 [取消清理补丁](patches/sandbox-cancellation.patch)。补丁处理外层超时、启动期间取消和启动后的执行异常，等待容器内运行停止后再返回；无法确认停止时跳过评分。已有修改或其他 ALE 版本应先检查补丁适用性；已应用的仓库不要重复应用。
+
 ## 安装配置
 
 在宿主机指定两个仓库的路径，将适配器复制到 ALE 会上传的源码目录：
@@ -9,6 +11,9 @@
 ```sh
 AGENT_REPO=/path/to/skills-agent
 ALE_REPO=/path/to/agents-last-exam
+
+git -C "$ALE_REPO" apply --check "$AGENT_REPO/adapters/ale/patches/sandbox-cancellation.patch"
+git -C "$ALE_REPO" apply "$AGENT_REPO/adapters/ale/patches/sandbox-cancellation.patch"
 
 cp -R "$AGENT_REPO/adapters/ale/skills_agent" "$ALE_REPO/ale_run/agents/"
 cp "$AGENT_REPO/adapters/ale/skills_agent.yaml" "$ALE_REPO/configs/agents/"
@@ -81,9 +86,9 @@ session/history.sqlite      按需创建和增量更新的原始历史索引
 session/subagents/*/        独立子会话日志
 ```
 
-`parse_artifacts()` 从原始事件日志将完整模型回答、工具调用、工具结果和 token usage 转为 ALE 轨迹，不受终端摘要显示影响。子会话转为嵌套轨迹；主会话终端仍只展示 sub-agent 的目标摘要。截断或未完成的日志会在轨迹中标记。
+`parse_artifacts()` 从原始事件日志将完整模型回答、工具调用、工具结果和 token usage 转为 ALE 轨迹，不受终端摘要显示影响。图片工具结果保留文本与图片内容块，从已收集的会话快照读取图片，由 ALE 保存到运行日志的相对路径；快照缺失或不可读时保留文本并记录原因。子会话转为嵌套轨迹；主会话终端仍只展示 sub-agent 的目标摘要。截断或未完成的日志会在轨迹中标记。
 
-适配器收到异步取消或 SIGTERM 时终止并回收启动的进程；benchmark 随之清理当前脚本。上述 ALE 版本的外层 executor 超时可能不向容器内进程发送信号，适配器无法处理没有传递到自身的取消。smoke 使用 `cleanup_mode: delete`，但 ALE 在评分后才删除容器，不能据此判断评分前 Agent 已停止。
+适配器收到异步取消或 SIGTERM 时终止并回收启动的进程；benchmark 在成功、失败和中断退出前清理当前脚本及本任务通过 process-management helper 登记的后台进程。benchmark 拒绝 `start --persistent`，需要留给评分器访问的长期服务应由题目环境管理。上述补丁负责将宿主机取消传递到容器运行并完成清理。smoke 的 `cleanup_mode: delete` 在评分后才删除容器，不能替代评分前的进程清理。
 
 超时验收需在独立实验副本中设置较短的 `wall_time_s`，让 Agent 执行超过该时限的脚本，并在 ALE 开始评分前检查容器中的 Agent、shell 及其子进程均已退出，同时确认输出文件停止变化。仅看到 `timeout` 状态或最终容器被删除不算通过。
 

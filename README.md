@@ -124,7 +124,7 @@ macOS 下在输入行按 **Ctrl-V** 粘贴剪贴板中的图片或已复制的�
   --log-dir /path/to/run-logs
 ```
 
-完整任务从 UTF-8 文件读取，执行到模型返回最终回答后退出。配置文件的读取规则、模型、技能和附件参数与 `run` 相同。每次运行使用独立的 `<log-dir>/session`，已存在时直接报错。退出码为成功 `0`、失败 `1`、中断 `130`。接到 SIGTERM 时停止当前脚本并退出。
+完整任务从 UTF-8 文件读取，执行到模型返回最终回答后退出。配置文件的读取规则、模型、技能和附件参数与 `run` 相同。每次运行使用独立的 `<log-dir>/session`，已存在时直接报错。退出码为成功 `0`、失败 `1`、中断 `130`。正常结束、失败或接到 SIGTERM 时，均清理当前脚本及通过 process-management 启动的本任务后台进程，再退出；benchmark 不允许创建跨任务保留的服务。
 
 [ALE 接入说明](adapters/ale/README.md) 包含可复制到 ALE 仓库的 Deployer、Agent 配置及单任务 smoke 配置。适配器在 ALE 的任务 sandbox 内安装并运行本项目，产物由 Agent 按题目指定路径写入，日志写入 ALE 的 `executor.work_dir`。
 
@@ -256,6 +256,8 @@ API 错误的脱敏诊断保存在对应会话 `events.jsonl` 的 `error.diagnos
 
 内置 [process-management skill](skills_agent/builtin_skills/process-management/SKILL.md) 通过 `start/status/wait/logs/stop` 跨 shell 调用管理任务自有进程。独立 supervisor 保存实际状态和完整 stdout／stderr 日志，后台启动不会阻塞当前 shell；可以等待日志标记、TCP 可达或实际退出，再在后续回合读取状态、日志并停止进程。支持具备 waitid/WNOWAIT 的宿主 POSIX，已在 macOS 验证；不支持交互输入或自行脱离进程组的 daemon。停止仅由确认归属的 supervisor 清理自己的进程组，归属丢失时明确报告。分回合使用见[进程生命周期示例](skills_agent/builtin_skills/process-management/references/across-turns.md)。
 
+通过 Agent 的 shell 启动的后台任务会登记所属回合。回合失败或取消时清理该回合新建的任务，子 Agent 的任务也在此范围内；成功回合的后台服务可以继续供后续回合使用。普通 CLI 会话退出时清理本次会话登记的非持久任务。用户明确需要跨会话运行的服务，可用 helper 的 `start --persistent`；该选项仅在普通会话中允许，任务所属回合仍须成功完成。benchmark 总是在退出前清理所有登记任务，并拒绝 `--persistent`。直接在 Agent 之外运行 helper 时，进程仍由调用者通过 `stop` 管理。
+
 内置 [investigation skill](skills_agent/builtin_skills/investigation/SKILL.md) 增加已知 HTTP(S) URL 的获取脚本，分别保存响应体、来源元数据和可选提取文本，保留实际 HTTP 状态、重定向、完整性与哈希；有界预览不足时可继续读取保存资料。默认响应上限 64 MiB，网络 deadline 覆盖重定向与渐进读取，超限或失败保留已取得的资料并明确标记不完整。它提供资料获取，不提供搜索、登录或页面脚本执行。
 
 ### Sandbox
@@ -278,6 +280,6 @@ API 错误的脱敏诊断保存在对应会话 `events.jsonl` 的 `error.diagnos
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-测试通过本地模拟模型覆盖两种协议：读取技能与参考源码、返回新脚本源码、写入执行、根据错误修改、验证结果并续聊。同时验证多轮交互与恢复历史、长命令实际执行与完整记录、工作上下文增量保存、压缩程序检查与历史检索、附件编码、工具配对、子会话显示隔离、进程中断清理和 Docker 参数。ALE 测试需要本地官方源码，运行方法见接入说明。模拟模型验证协议及执行链路，不代表真实模型的代码生成质量；未调用远程付费模型，也未验证实际容器启动。
+测试通过本地模拟模型覆盖两种协议：读取技能与参考源码、返回新脚本源码、写入执行、根据错误修改、验证结果并续聊。同时验证多轮交互与恢复历史、长命令实际执行与完整记录、工作上下文增量保存、压缩程序检查与历史检索、附件编码、工具配对、子会话显示隔离、进程中断清理和 Docker 参数。进程生命周期回归会实际启动后台写入任务，检查正常结束、失败和信号中断后的退出与文件稳定性，并验证跨回合和跨会话的所有权边界。ALE 测试需要本地官方源码，运行方法见接入说明。模拟模型与容器内回归验证协议、运行环境及执行链路；真实模型的任务完成质量和 ALE 评分仍需另行运行 smoke 验收。
 
 协议依据：[OpenAI token计量](https://developers.openai.com/api/docs/guides/token-counting)、[OpenAI Responses](https://developers.openai.com/api/reference/resources/responses/methods/create)、[OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、[OpenAI 流事件](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events)、[OpenAI 文件输入](https://developers.openai.com/api/docs/guides/file-inputs)、[Anthropic 流事件](https://platform.claude.com/docs/en/build-with-claude/streaming)、[Anthropic 工具调用](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)、[Anthropic 图片](https://platform.claude.com/docs/en/build-with-claude/vision)、[Anthropic PDF](https://platform.claude.com/docs/en/build-with-claude/pdf-support)。

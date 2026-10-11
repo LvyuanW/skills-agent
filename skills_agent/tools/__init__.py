@@ -6,11 +6,14 @@ import signal
 import subprocess
 from pathlib import Path
 
+from ..processes import SCOPE_ENV
+
 
 class ToolRegistry:
     def __init__(self, workspace: Path, sandbox=None, subagent=None, *, on_activity=None):
         self.workspace = Path(workspace).expanduser().resolve()
         self.sandbox, self.subagent = sandbox, subagent
+        self.process_scope = None
         self.on_activity = on_activity or (lambda activity: None)
         script = {
             "name": {"type": "string", "description": "Short action and purpose, shown to the user."},
@@ -76,6 +79,8 @@ class ToolRegistry:
                 if name == "shell":
                     with subprocess.Popen(values["command"], shell=True, cwd=self.workspace,
                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                          env={**os.environ, SCOPE_ENV: str(self.process_scope.path)}
+                                          if self.process_scope is not None else None,
                                           text=True, errors="replace", start_new_session=True) as process:
                         try:
                             stdout, stderr = process.communicate()

@@ -36,7 +36,10 @@ def main(argv=None):
         paths = [path if path.is_absolute() else workspace / path for path in paths]
         user_message = session.make_user_message(prompt, paths)
         agent = create_agent(args, session, on_event=ConsoleRenderer())
-        agent.run(user_message)
+        try:
+            agent.run(user_message)
+        finally:
+            agent.close()
         return 0
     except KeyboardInterrupt:
         return 130

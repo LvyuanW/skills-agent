@@ -2,7 +2,9 @@ import argparse
 import json
 from pathlib import Path
 import shlex
+import signal
 import sys
+import threading
 from tempfile import TemporaryDirectory
 
 from rich.text import Text
@@ -514,6 +516,22 @@ def _interact(agent, files, draft, *, read_input=None, output=None):
 
 
 def main(argv=None):
+    # SIGTERM exits the whole session; Ctrl-C remains a cancellable individual turn.
+    previous = None
+    if threading.current_thread() is threading.main_thread():
+        previous = signal.signal(signal.SIGTERM, _terminate_session)
+    try:
+        return _main(argv)
+    finally:
+        if previous is not None:
+            signal.signal(signal.SIGTERM, previous)
+
+
+def _terminate_session(signum, frame):
+    raise SystemExit(128 + signum)
+
+
+def _main(argv=None):
     args = parser().parse_args(argv)
     try:
         workspace = args.workspace.expanduser().resolve()
@@ -530,10 +548,13 @@ def main(argv=None):
             replay.close()
         if args.command == "history":
             return 0
-        agent = create_agent(args, session, on_event=ConsoleRenderer(
+        agent = create_agent(args, session, allow_persistent_processes=True, on_event=ConsoleRenderer(
             echo_user=sys.stdin.isatty() and sys.stdout.isatty(),
         ))
-        return interact(agent, args.file)
+        try:
+            return interact(agent, args.file)
+        finally:
+            agent.close()
     except (ValueError, OSError, RuntimeError) as exc:
         _print(f"error: {exc}", "assistant", sys.stderr)
         return 1

@@ -1,6 +1,7 @@
 """ALE adapter; the agent runtime is installed inside the task sandbox."""
 
 import asyncio
+import base64
 import json
 import os
 from pathlib import Path
@@ -10,7 +11,7 @@ import time
 
 from ale_run.base_interface.agent_deployer import AgentRunResult, BaseAgentDeployer
 from ale_run.base_interface.trajectory import (
-    ContentPart, Observation, StepMetrics, ToolCall, ToolResult, TrajectoryBuilder,
+    ContentPart, ImageSource, Observation, StepMetrics, ToolCall, ToolResult, TrajectoryBuilder,
 )
 
 from .config import SkillsAgentConfig
@@ -169,9 +170,9 @@ class SkillsAgentDeployer(BaseAgentDeployer):
                         finished = not calls
                     elif role == "tool":
                         finished = False
-                        content = message["content"]
+                        content = _tool_content(message["content"], session_dir)
                         try:
-                            result = json.loads(content)
+                            result = json.loads(next((part.text for part in content if part.type == "text"), ""))
                         except (ValueError, TypeError):
                             result = {}
                         is_error = isinstance(result, dict) and bool(
@@ -180,7 +181,7 @@ class SkillsAgentDeployer(BaseAgentDeployer):
                         builder.add_step(source="environment", observation=Observation(results=[
                             ToolResult(
                                 tool_call_id=message["tool_call_id"], is_error=is_error,
-                                content=[ContentPart(type="text", text=content)],
+                                content=content,
                             ),
                         ]))
                     else:
@@ -216,11 +217,39 @@ def _text(content):
     return "\n".join(block["text"] for block in (content or []) if block.get("type") == "text")
 
 
+def _tool_content(content, session_dir):
+    if isinstance(content, str):
+        return [ContentPart(type="text", text=content)]
+    parts = []
+    for block in content:
+        if block.get("type") == "text":
+            parts.append(ContentPart(type="text", text=block["text"]))
+        elif block.get("type") == "image":
+            supplied = block.get("path")
+            try:
+                if not isinstance(supplied, str) or not supplied:
+                    raise ValueError("snapshot path is missing")
+                # Gather relocates the immutable snapshot; the logged path is inside the sandbox.
+                snapshot = session_dir / "attachments" / Path(supplied).name
+                data = snapshot.read_bytes()
+                if not data:
+                    raise ValueError("snapshot is empty")
+            except (OSError, ValueError) as exc:
+                parts.append(ContentPart(type="text", text=f"Image unavailable: {supplied!r} ({exc})"))
+                continue
+            parts.append(ContentPart(type="image", image=ImageSource(
+                type="base64", data=base64.b64encode(data).decode("ascii"),
+                media_type=block.get("mime_type") or "image/png",
+                alt_text=block.get("label") or block.get("name"),
+            )))
+    return parts
+
+
 def _metrics(raw):
     usage = raw.get("usage")
     if not isinstance(usage, dict):
         return None
-    details = usage.get("prompt_tokens_details") or {}
+    details = usage.get("input_tokens_details") or usage.get("prompt_tokens_details") or {}
     return StepMetrics(
         input_tokens=usage.get("input_tokens", usage.get("prompt_tokens")),
         output_tokens=usage.get("output_tokens", usage.get("completion_tokens")),

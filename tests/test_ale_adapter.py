@@ -1,6 +1,7 @@
 """Run against upstream ALE with ALE_SOURCE_DIR=/path/to/agents-last-exam."""
 
 import asyncio
+import base64
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
@@ -30,7 +31,7 @@ if ALE_SOURCE:
     from ale_run.agents.skills_agent.config import SkillsAgentConfig
     from ale_run.agents.skills_agent.deployer import SkillsAgentDeployer
     from ale_run.base_interface.agent_deployer import AgentRunResult
-    from ale_run.base_interface.trajectory import TrajectoryBuilder
+    from ale_run.base_interface.trajectory import Trajectory, TrajectoryBuilder, persist_screenshots
 
 
 def executor(path, **config):
@@ -356,6 +357,104 @@ except asyncio.CancelledError:
             self.assertEqual(result.final_metrics.total_cache_creation_tokens, 3)
             self.assertEqual(result.subagent_trajectories[0].steps[-1].message, "PRIVATE_CHILD_RESULT")
             self.assertNotIn("PRIVATE_", str([step.model_dump() for step in result.steps]))
+
+    def test_parser_preserves_gathered_image_feedback_in_a_portable_trajectory(self):
+        from skills_agent.feedback import feedback_content
+        from skills_agent.session import Session
+
+        pixels = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jH1sAAAAASUVORK5CYII="
+        )
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            sandbox = root / "sandbox"
+            session = Session(sandbox, "session")
+            source = sandbox / "preview.png"
+            source.write_bytes(pixels)
+            execution = json.dumps({"exit_code": 7, "stderr": "original failure", "stdout": json.dumps({
+                "skills_agent_feedback": 1, "attachments": [{
+                    "type": "image", "path": str(source), "label": "Rendered output",
+                }],
+            })})
+            content = feedback_content(execution, session)
+            session.append(message("assistant", "Inspecting", tool_calls=[{
+                "id": "preview", "name": "shell", "arguments": "{}",
+            }])["message"])
+            session.append(message("tool", content, tool_call_id="preview")["message"])
+            session.append(message("assistant", "done")["message"])
+            run_dir = root / "run"
+            work_dir = run_dir / "origin_log/skills_agent"
+            shutil.copytree(session.path, work_dir / "session")
+            shutil.rmtree(sandbox)
+
+            trace = builder()
+            SkillsAgentDeployer.parse_artifacts(work_dir=work_dir, config=executor(root).config,
+                                               run_result=AgentRunResult("completed"), builder=trace)
+            parsed = trace.finalize(reward=None)
+            self.assertEqual([step.source for step in parsed.steps], ["agent", "environment", "agent"])
+            result = parsed.steps[1].observation.results[0]
+            self.assertEqual(result.tool_call_id, "preview")
+            self.assertTrue(result.is_error)
+            self.assertEqual([part.text for part in result.content if part.type == "text"],
+                             [block["text"] for block in content if block["type"] == "text"])
+            image = next(part.image for part in result.content if part.type == "image")
+            self.assertEqual(image.media_type, "image/png")
+            self.assertEqual(image.alt_text, "Rendered output")
+            self.assertEqual(persist_screenshots(parsed, run_dir), 1)
+            self.assertEqual(image.type, "path")
+            self.assertIsNone(image.data)
+            self.assertFalse(Path(image.path).is_absolute())
+            (run_dir / "trajectory.json").write_text(parsed.model_dump_json())
+            portable = root / "portable"
+            shutil.copytree(run_dir, portable)
+            shutil.rmtree(run_dir)
+            reopened = Trajectory.model_validate_json((portable / "trajectory.json").read_text())
+            restored = next(part.image for part in reopened.steps[1].observation.results[0].content
+                            if part.type == "image")
+            self.assertEqual((portable / restored.path).read_bytes(), pixels)
+
+    def test_parser_preserves_text_when_image_snapshots_are_unavailable(self):
+        with TemporaryDirectory() as directory:
+            session = Path(directory) / "session"
+            original = '{"exit_code":0,"stdout":"kept text","stderr":""}'
+            for name in ("missing.png", "empty.png", "unreadable.png"):
+                with self.subTest(name=name):
+                    snapshot = session / "attachments" / name
+                    snapshot.parent.mkdir(parents=True, exist_ok=True)
+                    if name == "empty.png":
+                        snapshot.write_bytes(b"")
+                    elif name == "unreadable.png":
+                        snapshot.mkdir()
+                    write_events(session / "events.jsonl", [
+                        message("tool", [{"type": "text", "text": original},
+                                {"type": "image", "path": f"/sandbox/session/attachments/{name}",
+                                 "mime_type": "image/png"},
+                                {"type": "text", "text": "kept caption"}], tool_call_id="preview"),
+                        message("assistant", "done"),
+                    ])
+                    trace = builder()
+                    self.assertFalse(SkillsAgentDeployer._parse_session(session, trace))
+                    self.assertEqual([step.source for step in trace.trajectory.steps], ["environment", "agent"])
+                    result = trace.trajectory.steps[0].observation.results[0]
+                    self.assertFalse(result.is_error)
+                    self.assertEqual(result.content[0].text, original)
+                    self.assertIn("Image unavailable:", result.content[1].text)
+                    self.assertIn(name, result.content[1].text)
+                    self.assertEqual(result.content[2].text, "kept caption")
+
+    def test_parser_counts_responses_cached_input_tokens(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory)
+            write_events(path / "events.jsonl", [message("assistant", "done", _raw={"usage": {
+                "input_tokens": 100, "output_tokens": 20, "input_tokens_details": {"cached_tokens": 75},
+            }})])
+            trace = builder()
+            self.assertFalse(SkillsAgentDeployer._parse_session(path, trace))
+            result = trace.finalize(reward=None)
+            self.assertEqual(result.steps[0].metrics.cache_read_tokens, 75)
+            self.assertEqual(result.final_metrics.total_input_tokens, 100)
+            self.assertEqual(result.final_metrics.total_output_tokens, 20)
+            self.assertEqual(result.final_metrics.total_cache_read_tokens, 75)
 
     def test_parser_reports_missing_truncated_and_interrupted_logs(self):
         with TemporaryDirectory() as directory:
