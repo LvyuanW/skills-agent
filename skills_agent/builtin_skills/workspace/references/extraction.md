@@ -41,7 +41,7 @@ python /absolute/skill/scripts/extract.py xlsx /absolute/book.xlsx --sheet 'Sale
 ## PDF page text
 
 ```sh
-python /absolute/skill/scripts/inspect.py --module pypdf --executable pdftotext
+python /absolute/skill/scripts/probe_environment.py --module pypdf --executable pdftotext
 python /absolute/skill/scripts/extract.py pdf /absolute/report.pdf --start 3 --limit 2
 ```
 

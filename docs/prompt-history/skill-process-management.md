@@ -76,3 +76,43 @@ Within the agent, registered jobs belong to the turn that started them, includin
 
 The supervisor retains its direct child's PID until group cleanup ends and never signals a PID supplied by the model or a record. If ownership cannot be confirmed, status is `orphaned` and stop refuses to guess. Report that gap rather than launching duplicates. Preserve the absolute state directory, name and log paths for an intentionally continuing service. Read [references/across-turns.md](references/across-turns.md) for a start/observe/stop example.
 ````
+
+
+## v3 · 2026-10-13 · 以可观察进展决定等待与停止
+
+来源：当前工作区（未提交）。主工作提示词本轮未修改，不新增其版本。
+
+- 发现的问题：后台任务的一次 wait 超时只结束等待，不会停止计算；反复相同轮询可能没有新信息，也不能说明任务在有效推进。
+- 本版本目标：通过日志、完成单元或中间结果观察进展，结合已选停止条件决定后续等待，并在条件达到而任务未退出时调用现有 stop。
+- 本版本效果：明确区分等待时限与执行时限，要求确认停止结果并避免无限重复无新信息的轮询；保留现有进程登记和清理协议，不修改脚本实现。真实后台任务的进度判断与停止效果待观察。
+
+### 完整提示词快照
+
+````markdown
+---
+name: process-management
+description: Keep a server or long-running job observable across shell calls using saved process records, readiness checks and logs, then stop its owned processes when work ends.
+---
+
+Use a saved process reference when a program must run while other work proceeds. Start the task's own program through [scripts/process.py](scripts/process.py), then use its returned state and logs rather than assuming launch means readiness. A bounded command needed immediately can instead use the feedback skill's `run` operation.
+
+Read or adapt the script to understand the method; its process registration and ownership protocol are necessary for the agent's automatic cleanup. Direct use requires Python 3.11 or newer on POSIX with `waitid/WNOWAIT`; it is validated on macOS and does not support Windows or container-to-host path translation. Resolve its absolute path from this SKILL.md. Keep the same absolute `--state-dir` and `--name` across calls; shell variables do not persist.
+
+| Operation | Result |
+| --- | --- |
+| `start --state-dir DIR --name NAME [--cwd DIR] [--persistent] -- COMMAND...` | Detached supervisor, command PID, saved record and complete stdout/stderr logs |
+| `status --state-dir DIR --name NAME` | Verified supervisor identity and recorded lifecycle/exit status |
+| `wait --state-dir DIR --name NAME [--timeout 30]` | Actual command status; timeout returns 124 and leaves it running |
+| `wait ... --match TEXT [--stream stdout\|stderr\|both]` | Wait for a literal log marker while the process runs; flush readiness logs |
+| `wait ... --tcp HOST PORT` | Observe reachability, not service identity or correct behavior |
+| `logs --state-dir DIR --name NAME [--max-chars 6000]` | Bounded tails and complete log paths |
+| `stop --state-dir DIR --name NAME [--grace 3 --timeout 10]` | TERM then KILL for the owned process group and confirmation of cleanup |
+
+Arguments execute directly; use `sh -lc '...'` for shell syntax. Commands must remain foreground members of the supervisor's process group. Daemonizing or starting a new session escapes its ownership. Commands needing interactive stdin require another approach. An active or unconfirmed name cannot be reused; an ended run may be replaced with fresh logs. Inspect readiness and actual task behavior separately, and stop only task-owned work.
+
+For a background computation, make progress observable through flushed logs, completed units or saved intermediate results, and inspect those observations against its chosen stopping condition. A `wait --timeout` expiry only returns control; it does not stop the job or enforce its execution deadline. When the stopping condition is reached, use `stop` if the job has not exited and verify the returned state. Choose waits around expected progress and the remaining budget; do not repeat identical polls indefinitely without new information. If progress cannot be established, inspect or report that gap rather than treating elapsed waiting as evidence of useful work.
+
+Within the agent, registered jobs belong to the turn that started them, including subagent jobs. Failed/cancelled turns stop their new jobs. Successful CLI turns keep them available across turns; leaving the CLI stops them. Only a user-requested ongoing service should use `--persistent`, and it survives exit only after its creating turn succeeds. Benchmark runs forbid persistence and clean up all registered jobs on success, failure or interruption. Outside the agent, use `stop` explicitly. Do not detach to evade this ownership.
+
+The supervisor retains its direct child's PID until group cleanup ends and never signals a PID supplied by the model or a record. If ownership cannot be confirmed, status is `orphaned` and stop refuses to guess. Report that gap rather than launching duplicates. Preserve the absolute state directory, name and log paths for an intentionally continuing service. Read [references/across-turns.md](references/across-turns.md) for a start/observe/stop example.
+````

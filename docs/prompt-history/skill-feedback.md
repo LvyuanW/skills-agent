@@ -166,3 +166,43 @@ Choose the observation needed for the next decision: actual execution for behavi
 
 For explicit saved-data conditions, [scripts/check.py](scripts/check.py) supports `file PATH... [--min-bytes N]`, `text PATH --contains TEXT [--absent TEXT]`, and `json PATH [--pointer /path] --equals-json VALUE`. It distinguishes missing from null and booleans from numbers; exit codes are 0 for supplied conditions passing, 1 for a mismatch and 2 for acquisition/input failure. Derive expected values from the task rather than the produced answer. Read [references/acceptance-checks.md](references/acceptance-checks.md) for condition-specific examples, or [references/feedback-loop.md](references/feedback-loop.md) for connecting returned observations to the next action. Neither prescribes a fixed checklist.
 ````
+
+
+## v5 · 2026-10-13 · 未知成本计算先试跑并选择停止条件
+
+来源：当前工作区（未提交）。主工作提示词本轮未修改，不新增其版本。
+
+- 发现的问题：在执行前不估计未知计算成本、也不设有意义的停止条件，可能让一次脚本调用长时间占用当前任务；小规模成功也不能证明完整任务已完成。
+- 本版本目标：先用覆盖昂贵步骤的代表性小输入检查正确性并估计成本，再按任务选择执行时间、迭代、收敛或无进展条件。
+- 本版本效果：技能要求区分试跑估计与完整结果，并明确 run 的执行超时会停止命令；不设统一样本量或固定时限。没有新增运行时超时机制，真实计算任务的使用效果待观察。
+
+### 完整提示词快照
+
+````markdown
+---
+name: feedback
+description: Obtain execution or artifact evidence with command timeouts and full logs, exact text/JSON checks, and native image feedback from local images or rendered HTML/SVG.
+---
+
+Choose the observation needed for the next decision: actual execution for behavior, saved text or values for content, and pixels for appearance. A successful write, file path or screenshot command alone does not establish the contents or visual result.
+
+[scripts/feedback.py](scripts/feedback.py) supplies reference acquisition methods. Reuse them, read/adapt the source, or write task-specific checks when appropriate. Direct invocation requires Python 3.11 or newer and an absolute script path resolved from this SKILL.md; variables do not persist across shell calls.
+
+| Operation | Result |
+| --- | --- |
+| `file PATH [--limit 100]` | File type, size, modification time and SHA-256; bounded directory metadata |
+| `text PATH [--start 1 --end 200 --column 1 --max-chars 12000]` | Exact numbered UTF-8 text with `next_line`/`next_column` continuation |
+| `run --log-dir DIR [--timeout 120] -- COMMAND...` | Actual exit status, timeout flag, bounded stdout/stderr tails and complete separate binary logs |
+| `image PATH... [--label TEXT]` | Existing PNG/JPEG/GIF/WebP pixels sent as native model input |
+| `render PATH --output PNG [--width 1200 --height 800 --wait-ms 1000 --browser PATH --timeout 30]` | Screenshot of local HTML/SVG through installed Chrome/Chromium, returned as native image feedback |
+
+`run` executes argument lists directly; use `sh -lc '...'` explicitly for shell syntax. `run` and `render` preserve failing status and return 124 on timeout. Inspect `timed_out`, actual `exit_code`, acquisition diagnostics and truncation. A tail may omit the cause; read the complete logs as needed. The helpers do not install dependencies.
+
+Before a substantial computation with unknown cost, try a small representative input that reaches the expensive work. Check correctness and measure runtime or progress before scaling up; an extrapolation is an estimate, and a pilot does not replace the required full result. Choose the sample size and a meaningful stopping condition from the task, such as an execution deadline, iteration limit, convergence criterion or interval without progress. The `run --timeout` limit stops command execution; set it for the planned work rather than assuming one duration fits every task.
+
+**Native image protocol:** return the helper's single JSON feedback envelope as the entire shell stdout, without other printed output or a formatter. Custom scripts returning images must preserve this protocol; inspect the reference implementation before changing it. The runtime validates and snapshots declared images before filtering text, then supplies their bytes to the model. A header check only identifies format; inspect the actual image or acquisition error. Use `result_mode: direct` for exact text; native images also work with `auto` or `report`.
+
+`render` uses a fresh screenshot and isolated browser profile. Its wait value is a virtual-time budget, not an exact animation timestamp. A screenshot covers only the captured viewport and state. PDF/office files need an appropriate reader or page rendering first; text extraction is not visual inspection.
+
+For explicit saved-data conditions, [scripts/check.py](scripts/check.py) supports `file PATH... [--min-bytes N]`, `text PATH --contains TEXT [--absent TEXT]`, and `json PATH [--pointer /path] --equals-json VALUE`. It distinguishes missing from null and booleans from numbers; exit codes are 0 for supplied conditions passing, 1 for a mismatch and 2 for acquisition/input failure. Derive expected values from the task rather than the produced answer. Read [references/acceptance-checks.md](references/acceptance-checks.md) for condition-specific examples, or [references/feedback-loop.md](references/feedback-loop.md) for connecting returned observations to the next action. Neither prescribes a fixed checklist.
+````

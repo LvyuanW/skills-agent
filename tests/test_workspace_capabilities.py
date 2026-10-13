@@ -13,7 +13,7 @@ from skills_agent.skills import SkillRegistry
 
 BUILTIN_ROOT = Path(__file__).resolve().parents[1] / "skills_agent" / "builtin_skills"
 ROOT = BUILTIN_ROOT / "workspace"
-INSPECT = ROOT / "scripts" / "inspect.py"
+PROBE = ROOT / "scripts" / "probe_environment.py"
 EXTRACT = ROOT / "scripts" / "extract.py"
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 S = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -85,7 +85,7 @@ class WorkspaceCapabilitiesTests(unittest.TestCase):
         executable.write_text("#!/bin/sh\ntouch should-not-run\n")
         executable.chmod(0o755)
         env = {**os.environ, "PATH": str(self.workspace)}
-        result = self.invoke(INSPECT, "--executable", "probe-target", "--module", "json", env=env)
+        result = self.invoke(PROBE, "--executable", "probe-target", "--module", "json", env=env)
         self.assertEqual(result.returncode, 0, result.stderr)
         data = json.loads(result.stdout)
         self.assertEqual(len(data["checks"]), 2)
@@ -94,7 +94,7 @@ class WorkspaceCapabilitiesTests(unittest.TestCase):
         self.assertFalse((self.workspace / "should-not-run").exists())
 
     def test_missing_capability_is_reported_with_failure_status(self):
-        result = self.invoke(INSPECT, "--module", "skills_agent_absent_module_942819",
+        result = self.invoke(PROBE, "--module", "skills_agent_absent_module_942819",
                              "--executable", "skills-agent-absent-program-942819")
         self.assertEqual(result.returncode, 1)
         data = json.loads(result.stdout)
@@ -104,7 +104,7 @@ class WorkspaceCapabilitiesTests(unittest.TestCase):
     def test_invalid_probe_requests_fail(self):
         for args in ((), ("--module", "a/b"), ("--module", "json.decoder")):
             with self.subTest(args=args):
-                result = self.invoke(INSPECT, *args)
+                result = self.invoke(PROBE, *args)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertTrue(result.stderr)
 
@@ -113,11 +113,20 @@ class WorkspaceCapabilitiesTests(unittest.TestCase):
         package.mkdir()
         marker = self.workspace / "module-executed"
         (package / "__init__.py").write_text(f'from pathlib import Path\nPath({str(marker)!r}).touch()\nprint("unwanted output")\n')
-        result = self.invoke(INSPECT, "--module", "probe_package",
+        result = self.invoke(PROBE, "--module", "probe_package",
                              env={**os.environ, "PYTHONPATH": str(self.workspace)})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(json.loads(result.stdout)["checks"][0]["available"])
         self.assertFalse(marker.exists())
+
+    def test_workspace_scripts_do_not_shadow_standard_library_imports(self):
+        result = subprocess.run(
+            [sys.executable, "-c", "from dataclasses import make_dataclass; "
+             "print(make_dataclass('Probe', [('value', int)])(3).value)"],
+            cwd=PROBE.parent, capture_output=True, text=True, timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "3")
 
     def test_json_pointer_decodes_escaped_keys_and_distinguishes_null_from_missing(self):
         path = self.workspace / "data.json"
@@ -313,7 +322,7 @@ class WorkspaceCapabilitiesTests(unittest.TestCase):
     def test_skill_remains_discoverable_and_scripts_compile(self):
         registry = SkillRegistry([BUILTIN_ROOT])
         self.assertIn("- workspace:", registry.catalog())
-        for script in (INSPECT, EXTRACT):
+        for script in (PROBE, EXTRACT):
             compile(script.read_text(), str(script), "exec")
 
 
