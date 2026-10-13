@@ -147,7 +147,7 @@ skills_agent/
   tools/             shell、subagent、sandbox
   skills/            技能发现与系统提示词中的技能目录
   sandbox/           Docker 命令执行
-  builtin_skills/    通用读取、编辑、反馈、调查、修复和进程管理技能
+  builtin_skills/    通用读取、编辑、反馈、调查、修复、进程管理和交付审查技能
 tests/
 adapters/ale/        ALE Deployer 与运行配置
 ```
@@ -195,7 +195,7 @@ effort=low
 
 ### Skills 和 scripts
 
-默认发现内置技能和 `<workspace>/skills`，可重复传入 `--skill-dir` 增加目录。启动时只读取 YAML 元数据，将名称、描述和路径放入系统提示词。模型通过 shell 按需读取 `SKILL.md` 和参考资料，直接调用技能中已说明用法的脚本；需要定制时再读取、修改源码。相同名称的不同技能会报错。
+默认发现内置技能和 `<workspace>/skills`，可重复传入 `--skill-dir` 增加目录。启动时只读取 YAML 元数据，将名称、描述和路径放入系统提示词。选择引导要求模型在任务开始、下一步工作变化和准备交付时，按当前需求选择相关技能，通过 shell 读取 `SKILL.md`，再按需读取参考资料和脚本源码；上下文中已有的说明可直接复用。相同名称的不同技能会报错。
 
 本项目的内置技能按可复用基础能力组织，说明操作契约、选择依据和能力边界。示例演示接口及依据反馈继续工作的方式；实际产物、步骤和验收条件由当前任务决定，不把某次任务的开发顺序或特定故障处理固化为所有任务的流程。
 
@@ -214,11 +214,11 @@ description: 描述这个技能提供的可复用能力、适用条件和关键�
 ---
 说明如何按当前任务选择操作，以及输入输出约束和能力边界。
 scripts/example.py 提供可复用操作；说明它的参数、输入输出和错误行为。
-可以直接调用，使用 --help 查看用法；需要定制时再阅读、修改相关实现。
+可以阅读源码理解方法，直接调用、改写或自行编写脚本；调用现成脚本时可用 --help 查看参数。
 根据执行结果决定下一步。
 ```
 
-`SKILL.md` 提供知识与方法，`scripts/` 可以提供可直接调用的操作和参考源码，`references/` 可以提供按需读取的例子。适用的现成操作优先复用；任务需要的代码可以内联执行，也可以写成工作目录中的文件再运行。例如，shell 的 `command` 可以直接包含模型编写的代码：
+`SKILL.md` 提供知识与方法，`scripts/` 提供可复用或改写的参考源码，`references/` 提供按需读取的细节。模型可以根据任务自行编写脚本，保留适用的输入输出约定；代码可以内联执行，也可以写成工作目录中的文件再运行。例如，shell 的 `command` 可以直接包含模型编写的代码：
 
 ```sh
 cat > analyze.py <<'PY'
@@ -243,6 +243,8 @@ API 错误的脱敏诊断保存在对应会话 `events.jsonl` 的 `error.diagnos
 内置 [workspace skill](skills_agent/builtin_skills/workspace/SKILL.md) 提供可直接调用的文本读取、检索、任务所需可执行文件与顶层 Python 模块探测，以及 JSON、CSV、DOCX、XLSX、PDF 的定位提取脚本。长记录可按返回游标续读；文档读取范围与限制见[提取参考](skills_agent/builtin_skills/workspace/references/extraction.md)。JSON 选择返回序列化值，CSV 记录保留逻辑行与物理行位置，DOCX 定位文档体段落／单元格，XLSX 读取已保存值而不计算公式。PDF 使用已安装的 pypdf／PyPDF2／pdftotext，缺少读取器时明确失败，不自动安装。
 
 `context/history_skill` 提供原始会话检索和报告方法，仅在 `subagent(history=true)` 的检索子任务中加载；主 Agent 通过委派获得结论，不直接执行检索流程。主会话索引包含已返回的子任务报告，不索引私有子会话。中断后先确认已保存产物和原执行结果，再继续下一步；复杂任务可按需保存进度，不强制建立计划文件。
+
+内置 [review skill](skills_agent/builtin_skills/review/SKILL.md) 引导主 Agent 在实质工作完成、准备最终报告时，通过现有 `subagent` 独立检查产物、结论或方案是否满足原始需求及后续修正。主 Agent 提供相关需求原文、实际产物和验证证据；需求不完整时先委派 `history=true` 检索。审查者检查实际材料，返回有依据的缺陷、遗漏和未验证事项，主 Agent 据此修正并按需定向复查。简单问答不要求委派；这是技能和提示词引导，不是运行时强制关卡。
 
 内置 [file-editing skill](skills_agent/builtin_skills/file-editing/SKILL.md) 提供新建、精确替换、锚点前后插入、删除内容和删除文件的 Python 脚本，通过现有 shell 调用，不新增 tools。替换和插入要求原文或锚点唯一匹配，失败不写入；成功返回改动位置与有限行号片段。它还提供[跨回合渐进编辑示例](skills_agent/builtin_skills/file-editing/references/incremental-editing.md)：先保存有用产物，读取操作结果，再选择下一段扩展。
 
@@ -271,7 +273,7 @@ API 错误的脱敏诊断保存在对应会话 `events.jsonl` 的 `error.diagnos
 
 ## 提示词版本
 
-[提示词版本时间线](docs/prompt-history/README.md) 按独立提示词维护 Git 历史、当前工作区基线和后续版本，每个版本记录发现的问题、目标、效果及原文。主工作提示词的 v1、v2 保留增量执行规范更新前后的文本，v3 增加文件编辑引导，v4 增加实际反馈获取引导，v5 增加通用跨回合进程管理引导，v6 明确按当前任务组合基础能力，移除固定的产物开发和故障验证路线。新增技能与参考说明各自从 v1 建档，后续实际修改沿各自版本继续追加。
+[提示词版本时间线](docs/prompt-history/README.md) 按独立提示词维护 Git 历史、当前工作区基线和后续版本，每个版本记录发现的问题、目标、效果及原文。主工作提示词的 v1、v2 保留增量执行规范更新前后的文本，v3 增加文件编辑引导，v4 增加实际反馈获取引导，v5 增加通用跨回合进程管理引导，v6 明确按当前任务组合基础能力，移除固定的产物开发和故障验证路线，v7 调整技能选择时机并加入交付前独立审查。新增技能与参考说明各自从 v1 建档，后续实际修改沿各自版本继续追加。
 
 ## 验证
 

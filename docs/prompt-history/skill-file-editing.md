@@ -183,3 +183,43 @@ python3 "$edit" replace existing.txt --old-file old-fragment.txt --new-file new-
 
 For examples of using saved contents across separate calls and refining a failed exact match, read [references/incremental-editing.md](references/incremental-editing.md). Choose editing boundaries according to the requested change, useful saved results, and dependencies between operations. The examples are not a required number or sequence of steps.
 ````
+
+
+## v3 · 2026-10-13 · 简化操作入口并保留精确编辑契约
+
+来源：当前工作区（未提交）。与[主工作提示词 v7](agent-system.md) 的按需技能选择规则同步；本轮仅调整技能入口，不修改脚本、工具接口或运行时协议。
+
+- 发现的问题：入口包含多段重复操作示例，掩盖了精确匹配、保护当前文件和检查实际保存结果的方法；过于强调调用现成 helper。
+- 本版本目标：压缩为操作表和必要示例，保留唯一匹配、原文和文件属性保护、失败反馈等契约，允许从参考实现学习后自主选择编辑代码。
+- 本版本效果：减少重复示例，允许简单文件创建直接完成以及任务专用编辑；现有脚本和参考文件保持不变。真实模型的编辑准确性和执行粒度待观察。
+
+### 完整提示词快照
+
+````markdown
+---
+name: file-editing
+description: Make precise changes to text or code files using unique anchors, preserving surrounding contents, line endings and file mode; create or delete task files and inspect the saved change.
+---
+
+Base an edit on the current saved contents. Identify the exact region to change and preserve unrelated content. If a match is missing or ambiguous, inspect the file and refine the match instead of reconstructing it from memory. Group related edits when their inputs are known; inspect a result before choosing a dependent edit.
+
+[scripts/edit.py](scripts/edit.py) implements these operations. Read its source to learn or adapt the method, call it directly when useful, or write task-specific editing code that preserves the same relevant properties. Simple file creation does not require a helper. The reference helper requires Python 3.11 or newer; resolve its absolute path from this SKILL.md in each independent shell call.
+
+| Operation | Content arguments |
+| --- | --- |
+| `create PATH` | `--text TEXT`, `--text-file FILE`, or stdin; refuses to overwrite |
+| `replace PATH` | `--old TEXT` or `--old-file FILE`; replacement via `--new TEXT`, `--new-file FILE`, or stdin |
+| `insert PATH` | `--anchor TEXT` or `--anchor-file FILE`, `--position before\|after`; content via `--text`, `--text-file`, or stdin |
+| `delete-content PATH` | `--old TEXT` or `--old-file FILE` |
+| `delete-file PATH` | Removes one regular file; never recurses |
+
+For example, after observing a unique current string:
+
+```sh
+python3 /absolute/skill/scripts/edit.py replace notes.txt --old 'Original paragraph.' --new 'Revised paragraph.'
+```
+
+The helper requires nonempty literal old strings and anchors that occur exactly once, counting overlaps. It edits regular, nonsymlink UTF-8 files without NUL bytes; `delete-file` also accepts binary files. Parent directories must exist. Writes use a temporary file and preserve untouched contents, line endings and mode. Separate operations are not one transaction. A heredoc adds a final newline; use inline text or a payload file when that distinction matters.
+
+Inspect the exit status and saved-content feedback. The returned excerpt may be truncated; its `location` line and column locate a targeted follow-up read. Choose `result_mode: direct` for exact file text. Read [references/incremental-editing.md](references/incremental-editing.md) for examples of continuing from saved edits and resolving ambiguous matches; their sequence is not a required task plan.
+````

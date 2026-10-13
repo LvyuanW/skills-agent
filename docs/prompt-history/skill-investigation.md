@@ -162,3 +162,37 @@ The helper performs GET for known URLs; it does not search the internet, log in,
 
 Distinguish observations, assumptions and conclusions. Check the evidence for each step from a finding to a recommendation; certainty does not carry automatically between them. Revise the explanation when evidence conflicts. Seek an independent check when a consequential uncertainty remains; agreement alone is not evidence. Continue only when another check can materially inform the decision. Stop when the question is supported sufficiently, or state what remains unknown without expanding the task or claiming more than the evidence shows.
 ````
+
+
+## v3 · 2026-10-13 · 聚焦可区分解释的证据和来源完整性
+
+来源：当前工作区（未提交）。与[主工作提示词 v7](agent-system.md) 的按需技能选择规则同步；本轮仅调整技能入口，不修改脚本、工具接口或运行时协议。
+
+- 发现的问题：通用调查说教与获取操作混在入口，重复规则使已知来源获取能力及证据局限不够突出。
+- 本版本目标：以能够区分解释的观察组织调查，简化入口并保留已知 URL 获取、来源记录、失败和截断契约，允许选用或编写适合来源的读取方法。
+- 本版本效果：入口更集中于证据与方法，保留请求来源、完整性、获取时间和渲染局限等必要区别；本轮没有修改脚本。真实模型的调查范围与结论质量待观察。
+
+### 完整提示词快照
+
+````markdown
+---
+name: investigation
+description: Resolve conflicting evidence or uncertain causes using discriminating observations; acquire known HTTP(S) sources with original response bodies, status, provenance and completeness records.
+---
+
+Choose an observation that can distinguish the plausible explanations, including that the suspected problem is absent. Check that an experiment reaches its intended condition. For a custom measurement, identify the object, unit, denominator and method; check a known-answer input or inspect a sample before relying on it. A proxy measurement alone does not establish the inferred cause.
+
+Retain source locations and relevant versions with observations. Read enough context to assess contradictory evidence; a filtered sample or failed search does not prove absence. Keep observations, assumptions and conclusions distinct, and stop investigating when further checks would not change the decision. Ordinary source lookup needs no elaborate investigation. Conversation history follows its assigned delegated retrieval route.
+
+For a known URL, [scripts/fetch.py](scripts/fetch.py) is a reference for acquisition with provenance. Read or adapt it, reuse it directly, or write a reader appropriate to the source. Direct use requires Python 3.11 or newer and the path resolved relative to this SKILL.md:
+
+```sh
+python3 /absolute/skill/scripts/fetch.py 'https://example.org/source' --output-dir /absolute/workspace/evidence --max-chars 8000
+```
+
+The helper saves the received body, request/final URLs, redirect hops, HTTP status, headers, UTC retrieval time and SHA-256 in a fresh directory. Failed or interrupted transfers remain marked incomplete; HTTP error bodies are retained with failure status. Inspect status, completeness and content before quoting the source. Retrieval time is not publication time.
+
+`--extract auto` handles declared HTML, JSON and text; use `none` to save bytes only or an explicit type/encoding for known incorrect metadata. `--max-chars` limits the preview, `--max-extract-bytes` bounds extraction memory, and `--max-body-bytes` defaults to 64 MiB. Exceeding the body limit preserves a prefix and reports failure; raise it only when the task needs more. HTML extraction omits scripts/styles/templates and normalizes whitespace; it does not establish rendered or JavaScript content. JSON extraction validates without reformatting. The raw response remains authoritative.
+
+This helper fetches known URLs; it does not provide search, login or browser execution. It sends no authorization, cookies or custom headers, does not inherit environment proxy credentials, and rejects credential-bearing URLs and redirects. Its timeout spans redirects, headers and body transfer, but OS DNS lookup may outlast socket timeouts. For unsupported access, use an appropriate authorized route or report the limitation. Choose `result_mode: direct` for exact excerpts; inspect saved content when a preview is insufficient.
+````

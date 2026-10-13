@@ -11,6 +11,7 @@
 - **v4**：主工作提示词增加实际反馈获取引导；新增 feedback 技能、分回合反馈示例和图片来源包装各自从 v1 建档，工具报告提示词追加 v2。
 - **v5**：主工作提示词增加通用跨回合进程管理引导；workspace、feedback、investigation 各自追加 v2，新增 process-management 和通用提取、验收、进程参考各自从 v1 建档。
 - **v6**：主工作提示词明确按当前任务组合基础能力；file-editing、code-repair、history 各自追加 v2，feedback 追加 v3，渐进编辑、跨回合反馈和验收参考各自追加 v2。移除特定产物开发顺序及固定故障验证路线，保留真实操作契约。
+- **v7**：主工作提示词改为按需发现技能并引导实质交付前独立审查，新增 review 技能从 v1 建档；六项既有技能按各自版本追加，参考文件未修改。
 - 后续实际修改沿各自文档继续追加 v2、v3……，不覆盖既有版本。仅补充使用反馈时更新对应版本的效果说明，不另增提示词版本。
 
 已读取 `git --all` 中的全部 43 个提交，目前可达分支为 `main` 和 `origin/main`，截止提交为 `0d88799`（2026-10-11 01:18:05 +08:00）。文档另外记录当前未提交工作区；没有记录精确修改时刻的工作区条目采用建档日期，不冒充提交时间。
@@ -21,7 +22,7 @@
 
 | 文档 | 源位置或用途 | 当前版本 |
 | --- | --- | --- |
-| [主工作提示词](agent-system.md) | `Agent._system()`；含共用工作规则及主 Agent 的沟通、委派段 | v6 |
+| [主工作提示词](agent-system.md) | `Agent._system()`；含共用工作规则及 subagent 可用时的沟通、委派、review 段 | v7 |
 | [子 Agent 最终报告](subagent-report.md) | `Agent._subagent()` 的公共角色追加指令 | v1 |
 | [历史检索子 Agent 角色](history-retrieval-role.md) | `history=True` 的专用角色追加指令 | v1 |
 | [子 Agent 任务输入](subagent-task-input.md) | 子任务名称、任务文本、只读快照和原生附件标签 | v1 |
@@ -35,16 +36,17 @@
 | [shell 工具说明](tool-shell.md) | 宿主机执行说明及参数描述 | v1 |
 | [sandbox 工具说明](tool-sandbox.md) | Docker 执行说明及参数描述 | v1 |
 | [subagent 工具说明](tool-subagent.md) | 委派范围、输入、报告和历史模式说明 | v1 |
-| [workspace 技能](skill-workspace.md) | `builtin_skills/workspace/SKILL.md` | v2 |
-| [investigation 技能](skill-investigation.md) | `builtin_skills/investigation/SKILL.md` | v2 |
-| [code-repair 技能](skill-code-repair.md) | `builtin_skills/code-repair/SKILL.md` | v2 |
-| [file-editing 技能](skill-file-editing.md) | `builtin_skills/file-editing/SKILL.md` | v2 |
+| [workspace 技能](skill-workspace.md) | `builtin_skills/workspace/SKILL.md` | v3 |
+| [investigation 技能](skill-investigation.md) | `builtin_skills/investigation/SKILL.md` | v3 |
+| [code-repair 技能](skill-code-repair.md) | `builtin_skills/code-repair/SKILL.md` | v3 |
+| [file-editing 技能](skill-file-editing.md) | `builtin_skills/file-editing/SKILL.md` | v3 |
 | [file-editing 渐进编辑示例](skill-file-editing-incremental-examples.md) | `builtin_skills/file-editing/references/incremental-editing.md` | v2 |
-| [feedback 技能](skill-feedback.md) | `builtin_skills/feedback/SKILL.md` | v3 |
+| [review 技能](skill-review.md) | `builtin_skills/review/SKILL.md` | v1 |
+| [feedback 技能](skill-feedback.md) | `builtin_skills/feedback/SKILL.md` | v4 |
 | [feedback 跨回合反馈示例](skill-feedback-loop.md) | `builtin_skills/feedback/references/feedback-loop.md` | v2 |
 | [feedback 验收检查参考](skill-feedback-acceptance.md) | `builtin_skills/feedback/references/acceptance-checks.md` | v2 |
 | [workspace 定位提取参考](skill-workspace-extraction.md) | `builtin_skills/workspace/references/extraction.md` | v1 |
-| [process-management 技能](skill-process-management.md) | `builtin_skills/process-management/SKILL.md` | v1 |
+| [process-management 技能](skill-process-management.md) | `builtin_skills/process-management/SKILL.md` | v2 |
 | [process-management 跨回合参考](skill-process-management-across-turns.md) | `builtin_skills/process-management/references/across-turns.md` | v1 |
 | [反馈图片来源标签](feedback-image-label.md) | `feedback_content()` 的源文件与会话快照标签 | v1 |
 | [工具附件观察包装](tool-feedback-observation.md) | 请求中工具产生的只读观察与附件来源标签 | v1 |

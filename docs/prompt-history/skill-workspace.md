@@ -226,3 +226,37 @@ The main agent obtains original conversation evidence by delegating a named `sub
 
 Choose `result_mode: direct` when exact source text, structured values, or continuation cursors must be retained; use `auto` for ordinary output or `report` for long evidence that needs a focused conclusion. Preserve the helper's failure status and source locations when reporting results.
 ````
+
+
+## v3 · 2026-10-13 · 按格式发现定位提取能力并自主选择读取方法
+
+来源：当前工作区（未提交）。与[主工作提示词 v7](agent-system.md) 的按需技能选择规则同步；本轮仅调整技能入口，不修改脚本、工具接口或运行时协议。
+
+- 发现的问题：入口对可处理格式和续读能力的辨识度不足，直接调用 helper 的表述不充分体现学习方法后自主编写脚本。
+- 本版本目标：说明大文件和结构化资料的来源定位、续读及环境探测能力，让模型根据当前材料选择普通 shell、复用参考或自行编写解析器。
+- 本版本效果：描述改为可发现的具体能力，正文保留游标、原始位置和历史访问边界，删除不必要的执行路径限制。真实模型的技能选择与资料读取质量待观察。
+
+### 完整提示词快照
+
+````markdown
+---
+name: workspace
+description: Read large or structured local files and attachments with source locations and continuation cursors, including JSON, CSV, DOCX, XLSX and PDF; inspect required local executables or modules.
+---
+
+Select the part of an input needed for the current decision. Preserve its path and meaningful location; follow a continuation cursor when omitted content matters. Simple text reads and searches can use ordinary shell commands. Learn from, reuse or adapt the reference scripts below, or write a parser suited to the task.
+
+Resolve scripts relative to this SKILL.md and run them through `shell` with an available Python interpreter. Each shell call has its own variables.
+
+| Reference | Capability |
+| --- | --- |
+| [scripts/workspace.py](scripts/workspace.py) | `read PATH --start 1 --end 200` selects inclusive UTF-8 lines; `search PATTERN PATH... [--regex] [--glob '*.py']` returns filenames and one-based lines. |
+| [scripts/extract.py](scripts/extract.py) | Located, bounded JSON Pointer, CSV, DOCX, XLSX and PDF extraction. Read [references/extraction.md](references/extraction.md) for the selected format's options, limits and cursor rules. |
+| [scripts/inspect.py](scripts/inspect.py) | `--executable NAME` / `--module NAME` checks required capabilities without running them; flags may repeat. Module names are top-level names, without dots. Exit 1 means a requested capability is missing. |
+
+Keep the source and selection options unchanged while following cursors; re-read changed files. Extraction describes stored content, not document layout, OCR, formula evaluation or application behavior. PDF extraction uses an installed reader and does not install dependencies. Use a suitable reader for other binary formats. For very long text lines, the feedback skill's `text` operation provides line/column continuation.
+
+Choose `result_mode: direct` for exact source, structured values and cursors. Inspect returned content and failure status before using it as evidence; finding an executable or module does not establish that it runs correctly.
+
+The main agent retrieves original conversation evidence through a named `subagent` with `history: true` and a concrete question. Ordinary subagents report missing historical input to the parent; dedicated history retrieval subagents follow their assigned instructions. Keep workspace searches outside session directories.
+````

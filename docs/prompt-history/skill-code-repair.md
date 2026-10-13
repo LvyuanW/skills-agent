@@ -131,3 +131,29 @@ After a useful change, obtain feedback from the affected behavior before choosin
 
 Use the feedback skill's `run` operation when you need bounded command output with separate full logs and timeout handling. For simple combined logging, resolve [scripts/run_check.py](scripts/run_check.py) or [scripts/run_check.sh](scripts/run_check.sh) against this skill's directory and execute it directly through `shell`. Both take an absolute log path followed by the command and its arguments, retain complete combined output, display a bounded tail and return the command's exit status. Read or adapt their source when customization is needed. Printed status and process status are distinct; inspect relevant log ranges when the tail is insufficient. When repairing command execution or error propagation, include failure behavior in the relevant checks.
 ````
+
+
+## v3 · 2026-10-13 · 聚焦可复现缺陷与有区分力的验证
+
+来源：当前工作区（未提交）。与[主工作提示词 v7](agent-system.md) 的按需技能选择规则同步；本轮仅调整技能入口，不修改脚本、工具接口或运行时协议。
+
+- 发现的问题：入口重复通用工作规范，脚本直接调用说明弱化了根据缺陷自行编写探针的选择；run_check 的时限边界需要明确。
+- 本版本目标：从原始需求确定预期，以能区分原始与修复行为的探针定位并验证最小改动，清楚区分日志参考脚本与带时限的反馈执行。
+- 本版本效果：保留真实边界、独立预期值和复现缺口要求，明确 run_check 不自动设置超时；可复用、调整或自行编写检查。本轮没有修改脚本，真实模型的修复效果待观察。
+
+### 完整提示词快照
+
+````markdown
+---
+name: code-repair
+description: Diagnose a reported code failure and verify a minimal repair with a reproducer or focused check that distinguishes the defect from the intended behavior.
+---
+
+Derive the expected behavior from the reported failure and existing contract, independently of the proposed fix. Follow the relevant input-to-output path until observations support a cause. A possible improvement is not evidence of a defect.
+
+Choose an existing check, a focused probe or a regression that reaches the failure and would distinguish the original and repaired behavior. A missing dependency or failed setup does not reproduce the suspected defect. Exercise the real affected boundary; when substituting an external dependency, state what the substitute cannot establish.
+
+Make the smallest change that satisfies the condition while preserving existing contracts. After changing it, inspect the affected behavior and ask whether the check could still pass with the defect present. Broaden checks only for relevant remaining uncertainty. Keep expected values independent of the implementation; report any reproduction or verification gap.
+
+For executable checks, adapt or reuse [scripts/run_check.py](scripts/run_check.py) or [scripts/run_check.sh](scripts/run_check.sh), or write the task's own probe. Both references take a log path followed by a command and its arguments, keep complete combined output, show a bounded tail and preserve the command's exit status. They do not add an execution timeout. When that is needed, the feedback skill's `run` operation provides a time limit and separate full stdout/stderr logs. Inspect the relevant log range when a tail cannot distinguish setup failure from the behavior under test.
+````

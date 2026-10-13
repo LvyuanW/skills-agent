@@ -128,3 +128,41 @@ For explicit acceptance conditions on saved files, use [scripts/check.py](script
 
 Read [references/feedback-loop.md](references/feedback-loop.md) when deciding how to connect an observation with the next action. Its examples show alternative feedback routes and decisions based on returned results, without prescribing an artifact, stage count, or checkpoint file.
 ````
+
+
+## v4 · 2026-10-13 · 明确实际取证能力与原生图片协议
+
+来源：当前工作区（未提交）。与[主工作提示词 v7](agent-system.md) 的按需技能选择规则同步；本轮仅调整技能入口，不修改脚本、工具接口或运行时协议。
+
+- 发现的问题：泛化描述不利于模型发现命令时限、完整日志、原生图片和精确 JSON 检查等具体能力，正文存在重复说明。
+- 本版本目标：按当前决策选择实际执行、文本值或像素证据，精简操作入口并保留图片反馈信封、失败状态、截断和验收边界。
+- 本版本效果：技能描述突出真实取证能力，入口允许复用、调整或自编检查；原生图片仍要求保持整段 stdout 的反馈协议。本轮没有修改脚本和参考文件，真实模型的取证与判断效果待观察。
+
+### 完整提示词快照
+
+````markdown
+---
+name: feedback
+description: Obtain execution or artifact evidence with command timeouts and full logs, exact text/JSON checks, and native image feedback from local images or rendered HTML/SVG.
+---
+
+Choose the observation needed for the next decision: actual execution for behavior, saved text or values for content, and pixels for appearance. A successful write, file path or screenshot command alone does not establish the contents or visual result.
+
+[scripts/feedback.py](scripts/feedback.py) supplies reference acquisition methods. Reuse them, read/adapt the source, or write task-specific checks when appropriate. Direct invocation requires Python 3.11 or newer and an absolute script path resolved from this SKILL.md; variables do not persist across shell calls.
+
+| Operation | Result |
+| --- | --- |
+| `file PATH [--limit 100]` | File type, size, modification time and SHA-256; bounded directory metadata |
+| `text PATH [--start 1 --end 200 --column 1 --max-chars 12000]` | Exact numbered UTF-8 text with `next_line`/`next_column` continuation |
+| `run --log-dir DIR [--timeout 120] -- COMMAND...` | Actual exit status, timeout flag, bounded stdout/stderr tails and complete separate binary logs |
+| `image PATH... [--label TEXT]` | Existing PNG/JPEG/GIF/WebP pixels sent as native model input |
+| `render PATH --output PNG [--width 1200 --height 800 --wait-ms 1000 --browser PATH --timeout 30]` | Screenshot of local HTML/SVG through installed Chrome/Chromium, returned as native image feedback |
+
+`run` executes argument lists directly; use `sh -lc '...'` explicitly for shell syntax. `run` and `render` preserve failing status and return 124 on timeout. Inspect `timed_out`, actual `exit_code`, acquisition diagnostics and truncation. A tail may omit the cause; read the complete logs as needed. The helpers do not install dependencies.
+
+**Native image protocol:** return the helper's single JSON feedback envelope as the entire shell stdout, without other printed output or a formatter. Custom scripts returning images must preserve this protocol; inspect the reference implementation before changing it. The runtime validates and snapshots declared images before filtering text, then supplies their bytes to the model. A header check only identifies format; inspect the actual image or acquisition error. Use `result_mode: direct` for exact text; native images also work with `auto` or `report`.
+
+`render` uses a fresh screenshot and isolated browser profile. Its wait value is a virtual-time budget, not an exact animation timestamp. A screenshot covers only the captured viewport and state. PDF/office files need an appropriate reader or page rendering first; text extraction is not visual inspection.
+
+For explicit saved-data conditions, [scripts/check.py](scripts/check.py) supports `file PATH... [--min-bytes N]`, `text PATH --contains TEXT [--absent TEXT]`, and `json PATH [--pointer /path] --equals-json VALUE`. It distinguishes missing from null and booleans from numbers; exit codes are 0 for supplied conditions passing, 1 for a mismatch and 2 for acquisition/input failure. Derive expected values from the task rather than the produced answer. Read [references/acceptance-checks.md](references/acceptance-checks.md) for condition-specific examples, or [references/feedback-loop.md](references/feedback-loop.md) for connecting returned observations to the next action. Neither prescribes a fixed checklist.
+````
