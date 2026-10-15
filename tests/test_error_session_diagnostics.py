@@ -34,15 +34,18 @@ def connection_error(number=1):
     })
 
 
-def http_error():
-    return ProviderError("API HTTP error 503", diagnostics={
-        "status": 503, "body": '{"error":{"message":"Upstream unavailable"}}',
+def http_error(status=503):
+    return ProviderError(f"API HTTP error {status}", diagnostics={
+        "response": {"status": status, "body": '{"error":{"message":"Upstream unavailable"}}'},
         "request_id": "request-http",
     })
 
 
 class ErrorSessionDiagnosticsTests(unittest.TestCase):
     def setUp(self):
+        sleeper = patch("skills_agent.providers.retry.time.sleep")
+        self.sleep = sleeper.start()
+        self.addCleanup(sleeper.stop)
         temporary = TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
@@ -59,6 +62,15 @@ class ErrorSessionDiagnosticsTests(unittest.TestCase):
                 for line in path.read_text().splitlines()]
 
     def run_failure(self, failure):
+        if failure.retryable:
+            # Stop in the retry wait, then inspect the preserved failed attempt.
+            self.sleep.side_effect = KeyboardInterrupt()
+            try:
+                with self.assertRaises(KeyboardInterrupt) as raised:
+                    self.agent.run({"role": "user", "content": "Continue the task"})
+            finally:
+                self.sleep.side_effect = None
+            return raised.exception, [e for e in self.read_events() if e["type"] == "retry"][-1]
         with self.assertRaises(type(failure)) as raised:
             self.agent.run({"role": "user", "content": "Continue the task"})
         return raised.exception, self.read_events()[-1]
@@ -78,8 +90,8 @@ class ErrorSessionDiagnosticsTests(unittest.TestCase):
             with self.subTest(message=str(failure)):
                 self.model.complete.side_effect = failure
                 raised, event = self.run_failure(failure)
-                self.assertIs(raised, failure)
-                self.assertEqual(event["type"], "error")
+                self.assertIsInstance(raised, KeyboardInterrupt)
+                self.assertEqual(event["type"], "retry")
                 self.assertEqual(event["message"], str(failure))
                 self.assertEqual(event["diagnostics"], failure.diagnostics)
                 self.assert_public_message_only(event)
@@ -94,15 +106,16 @@ class ErrorSessionDiagnosticsTests(unittest.TestCase):
         error = HTTPError("https://api.example.test/v1/chat/completions", 503,
                           f"Upstream unavailable for {api_key}", {"x-request-id": "request-http"},
                           io.BytesIO(body))
+        self.sleep.side_effect = KeyboardInterrupt()
         with (patch.object(provider, "count_tokens", return_value=100),
               patch("skills_agent.providers.base.request.urlopen", side_effect=error) as send,
-              self.assertRaisesRegex(ProviderError, "API HTTP error 503")):
+              self.assertRaises(KeyboardInterrupt)):
             agent.run({"role": "user", "content": "Continue the task"})
         send.assert_called_once()
         persisted = (self.session.path / "events.jsonl").read_text()
         self.assertNotIn(api_key, persisted)
         self.assertNotIn(body_secret, persisted)
-        event = self.read_events()[-1]
+        event = [e for e in self.read_events() if e["type"] == "retry"][-1]
         self.assertEqual(event["message"], "API HTTP error 503")
         diagnostic = event["diagnostics"]
         self.assertEqual(diagnostic["kind"], "http")
@@ -122,15 +135,16 @@ class ErrorSessionDiagnosticsTests(unittest.TestCase):
         agent = Agent(provider, self.session, SkillRegistry([]), self.root)
         error = URLError(ConnectionResetError(
             54, f"Connection reset by peer; Authorization: Bearer {api_key}; password={password}"))
+        self.sleep.side_effect = KeyboardInterrupt()
         with (patch.object(provider, "count_tokens", return_value=100),
               patch("skills_agent.providers.base.request.urlopen", side_effect=error) as send,
-              self.assertRaisesRegex(ProviderConnectionError, "API connection failed")):
+              self.assertRaises(KeyboardInterrupt)):
             agent.run({"role": "user", "content": "Continue the task"})
         send.assert_called_once()
         persisted = (self.session.path / "events.jsonl").read_text()
         self.assertNotIn(api_key, persisted)
         self.assertNotIn(password, persisted)
-        event = self.read_events()[-1]
+        event = [e for e in self.read_events() if e["type"] == "retry"][-1]
         self.assertEqual(event["message"], "API connection failed")
         diagnostic = event["diagnostics"]
         self.assertEqual(diagnostic["kind"], "connection")
@@ -178,7 +192,7 @@ class ErrorSessionDiagnosticsTests(unittest.TestCase):
         self.assertEqual(self.model.complete.call_count, 3)
 
     def test_auxiliary_http_failure_is_saved_once_without_retry(self):
-        failure = http_error()
+        failure = http_error(401)
         self.model.complete.side_effect = failure
         with self.assertRaises(ProviderError):
             self.agent.auxiliary.compress("", [], None)
@@ -187,17 +201,16 @@ class ErrorSessionDiagnosticsTests(unittest.TestCase):
         self.assertEqual(errors[0]["diagnostics"], failure.diagnostics)
         self.model.complete.assert_called_once()
 
-    def test_auxiliary_generation_exhaustion_preserves_diagnostics_in_main_session(self):
-        failures = [connection_error(number) for number in range(1, 4)]
-        self.model.complete.side_effect = failures
+    def test_auxiliary_generation_retries_until_interrupted_with_private_diagnostics(self):
+        failures = [connection_error(number) for number in range(1, 6)]
+        self.model.complete.side_effect = [*failures, KeyboardInterrupt()]
         with patch.object(self.agent.context, "prepare", side_effect=lambda *_:
                           self.agent.auxiliary.compress("", [], None)):
-            with self.assertRaisesRegex(ProviderConnectionError, "Auxiliary connection failed after 3 attempts") as raised:
+            with self.assertRaises(KeyboardInterrupt):
                 self.agent.run({"role": "user", "content": "Continue"})
-        expected = {**failures[-1].diagnostics, "attempts": 3}
-        self.assertEqual(raised.exception.diagnostics, expected)
-        self.assertEqual(self.read_events()[-1]["diagnostics"], expected)
-        errors = [event for event in self.private_events() if event["type"] == "error"]
+        self.assertEqual(self.read_events()[-1]["message"], "Interrupted")
+        self.assertNotIn("diagnostics", self.read_events()[-1])
+        errors = [event for event in self.private_events() if event["type"] == "error" and "diagnostics" in event]
         self.assertEqual([event["diagnostics"] for event in errors], [exc.diagnostics for exc in failures])
         self.assertNotIn("attempts", failures[-1].diagnostics)
 
@@ -212,14 +225,13 @@ class ErrorSessionDiagnosticsTests(unittest.TestCase):
         self.assertEqual([event["operation"] for event in errors], ["count_tokens", "count_tokens"])
         self.assertEqual([event["diagnostics"] for event in errors], [exc.diagnostics for exc in failures])
 
-    def test_auxiliary_fits_exhaustion_preserves_the_last_diagnostics(self):
-        failures = [connection_error(number) for number in range(1, 4)]
-        self.model.count_tokens.side_effect = failures
-        with self.assertRaisesRegex(ProviderConnectionError, "token counting connection failed after 3 attempts") as raised:
+    def test_auxiliary_fits_retries_until_interrupted_preserving_each_diagnostic(self):
+        failures = [connection_error(number) for number in range(1, 6)]
+        self.model.count_tokens.side_effect = [*failures, KeyboardInterrupt()]
+        with self.assertRaises(KeyboardInterrupt):
             self.agent.auxiliary.compress("", [], None)
-        self.assertEqual(raised.exception.diagnostics, {**failures[-1].diagnostics, "attempts": 3})
-        errors = [event for event in self.private_events() if event["type"] == "error"]
-        self.assertEqual([event["attempt"] for event in errors], [1, 2, 3])
+        errors = [event for event in self.private_events() if event["type"] == "error" and "diagnostics" in event]
+        self.assertEqual([event["attempt"] for event in errors], [1, 2, 3, 4, 5])
         self.assertEqual([event["diagnostics"] for event in errors], [exc.diagnostics for exc in failures])
         self.model.complete.assert_not_called()
 
@@ -234,7 +246,7 @@ class ErrorSessionDiagnosticsTests(unittest.TestCase):
         self.model.complete.assert_called_once()
 
     def test_auxiliary_fits_http_error_is_persisted_without_retry(self):
-        failure = http_error()
+        failure = http_error(401)
         self.model.count_tokens.side_effect = failure
         with self.assertRaises(ProviderError):
             self.agent.auxiliary.compress("", [], None)
@@ -246,9 +258,8 @@ class ErrorSessionDiagnosticsTests(unittest.TestCase):
 
     def test_tool_report_text_count_failure_is_persisted(self):
         failure = connection_error()
-        self.model.count_text.side_effect = failure
-        with self.assertRaises(ProviderConnectionError):
-            self.agent.auxiliary.tool_report("evidence", "Inspect", {}, {})
+        self.model.count_text.side_effect = [failure, 10]
+        self.agent.auxiliary.tool_report("evidence", "Inspect", {}, {})
         errors = [event for event in self.private_events() if event["type"] == "error"]
         self.assertEqual(len(errors), 1)
         self.assertEqual(errors[0]["operation"], "count_text")

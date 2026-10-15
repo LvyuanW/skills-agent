@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import Mock, call, patch
 
 from skills_agent.context.auxiliary import Auxiliary
 from skills_agent.providers.base import (
@@ -60,6 +61,9 @@ class Model:
 
 class AuxiliaryTests(unittest.TestCase):
     def setUp(self):
+        retry_sleep = patch("skills_agent.providers.retry.time.sleep")
+        self.retry_sleep = retry_sleep.start()
+        self.addCleanup(retry_sleep.stop)
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.session = Session(Path(directory.name), "main")
@@ -144,9 +148,10 @@ class AuxiliaryTests(unittest.TestCase):
 
     def test_disconnect_never_adopts_partial_summary_text(self):
         model = Model([ProviderConnectionError("broken", partial_content=[
-            {"type": "text", "text": "UNFINISHED_SUMMARY"}]) for _ in range(3)])
-        with self.assertRaises(ProviderConnectionError):
+            {"type": "text", "text": "UNFINISHED_SUMMARY"}]) for _ in range(4)] + [KeyboardInterrupt()])
+        with self.assertRaises(KeyboardInterrupt):
             Auxiliary(model, self.session).compress("", self.records, None)
+        self.assertEqual(self.retry_sleep.call_args_list, [call(5)] * 4)
         self.assertFalse(any(event.get("type") == "auxiliary_result" for event in self.private_events()))
 
     def test_summary_text_is_used_without_executing_unexpected_tool_calls(self):
@@ -168,19 +173,81 @@ class AuxiliaryTests(unittest.TestCase):
         self.assertNotIn("PRIVATE_INCOMPLETE_FRAGMENT", str(model.calls))
         self.assertEqual(sum(event.get("type") == "error" for event in self.private_events()), 2)
 
-    def test_connection_fails_explicitly_after_three_attempts(self):
-        model = Model([ProviderConnectionError("broken") for _ in range(3)])
-        with self.assertRaisesRegex(ProviderConnectionError, "after 3 attempts"):
-            Auxiliary(model, self.session).compress("", self.records, None)
-        self.assertEqual(len(model.calls), 3)
+    def test_retryable_http_failures_continue_past_three_attempts_with_fixed_delay(self):
+        failures = [ProviderError("busy", diagnostics={"response": {"status": status}})
+                    for status in (503, 500, 429, 503, 500)]
+        model = Model([*failures, self.summary])
+        auxiliary = Auxiliary(model, self.session)
+        self.assertEqual(auxiliary.compress("", self.records, None), self.summary)
+        self.assertEqual(len(model.calls), 6)
+        self.assertTrue(all(request == model.calls[0] for request in model.calls))
+        self.assertEqual(self.retry_sleep.call_args_list, [call(5)] * 5)
+        errors = [event for event in self.private_events() if event.get("type") == "error"]
+        self.assertEqual([event["attempt"] for event in errors], [1, 2, 3, 4, 5])
+        self.assertEqual([event["operation"] for event in errors], ["complete"] * 5)
+        self.assertEqual([event["http_status"] for event in errors], [503, 500, 429, 503, 500])
+        self.assertTrue(all(event["retryable"] for event in errors))
+        # Successful counting is not replayed when only generation failed.
+        self.assertEqual(len(model.counted), 4)
+
+    def test_fits_and_call_token_counting_retry_without_starting_generation(self):
+        model = Model([self.summary])
+        failures = [ProviderConnectionError("counter unavailable") for _ in range(4)]
+        model.count_tokens = Mock(side_effect=[*failures, 100])
+        auxiliary = Auxiliary(model, self.session)
+        self.assertTrue(auxiliary._fits("system", {}))
+        self.assertEqual(model.calls, [])
+        self.assertEqual(model.count_tokens.call_count, 5)
+        self.assertEqual(self.retry_sleep.call_args_list, [call(5)] * 4)
+        logs = list(self.session.path.glob("subagents/*/events.jsonl"))
+        self.assertEqual(len(logs), 1)
+        errors = [event for event in self.private_events() if event.get("type") == "error"]
+        self.assertEqual([event["attempt"] for event in errors], [1, 2, 3, 4])
+        self.assertEqual([event["operation"] for event in errors], ["count_tokens"] * 4)
+
+        model.count_tokens.reset_mock(side_effect=True)
+        model.count_tokens.side_effect = [*failures, 100]
+        log = auxiliary._private_session("context_compression")
+        self.assertEqual(auxiliary._call(log, "system", {}), self.summary)
+        self.assertEqual(model.count_tokens.call_count, 5)
+        self.assertEqual(len(model.calls), 1)
+        self.assertEqual(self.retry_sleep.call_args_list, [call(5)] * 8)
+
+    def test_tool_report_text_count_retries_without_regenerating_report(self):
+        model = Model(["Completed report"])
+        failures = [ProviderConnectionError("counter unavailable") for _ in range(4)]
+        model.count_text = Mock(side_effect=[*failures, 10])
+        result = Auxiliary(model, self.session).tool_report("evidence", "Inspect", {}, {})
+        self.assertEqual(result, "Completed report")
+        self.assertEqual(len(model.calls), 1)
+        self.assertEqual(model.count_text.call_count, 5)
+        self.assertEqual(self.retry_sleep.call_args_list, [call(5)] * 4)
+        errors = [event for event in self.private_events() if event.get("type") == "error"]
+        self.assertEqual([event["operation"] for event in errors], ["count_text"] * 4)
+        self.assertEqual([event["attempt"] for event in errors], [1, 2, 3, 4])
+
+    def test_retry_wait_can_be_cancelled_without_committing_partial_summary(self):
+        for interruption in (KeyboardInterrupt(), SystemExit(7)):
+            with self.subTest(interruption=type(interruption).__name__):
+                self.retry_sleep.reset_mock(side_effect=True)
+                self.retry_sleep.side_effect = interruption
+                model = Model([ProviderConnectionError("broken")])
+                with self.assertRaises(type(interruption)):
+                    Auxiliary(model, self.session).compress("", self.records, None)
+                self.assertEqual(len(model.calls), 1)
+                self.retry_sleep.assert_called_once_with(5)
+        self.assertFalse(any(event.get("type") == "auxiliary_result" for event in self.private_events()))
 
     def test_output_truncation_cancellation_and_other_errors_are_not_retried(self):
-        for error in (ProviderOutputLimitError("length"), KeyboardInterrupt(), ProviderError("bad response")):
+        for error in (ProviderOutputLimitError("length"), KeyboardInterrupt(), SystemExit(7),
+                      ProviderError("bad response"),
+                      ProviderError("unauthorized", diagnostics={"response": {"status": 401}})):
             with self.subTest(error=type(error).__name__):
                 model = Model([error])
                 with self.assertRaises(type(error)):
                     Auxiliary(model, self.session).compress("", self.records, None)
                 self.assertEqual(len(model.calls), 1)
+        self.retry_sleep.assert_not_called()
 
     def test_response_without_summary_text_is_rejected_without_followup(self):
         responses = (

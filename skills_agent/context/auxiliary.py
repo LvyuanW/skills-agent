@@ -6,7 +6,8 @@ import re
 from uuid import uuid4
 
 from . import DEFAULT_CONTEXT_TOKENS
-from ..providers.base import ProviderConnectionError, ProviderError, ProviderOutputLimitError, blocks
+from ..providers.base import ProviderError, ProviderOutputLimitError, blocks
+from ..providers.retry import retry_call
 from ..session import Session
 
 
@@ -200,74 +201,87 @@ class Auxiliary:
             event["attempt"] = attempt
         if getattr(exc, "diagnostics", None) is not None:
             event["diagnostics"] = deepcopy(exc.diagnostics)
+        for field in ("category", "http_status", "provider_code", "provider_type", "finish_reason", "retryable"):
+            value = getattr(exc, field, None)
+            if value is not None:
+                event[field] = value
         log.append_event(event)
 
-    @staticmethod
-    def _retry_failure(message, exc):
-        diagnostics = getattr(exc, "diagnostics", None)
-        if diagnostics is not None:
-            diagnostics = {**deepcopy(diagnostics), "attempts": 3}
-        return ProviderConnectionError(message, diagnostics=diagnostics)
+    def _with_retries(self, request, *, log, operation):
+        attempt = 0
+
+        def invoke():
+            nonlocal attempt
+            attempt += 1
+            return request()
+
+        def record(exc, failed_attempt):
+            nonlocal log
+            if log is None:
+                log = self._private_session("token_counting")
+            self._record_error(log, exc, operation=operation, attempt=failed_attempt)
+
+        try:
+            return retry_call(invoke, on_retry=record)
+        except (ProviderError, KeyboardInterrupt, SystemExit) as exc:
+            record(exc, attempt)
+            raise
 
     def _fits(self, system, payload, *, log=None, disable_thinking=False, output_tokens=None):
-        for attempt in range(3):
-            try:
-                options = {"disable_thinking": True} if disable_thinking else {}
-                count = self.model.count_tokens(system, _messages(payload), [], **options)
-                reserve = self.reserve if output_tokens is None else min(output_tokens, self.reserve)
-                return count + reserve <= self.window
-            except (ProviderError, KeyboardInterrupt) as exc:
-                if log is None:
-                    log = self._private_session("token_counting")
-                self._record_error(log, exc, operation="count_tokens", attempt=attempt + 1)
-                if not isinstance(exc, ProviderConnectionError):
-                    raise
-                if attempt == 2:
-                    raise self._retry_failure("Auxiliary token counting connection failed after 3 attempts", exc) from exc
+        options = {"disable_thinking": True} if disable_thinking else {}
+        messages = _messages(payload)
+        count = self._with_retries(
+            lambda: self.model.count_tokens(system, deepcopy(messages), [], **options),
+            log=log, operation="count_tokens",
+        )
+        reserve = self.reserve if output_tokens is None else min(output_tokens, self.reserve)
+        return count + reserve <= self.window
 
     def _call(self, log, system, payload, *, on_progress=None, output_tokens=None, disable_thinking=False):
         tools = []
         messages = _messages(payload)
         log.append(messages[0])
         options = {"disable_thinking": True} if disable_thinking else {}
-        for attempt in range(3):
-            operation = "count_tokens"
-            try:
-                if on_progress:
-                    on_progress()
-                count = self.model.count_tokens(system, messages, tools, **options)
-                available = self.window - count
-                if available <= 0:
-                    raise ProviderError("Auxiliary input exceeds the model context window")
-                budget = min(self.output_tokens, output_tokens or self.output_tokens, available)
-                log.append_event({"type": "model_request", "system": system,
-                                  "messages": deepcopy(messages), "tools": tools,
-                                  "max_output_tokens": budget, **options})
-                def receive(event):
-                    log.append_event(event)
-                    if on_progress:
-                        on_progress(event)
 
-                operation = "complete"
-                response = self.model.complete(system, deepcopy(messages), tools,
-                                               on_event=receive, max_output_tokens=budget, **options)
-                break
+        def count_request():
+            if on_progress:
+                on_progress()
+            count = self.model.count_tokens(system, deepcopy(messages), tools, **options)
+            if count >= self.window:
+                raise ProviderError("Auxiliary input exceeds the model context window")
+            return count
+
+        count = self._with_retries(count_request, log=log, operation="count_tokens")
+        available = self.window - count
+        budget = min(self.output_tokens, output_tokens or self.output_tokens, available)
+        first_attempt = True
+
+        def complete_request():
+            nonlocal first_attempt
+            if on_progress and not first_attempt:
+                on_progress()
+            first_attempt = False
+            log.append_event({"type": "model_request", "system": system,
+                              "messages": deepcopy(messages), "tools": tools,
+                              "max_output_tokens": budget, **options})
+
+            def receive(event):
+                log.append_event(event)
+                if on_progress:
+                    on_progress(event)
+
+            try:
+                return self.model.complete(system, deepcopy(messages), tools,
+                                           on_event=receive, max_output_tokens=budget, **options)
             except ProviderOutputLimitError as exc:
                 # A normal token-limit terminal event is usable for summaries
                 # when it already contains text. A disconnected stream is not.
                 if not disable_thinking or not _text({"content": exc.partial_content}):
-                    self._record_error(log, exc, operation=operation, attempt=attempt + 1)
                     raise
-                response = {"role": "assistant", "content": exc.partial_content,
-                            "finish_reason": "length", "_raw": exc.raw}
-                break
-            except ProviderConnectionError as exc:
-                self._record_error(log, exc, operation=operation, attempt=attempt + 1)
-                if attempt == 2:
-                    raise self._retry_failure("Auxiliary connection failed after 3 attempts", exc) from exc
-            except (ProviderError, KeyboardInterrupt) as exc:
-                self._record_error(log, exc, operation=operation, attempt=attempt + 1)
-                raise
+                return {"role": "assistant", "content": exc.partial_content,
+                        "finish_reason": "length", "_raw": exc.raw}
+
+        response = self._with_retries(complete_request, log=log, operation="complete")
         log.append(response)
         if response.get("tool_calls") and not disable_thinking:
             raise ProviderError("Auxiliary generation unexpectedly requested a tool")
@@ -321,11 +335,7 @@ class Auxiliary:
         return draft
 
     def _count_text(self, log, text):
-        try:
-            return self.model.count_text(text)
-        except (ProviderError, KeyboardInterrupt) as exc:
-            self._record_error(log, exc, operation="count_text")
-            raise
+        return self._with_retries(lambda: self.model.count_text(text), log=log, operation="count_text")
 
     def _report(self, log, payload):
         report = self._call(log, _REPORT, payload)

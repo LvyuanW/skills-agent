@@ -12,13 +12,145 @@ from .diagnostics import DiagnosticStream, Redactor, RequestDiagnostics
 DEFAULT_MAX_OUTPUT_TOKENS = 32768
 
 
+_HTTP_CATEGORIES = {
+    400: "invalid_request", 401: "authentication", 402: "insufficient_balance",
+    403: "permission", 404: "not_found", 422: "invalid_request",
+    429: "rate_limited", 500: "server_error", 503: "service_unavailable",
+}
+_RETRYABLE_CATEGORIES = frozenset({"connection", "rate_limited", "server_error", "service_unavailable"})
+# Match structured codes/types exactly. Human-readable messages are not a
+# contract and must never turn an otherwise permanent failure into a retry.
+_ERROR_CATEGORIES = {
+    **{str(status): category for status, category in _HTTP_CATEGORIES.items()},
+    "invalid_request_error": "invalid_request",
+    "invalid_request": "invalid_request",
+    "invalid_parameters": "invalid_request",
+    "authentication_error": "authentication",
+    "invalid_api_key": "authentication",
+    "insufficient_balance": "insufficient_balance",
+    "insufficient_quota": "insufficient_balance",
+    "permission_error": "permission",
+    "permission_denied": "permission",
+    "not_found_error": "not_found",
+    "rate_limit_error": "rate_limited",
+    "rate_limit_exceeded": "rate_limited",
+    "rate_limited": "rate_limited",
+    "api_error": "server_error",
+    "server_error": "server_error",
+    "internal_error": "server_error",
+    "internal_server_error": "server_error",
+    "overloaded_error": "service_unavailable",
+    "server_overloaded": "service_unavailable",
+    "service_unavailable": "service_unavailable",
+    "service_unavailable_error": "service_unavailable",
+    "context_length_exceeded": "output_limit",
+    "content_filter": "content_filter",
+    "content_policy_violation": "content_filter",
+}
+_FINISH_CATEGORIES = {
+    "length": "output_limit", "max_tokens": "output_limit",
+    "max_output_tokens": "output_limit", "model_context_window_exceeded": "output_limit",
+    "content_filter": "content_filter", "refusal": "content_filter",
+    "insufficient_system_resource": "aborted", "abort": "aborted", "aborted": "aborted",
+    "cancelled": "aborted", "canceled": "aborted",
+}
+
+
+def _structured_error(payload) -> dict:
+    if not isinstance(payload, dict):
+        return {}
+    error_payload = payload.get("error")
+    if isinstance(error_payload, dict):
+        return error_payload
+    # Responses failure events carry the error inside their response.
+    nested = payload.get("response")
+    if isinstance(nested, dict) and isinstance(nested.get("error"), dict):
+        return nested["error"]
+    # Responses also emits top-level {type: "error", code: ...} events.
+    return payload if payload.get("type") == "error" else {}
+
+
 class ProviderError(RuntimeError):
     def __init__(self, message: str, raw: dict | None = None,
-                 partial_content: list[dict] | None = None, *, diagnostics: dict | None = None):
+                 partial_content: list[dict] | None = None, *, diagnostics: dict | None = None,
+                 finish_reason: str | None = None, provider_error: dict | None = None):
         super().__init__(message)
         self.raw = raw
         self.partial_content = partial_content if partial_content is not None else []
         self.diagnostics = diagnostics
+        self._finish_reason = finish_reason
+        # Transport boundaries pass sanitized fields before diagnostic bodies
+        # are truncated. Retain only bounded classification data, not payloads.
+        self._provider_error_fields = {
+            field: value[:2048] if isinstance(value, str) else value
+            for field, value in (provider_error or {}).items()
+            if field in {"code", "type"} and
+            (isinstance(value, str) or (field == "code" and type(value) is int))
+        }
+
+    @property
+    def http_status(self) -> int | None:
+        diagnostics = self.diagnostics if isinstance(self.diagnostics, dict) else {}
+        response = diagnostics.get("response")
+        candidates = [response.get("status")] if isinstance(response, dict) else []
+        candidates.append(diagnostics.get("status"))
+        return next((status for status in candidates if type(status) is int and 100 <= status <= 599), None)
+
+    def _provider_error(self) -> dict:
+        if self._provider_error_fields:
+            return self._provider_error_fields
+        diagnostics = self.diagnostics if isinstance(self.diagnostics, dict) else {}
+        response = diagnostics.get("response")
+        body = response.get("body") if isinstance(response, dict) else None
+        if body is None:
+            body = diagnostics.get("body")
+        if isinstance(body, str):
+            try:
+                body = json.loads(body)
+            except (ValueError, RecursionError):
+                body = None
+        payload = body if isinstance(body, dict) else diagnostics
+        return _structured_error(payload)
+
+    @property
+    def provider_code(self) -> str | int | None:
+        code = self._provider_error().get("code")
+        return code if type(code) in (str, int) else None
+
+    @property
+    def provider_type(self) -> str | None:
+        kind = self._provider_error().get("type")
+        return kind if isinstance(kind, str) else None
+
+    @property
+    def finish_reason(self) -> str | None:
+        return self._finish_reason
+
+    @property
+    def category(self) -> str:
+        status = self.http_status
+        if status is not None and status >= 400:
+            return _HTTP_CATEGORIES.get(status, "http_error")
+        if isinstance(self, ProviderConnectionError):
+            return "connection"
+        if isinstance(self, ProviderOutputLimitError):
+            return "output_limit"
+        if isinstance(self.finish_reason, str) and self.finish_reason in _FINISH_CATEGORIES:
+            return _FINISH_CATEGORIES[self.finish_reason]
+        error_payload = self._provider_error()
+        for field in ("code", "type"):
+            value = error_payload.get(field)
+            if isinstance(value, str) or (field == "code" and type(value) is int):
+                category = _ERROR_CATEGORIES.get(str(value).lower())
+                if category is not None:
+                    return category
+        if isinstance(self.diagnostics, dict) and self.diagnostics.get("kind") == "protocol":
+            return "protocol"
+        return "provider_error"
+
+    @property
+    def retryable(self) -> bool:
+        return self.category in _RETRYABLE_CATEGORIES
 
 
 class ProviderConnectionError(ProviderError):
@@ -74,7 +206,8 @@ def post_json(url: str, payload: dict, headers: dict) -> dict:
     if result.get("error") is not None:
         event = diagnostic.stream_error(json.dumps(result, ensure_ascii=False), result)
         event.diagnostics["kind"] = "api"
-        raise ProviderError("API returned an error", diagnostics=event.diagnostics)
+        raise ProviderError("API returned an error", diagnostics=event.diagnostics,
+                            provider_error=_structured_error(event))
     return result
 
 
@@ -152,7 +285,7 @@ def _read_stream(req, diagnostic):
 
 
 def stream_error(event: dict, message: str, url: str, headers: dict,
-                 *, error_type=ProviderError) -> ProviderError:
+                 *, error_type=ProviderError, finish_reason: str | None = None) -> ProviderError:
     """Retain sanitized API error JSON, including directly supplied provider events."""
     diagnostics = getattr(event, "diagnostics", None)
     if diagnostics is None:
@@ -166,7 +299,8 @@ def stream_error(event: dict, message: str, url: str, headers: dict,
         # This path did not observe a wire request; do not report invented zeros.
         for key in ("request_bytes", "response_bytes", "stream_frames", "elapsed_seconds", "timeout_seconds"):
             diagnostics.pop(key, None)
-    return error_type(Redactor(url, headers).text(message), diagnostics=diagnostics)
+    return error_type(Redactor(url, headers).text(message), diagnostics=diagnostics,
+                      finish_reason=finish_reason, provider_error=_structured_error(event))
 
 
 def stream_ended(stream, message: str) -> ProviderConnectionError:

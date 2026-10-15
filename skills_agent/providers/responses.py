@@ -132,7 +132,8 @@ class ResponsesMixin:
                                       and reason == 'max_output_tokens' else ProviderError)
                         failure = stream_error(event, f'OpenAI Responses stopped: {reason}',
                                                self.base_url + '/responses',
-                                               {'Authorization': f'Bearer {self.api_key}'}, error_type=error_type)
+                                               {'Authorization': f'Bearer {self.api_key}'}, error_type=error_type,
+                                               finish_reason=reason)
                         raw['stream_events'][-1] = deepcopy(event)
                         raw.update(deepcopy(event.get('response', {})))
                         raise failure

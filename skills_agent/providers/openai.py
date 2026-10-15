@@ -275,9 +275,9 @@ class OpenAIProvider(ResponsesMixin, HTTPProvider):
                 raise stream_ended(stream, "OpenAI stream ended before [DONE]")
             reason = choice["finish_reason"]
             if reason == "length":
-                raise ProviderOutputLimitError(f"OpenAI response stopped: {reason}")
+                raise ProviderOutputLimitError(f"OpenAI response stopped: {reason}", finish_reason=reason)
             if reason not in {"stop", "tool_calls"}:
-                raise ProviderError(f"OpenAI response stopped: {reason}")
+                raise ProviderError(f"OpenAI response stopped: {reason}", finish_reason=reason)
             if sorted(indexed_calls) != list(range(len(indexed_calls))):
                 raise ProviderError("Incomplete OpenAI tool call indices")
             calls = []

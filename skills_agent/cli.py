@@ -115,7 +115,9 @@ def _render_full_event(event, output):
     """Render original public content; child calls/results stay in the session log."""
     output = output or sys.stdout
     kind = event.get("type")
-    if kind == "subagent_summary":
+    if kind == "retry":
+        _render_retry(event, output)
+    elif kind == "subagent_summary":
         _subagent_summary(event, output)
     elif kind == "error":
         if event.get("partial_content"):
@@ -158,6 +160,12 @@ def _brief(text, limit=100):
     return text if len(text) <= limit else text[:limit - 1] + "…"
 
 
+def _render_retry(event, output):
+    _print(f"· 请求失败（{_brief(event.get('category', 'provider_error'))}）："
+           f"{_brief(event['message'])}；{event['retry_in_seconds']} 秒后重试"
+           f"（已失败 {event['attempt']} 次）", "tool", output)
+
+
 def _text(content):
     if isinstance(content, str):
         return content
@@ -183,7 +191,9 @@ def render_event(event, output=None, *, full=False, echo_user=True, tool_names=N
     kind = event.get("type")
     if full:
         return _render_full_event(event, output)
-    if kind == "subagent_summary":
+    if kind == "retry":
+        _render_retry(event, output)
+    elif kind == "subagent_summary":
         _subagent_summary(event, output)
     elif kind == "error":
         if event.get("partial_content"):
@@ -380,7 +390,7 @@ class ConsoleRenderer:
             self._tool_delta(event)
             return
         self._finish_stream()
-        if (event.get("type") == "error" or
+        if (event.get("type") in {"error", "retry"} or
                 event.get("type") == "message" and event["message"]["role"] == "assistant"):
             if hasattr(self.output, "finish_response"):
                 self.output.finish_response()
@@ -394,7 +404,7 @@ class ConsoleRenderer:
             self._calls.clear()
             if streamed:
                 return
-        elif event.get("type") == "error":
+        elif event.get("type") in {"error", "retry"}:
             streamed = self._had_deltas
             self._had_deltas = False
             self._calls.clear()

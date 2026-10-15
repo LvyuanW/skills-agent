@@ -8,6 +8,7 @@ import re
 from copy import deepcopy
 
 from ..feedback import replace_result_text
+from ..providers.retry import retry_call, retry_event
 
 
 DEFAULT_CONTEXT_TOKENS = 1_000_000
@@ -146,12 +147,14 @@ def recover_interrupted_calls(records: list[dict]) -> int:
 
 
 class WorkingContext:
-    def __init__(self, session, model, auxiliary, *, max_tokens=DEFAULT_CONTEXT_TOKENS, keep_calls=10, on_activity=None):
+    def __init__(self, session, model, auxiliary, *, max_tokens=DEFAULT_CONTEXT_TOKENS, keep_calls=10,
+                 on_activity=None, on_retry=None):
         if max_tokens <= 0 or keep_calls < 1:
             raise ValueError("Context token budget and kept calls must be positive")
         self.session, self.model, self.auxiliary = session, model, auxiliary
         self.max_tokens, self.keep_calls = max_tokens, keep_calls
         self.on_activity = on_activity or (lambda activity: None)
+        self.on_retry = on_retry or session.append_event
         self.path = session.path / "context.json"
         self.state = json.loads(self.path.read_text()) if self.path.exists() else {
             "version": 1, "cursor": 0, "summary": "", "covered_event_ids": [],
@@ -221,8 +224,11 @@ class WorkingContext:
 
     def _count(self, system, tools, records=None, summary=None):
         records = self.records if records is None else records
-        return self.model.count_tokens(self._system(system, summary),
-                                       [item["message"] for item in records], tools)
+        messages = [item["message"] for item in records]
+        return retry_call(
+            lambda: self.model.count_tokens(self._system(system, summary), deepcopy(messages), deepcopy(tools)),
+            on_retry=lambda exc, attempt: self.on_retry(retry_event(exc, attempt, operation="count_tokens")),
+        )
 
     def _protected(self):
         groups = record_groups(self.records)

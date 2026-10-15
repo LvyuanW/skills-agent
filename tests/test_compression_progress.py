@@ -70,6 +70,9 @@ class StreamingModel:
 
 class CompressionProgressTests(unittest.TestCase):
     def setUp(self):
+        retry_sleep = patch("skills_agent.providers.retry.time.sleep")
+        self.retry_sleep = retry_sleep.start()
+        self.addCleanup(retry_sleep.stop)
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.session = Session(Path(directory.name), "main")
@@ -124,6 +127,7 @@ class CompressionProgressTests(unittest.TestCase):
         self.assertEqual([a["batch"] for a in summary], [1, 2])
         self.assertEqual(summary[-1]["preview"], "保留约束 [event-2]")
         self.assertNotIn("最新结论", summary[-1]["preview"])
+        self.retry_sleep.assert_called_once_with(5)
 
     def test_cancellation_or_failure_clears_preview_without_committing_a_partial_summary(self):
         for failure in (KeyboardInterrupt(), ProviderError("failed generation")):

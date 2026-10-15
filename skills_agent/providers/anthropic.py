@@ -218,9 +218,9 @@ class AnthropicProvider(HTTPProvider):
                 raise stream_ended(stream, "Anthropic stream ended before message_stop")
             reason = raw["stop_reason"]
             if reason in {"max_tokens", "model_context_window_exceeded"}:
-                raise ProviderOutputLimitError(f"Anthropic response stopped: {reason}")
+                raise ProviderOutputLimitError(f"Anthropic response stopped: {reason}", finish_reason=reason)
             if reason not in {"end_turn", "tool_use", "stop_sequence", "refusal"}:
-                raise ProviderError(f"Anthropic response stopped: {reason}")
+                raise ProviderError(f"Anthropic response stopped: {reason}", finish_reason=reason)
             content, calls = [], []
             for block in raw["content"]:
                 if block["type"] == "text":

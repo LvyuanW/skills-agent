@@ -135,7 +135,9 @@ class AgentContextTests(unittest.TestCase):
             raise ProviderConnectionError(
                 "Summary connection lost", raw={"private": "PRIVATE_SUMMARY_RAW"},
                 partial_content=[{"type": "text", "text": "PRIVATE_SUMMARY_FRAGMENT"}])
-        model = ScriptedModel([fail, fail, fail])
+        def stop(system, messages, tools, on_event):
+            raise KeyboardInterrupt
+        model = ScriptedModel([fail, fail, fail, fail, stop])
         agent = self.agent(model, context_tokens=1000)
         events = []
         agent.on_event = events.append
@@ -145,8 +147,10 @@ class AgentContextTests(unittest.TestCase):
         agent.context.sync()
         before = (self.session.path / "events.jsonl").read_bytes()
         model.count_tokens = lambda system, messages, tools, **options: 950 if tools else 100
-        with self.assertRaisesRegex(ProviderConnectionError, "after 3 attempts"):
+        with patch("skills_agent.providers.retry.time.sleep") as sleep, self.assertRaises(KeyboardInterrupt):
             agent.run({"role": "user", "content": "latest task"})
+        self.assertEqual(sleep.call_count, 4)
+        self.assertTrue(all(call.args == (5,) for call in sleep.call_args_list))
         main_log = (self.session.path / "events.jsonl").read_bytes()
         self.assertTrue(main_log.startswith(before))
         self.assertNotIn("PRIVATE_SUMMARY", main_log.decode())
@@ -157,8 +161,8 @@ class AgentContextTests(unittest.TestCase):
         self.assertNotIn("PRIVATE_SUMMARY_RAW", json.dumps(events))
         self.assertNotIn("PRIVATE_SUMMARY_FRAGMENT", json.dumps(events))
         self.assertEqual(agent.context.state["summary"], "")
-        self.assertEqual(len(model.calls), 3)
-        self.assertEqual(self.session.events()[-1]["message"], "Auxiliary connection failed after 3 attempts")
+        self.assertEqual(len(model.calls), 5)
+        self.assertEqual(self.session.events()[-1]["message"], "Interrupted")
         private = "".join(path.read_text() for path in
                           (self.session.path / "subagents").glob("*/events.jsonl"))
         for fragment in ("PRIVATE_SUMMARY_THOUGHT", "PRIVATE_SUMMARY_RAW", "PRIVATE_SUMMARY_FRAGMENT"):

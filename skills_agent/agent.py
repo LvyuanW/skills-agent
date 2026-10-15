@@ -7,7 +7,8 @@ from .context import DEFAULT_CONTEXT_TOKENS, WorkingContext, interrupted_result
 from .context.auxiliary import Auxiliary
 from .context.history import HistoryIndex, _message_text
 from .feedback import feedback_content, replace_result_text
-from .providers.base import blocks
+from .providers.base import ProviderError, blocks
+from .providers.retry import retry_call, retry_event
 from .processes import ProcessScope
 from .session import Session
 from .skills import SkillRegistry
@@ -34,7 +35,7 @@ class Agent:
         self.auxiliary = Auxiliary(model, session, output_tokens=summary_output_tokens,
                                    context_tokens=context_tokens, on_activity=self._activity)
         self.context = WorkingContext(session, model, self.auxiliary, max_tokens=context_tokens,
-                                      on_activity=self._activity)
+                                      on_activity=self._activity, on_retry=self._event)
         self.sandbox, self.instructions = sandbox, instructions
         self.report_background = None
         self.process_scope = process_scope
@@ -143,7 +144,10 @@ class Agent:
                   "start_line": 1, "end_line": max(1, len(source_text.splitlines()))}
         record["source"] = source
         countable = message["content"] if isinstance(message["content"], str) else source_text
-        if mode == "report" or (mode == "auto" and self.model.count_text(countable) > 8192):
+        if mode == "report" or (mode == "auto" and retry_call(
+            lambda: self.model.count_text(countable),
+            on_retry=lambda exc, attempt: self._retry(exc, attempt, operation="count_text"),
+        ) > 8192):
             media = [block for block in blocks(message["content"])
                      if block.get("type") in {"image", "file"}]
             report = self.auxiliary.tool_report(source_text, call, source,
@@ -165,6 +169,9 @@ class Agent:
 
     def _event(self, event):
         self.on_event(self.session.append_event(event))
+
+    def _retry(self, exc, attempt, *, operation):
+        self._event(retry_event(exc, attempt, operation=operation))
 
     def _subagent(self, name, task, *, history=False):
         child_session = Session(self.session.path / "subagents", uuid4().hex)
@@ -285,7 +292,14 @@ class Agent:
                     self._event(event)
 
                 receiving_response = True
-                reply = self.model.complete(system, messages, self.tools.schemas, on_event=receive)
+                def complete():
+                    nonlocal streamed
+                    streamed = False
+                    return self.model.complete(system, deepcopy(messages), deepcopy(self.tools.schemas),
+                                               on_event=receive)
+
+                reply = retry_call(complete, on_retry=lambda exc, attempt:
+                                   self._retry(exc, attempt, operation="complete"))
                 receiving_response = False
                 pending = list(reply.get("tool_calls", []))
                 self._message(reply, streamed=streamed)
@@ -310,6 +324,10 @@ class Agent:
                 self.session.append(interrupted_result(call))
             interrupted = isinstance(exc, (KeyboardInterrupt, SystemExit))
             event = {"type": "error", "message": "Interrupted" if interrupted else str(exc)}
+            if isinstance(exc, ProviderError):
+                event.update(category=exc.category, http_status=exc.http_status,
+                             provider_code=exc.provider_code, provider_type=exc.provider_type,
+                             finish_reason=exc.finish_reason, retryable=exc.retryable)
             if getattr(exc, "diagnostics", None) is not None:
                 event["diagnostics"] = deepcopy(exc.diagnostics)
             if receiving_response:
