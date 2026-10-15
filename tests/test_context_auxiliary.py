@@ -349,6 +349,28 @@ class AuxiliaryTests(unittest.TestCase):
             "exit_code: 0\nstdout: /tmp/report.csv", {"name": "shell"}, {"event_id": "event-2"}, {})
         self.assertEqual(result, "退出码 0，已生成结果 /tmp/report.csv [event-2]。")
         self.assertEqual(json.loads(model.calls[1]["messages"][0]["content"])["draft"], "x" * 10000)
+        self.assertTrue(all(call["disable_thinking"] for call in model.calls))
+        self.assertTrue(all(model.count_options))
+
+    def test_tool_report_rejects_partial_text_even_with_thinking_disabled(self):
+        error = ProviderOutputLimitError("length", finish_reason="length",
+                                         partial_content=[{"type": "text", "text": "Incomplete findings"}])
+        model = Model([error])
+        with self.assertRaises(ProviderOutputLimitError):
+            Auxiliary(model, self.session).tool_report("evidence", {}, {}, {})
+        self.assertTrue(model.calls[0]["disable_thinking"])
+        errors = [event for event in self.private_events() if event.get("type") == "error"]
+        self.assertEqual(errors[0]["finish_reason"], "length")
+        self.assertFalse(any(event.get("type") == "message" and
+                             event["message"].get("role") == "assistant" for event in self.private_events()))
+
+    def test_tool_report_rejects_unexpected_tool_calls_with_thinking_disabled(self):
+        response = reply("A claimed report")
+        response["tool_calls"] = [{"id": "unexpected", "name": "shell", "arguments": "{}"}]
+        model = Model([response])
+        with self.assertRaisesRegex(ProviderError, "unexpectedly requested a tool"):
+            Auxiliary(model, self.session).tool_report("evidence", {}, {}, {})
+        self.assertTrue(model.calls[0]["disable_thinking"])
 
     def test_tool_report_that_still_exceeds_budget_fails(self):
         model = Model(["x" * 10000, "y" * 10000])
@@ -371,6 +393,8 @@ class AuxiliaryTests(unittest.TestCase):
         self.assertEqual(original_chunks[0]["output_lines"]["start"], 1)
         self.assertEqual(original_chunks[-1]["output_lines"]["end"], 90)
         self.assertEqual(chunks[-1]["input_kind"], "partial_reports")
+        self.assertTrue(all(call["disable_thinking"] for call in model.calls))
+        self.assertTrue(all(model.count_options))
 
     def test_single_oversized_line_is_split_without_losing_text(self):
         content = "start " + "x" * 18000 + " END_EVIDENCE"
@@ -382,6 +406,8 @@ class AuxiliaryTests(unittest.TestCase):
         material = [json.loads(call["messages"][0]["content"]) for call in model.calls]
         self.assertEqual("".join(item["output"] for item in material if "input_kind" not in item), content)
         self.assertEqual(result, "END_EVIDENCE")
+        self.assertTrue(all(call["disable_thinking"] for call in model.calls))
+        self.assertTrue(all(model.count_options))
 
     def test_model_window_reduces_generation_allowance_when_needed(self):
         model = Model(["short report"], window=1500)
@@ -394,7 +420,7 @@ class AuxiliaryTests(unittest.TestCase):
         for budget, counted_tokens in [(None, 300000), (2000000, 1100000)]:
             with self.subTest(budget=budget):
                 model = Model(["complete report"])
-                model.count_tokens = lambda *args: counted_tokens
+                model.count_tokens = lambda *args, **options: counted_tokens
                 options = {} if budget is None else {"context_tokens": budget}
                 result = Auxiliary(model, self.session, **options).tool_report("evidence", {}, {}, {})
                 self.assertEqual(result, "complete report")

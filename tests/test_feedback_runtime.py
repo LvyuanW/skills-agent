@@ -13,6 +13,7 @@ from skills_agent.context.auxiliary import Auxiliary
 from skills_agent.context.history import _message_text
 from skills_agent.feedback import feedback_content
 from skills_agent.providers import OpenAIProvider
+from skills_agent.providers.base import ProviderOutputLimitError
 from skills_agent.session import Session
 from skills_agent.skills import SkillRegistry
 from tests.test_agent_context import ScriptedModel, call, final
@@ -153,6 +154,30 @@ class FeedbackRuntimeTests(unittest.TestCase):
         self.assertEqual(Path(actual[0]['path']).read_bytes(), self.pixels)
         self.assertIn('tool_output', messages[0]['content'][1]['text'])
         self.assertEqual(images, original)
+
+    def test_failed_tool_report_preserves_native_images_and_execution_status(self):
+        payload = self.envelope(attachments=[self.envelope()['attachments'][0],
+                                            {'type': 'image', 'path': str(self.root / 'missing.png')}])
+        execution = json.loads(self.output(payload))
+        execution.update(exit_code=4, stderr='original execution failure')
+        content = feedback_content(json.dumps(execution), self.session)
+        original = copy.deepcopy(content)
+        agent = self.agent(ScriptedModel([]))
+        record = {'event_id': 'event-feedback', 'message': {'role': 'tool',
+                  'tool_call_id': 'feedback', 'content': content}}
+        with patch.object(agent.auxiliary, 'tool_report', side_effect=ProviderOutputLimitError(
+                'length', finish_reason='length', partial_content=[{'type': 'text', 'text': 'UNFINISHED'}])):
+            selected = agent._select(record, {'name': 'shell', 'arguments': json.dumps({
+                'name': 'Review', 'command': 'inspect', 'result_mode': 'report'})})
+        self.assertEqual(selected['message']['tool_call_id'], 'feedback')
+        self.assertEqual([b for b in selected['message']['content'] if b['type'] == 'image'],
+                         [b for b in original if b['type'] == 'image'])
+        failure = json.loads(selected['message']['content'][0]['text'])
+        self.assertEqual(failure['exit_code'], 4)
+        self.assertIn('attachment 2', failure['feedback_errors'][0])
+        self.assertEqual(failure['report_error']['operation'], 'tool_report')
+        self.assertEqual(failure['source']['event_id'], 'event-feedback')
+        self.assertNotIn('UNFINISHED', json.dumps(selected))
 
     def test_oversized_direct_text_falls_back_without_discarding_the_image(self):
         payload = self.envelope(observations={'large': 'LARGE_FEEDBACK ' * 9000})

@@ -8,8 +8,9 @@ from unittest.mock import patch
 from skills_agent.agent import Agent
 from skills_agent.benchmark import parser as benchmark_parser
 from skills_agent.cli import parser as cli_parser
-from skills_agent.context import ContextBudgetError
-from skills_agent.providers.base import ProviderConnectionError
+from skills_agent.context import ContextBudgetError, record_groups
+from skills_agent.context.history import HistoryIndex
+from skills_agent.providers.base import ProviderConnectionError, ProviderOutputLimitError, validate_tool_pairs
 from skills_agent.runtime import create_agent
 from skills_agent.session import Session
 from skills_agent.skills import SkillRegistry
@@ -207,6 +208,80 @@ class AgentContextTests(unittest.TestCase):
                     self.assertFalse(reports)
                 else:
                     self.assertEqual(len(reports), 1)
+
+    def test_failed_tool_report_keeps_review_running_without_replaying_commands(self):
+        class ReportModel(ScriptedModel):
+            def count_tokens(self, system, messages, tools, *, disable_thinking=False):
+                return super().count_tokens(system, messages, tools)
+
+        child_calls = call("shell", {"name": "first check", "result_mode": "report",
+                           "command": "printf 'first\\n' >> ran.txt; printf first-evidence; "
+                                      "printf first-diagnostic >&2; exit 7"})
+        child_calls["tool_calls"].extend(call("shell", {"name": "second check", "result_mode": "direct",
+                                                  "command": "printf 'second\\n' >> ran.txt; printf second-evidence"},
+                                                  number=2)["tool_calls"])
+
+        def failed_report(system, messages, tools, on_event):
+            self.assertEqual(tools, [])
+            raise ProviderOutputLimitError("OpenAI response stopped: length", finish_reason="length",
+                                           raw={"private": "PRIVATE_REPORT_RAW"},
+                                           partial_content=[{"type": "text", "text": "PRIVATE_REPORT_FRAGMENT"}])
+
+        def finish_review(system, messages, tools, on_event):
+            validate_tool_pairs(messages)
+            results = [message for message in messages if message["role"] == "tool"]
+            self.assertEqual(len(results), 2)
+            first = json.loads(results[0]["content"])
+            self.assertEqual(first["report_error"], {
+                "operation": "tool_report", "message": "OpenAI response stopped: length",
+                "category": "output_limit", "finish_reason": "length",
+            })
+            self.assertEqual(first["exit_code"], 7)
+            self.assertNotIn("report", first)
+            source = first["source"]
+            original = HistoryIndex(source["path"]).read(source["event_id"])
+            self.assertIn("first-evidence", original["text"])
+            self.assertIn("first-diagnostic", original["text"])
+            self.assertGreaterEqual(source["end_line"], source["start_line"])
+            self.assertEqual(json.loads(results[1]["content"])["stdout"], "second-evidence")
+            self.assertNotIn("PRIVATE_REPORT", json.dumps(messages))
+            return final("Review completed using original evidence.")
+
+        model = ReportModel([call("subagent", {"name": "review", "task": "Check the artifacts"}),
+                             child_calls, failed_report, finish_review, final("done")])
+        agent = self.agent(model)
+        self.assertEqual(agent.run({"role": "user", "content": "review"}), "done")
+        self.assertEqual((self.root / "ran.txt").read_text(), "first\nsecond\n")
+        self.assertEqual(len(model.calls), 5)
+        self.assertEqual(next(event for event in self.session.events()
+                              if event["type"] == "subagent_summary")["status"], "completed")
+        child_path = next((self.session.path / "subagents").glob("*/context.json")).parent
+        child = Session(child_path.parent, child_path.name)
+        raw_results = [message for message in child.messages() if message["role"] == "tool"]
+        self.assertEqual(json.loads(raw_results[0]["content"]), {
+            "exit_code": 7, "stdout": "first-evidence", "stderr": "first-diagnostic",
+        })
+        self.assertNotIn("PRIVATE_REPORT", (child_path / "context.json").read_text())
+        restored = Agent(model, child, self.skills, self.root, allow_subagent=False)
+        with patch.object(restored.auxiliary, "tool_report") as report:
+            restored.context.sync(restored._select)
+        report.assert_not_called()
+        record_groups(restored.context.records)
+        self.assertEqual((self.root / "ran.txt").read_text(), "first\nsecond\n")
+
+    def test_cancellation_during_tool_report_still_stops_the_turn(self):
+        for error in (KeyboardInterrupt(), SystemExit(7)):
+            with self.subTest(error=type(error).__name__):
+                self.session = Session(self.root, type(error).__name__)
+                model = ScriptedModel([call("shell", {"name": "inspect", "command": "ignored",
+                                                     "result_mode": "report"})])
+                agent = self.agent(model)
+                with patch.object(agent.tools, "execute", return_value='{"exit_code":0,"stdout":"evidence"}') as execute, \
+                        patch.object(agent.auxiliary, "tool_report", side_effect=error):
+                    with self.assertRaises(type(error)):
+                        agent.run({"role": "user", "content": "inspect"})
+                execute.assert_called_once()
+                self.assertNotIn("report_error", json.dumps(agent.context.records))
 
     def test_history_subtask_receives_full_readonly_snapshot_and_returns_only_report(self):
         project = Path(__file__).resolve().parents[1] / "skills_agent"

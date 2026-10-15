@@ -150,10 +150,31 @@ class Agent:
         ) > 8192):
             media = [block for block in blocks(message["content"])
                      if block.get("type") in {"image", "file"}]
-            report = self.auxiliary.tool_report(source_text, call, source,
-                                                self.report_background or {"current_user_task": self.context.latest_user()},
-                                                **({"attachments": media} if media else {}))
-            replace_result_text(message, json.dumps({"report": report, "source": source}, ensure_ascii=False))
+            try:
+                report = self.auxiliary.tool_report(source_text, call, source,
+                                                    self.report_background or {"current_user_task": self.context.latest_user()},
+                                                    **({"attachments": media} if media else {}))
+                selected = {"report": report, "source": source}
+            except ProviderError as exc:
+                # Execution already finished and its full result is in the raw log.
+                # A failed derived report must not abort the remaining tool group.
+                text = next((block["text"] for block in blocks(message["content"])
+                             if block.get("type") == "text"), "")
+                try:
+                    execution = json.loads(text)
+                except (ValueError, TypeError):
+                    execution = None
+                selected = {
+                    "report_error": {"operation": "tool_report", "message": str(exc),
+                                     "category": exc.category, "finish_reason": exc.finish_reason},
+                    "notice": "Tool report failed. Read the saved original result at source; "
+                              "do not rerun the command to recover its output.",
+                    "source": source,
+                }
+                if isinstance(execution, dict):
+                    selected.update({key: execution[key] for key in ("exit_code", "error", "feedback_errors")
+                                     if key in execution})
+            replace_result_text(message, json.dumps(selected, ensure_ascii=False))
         elif mode == "direct":
             record["pending_direct"] = True
         return record

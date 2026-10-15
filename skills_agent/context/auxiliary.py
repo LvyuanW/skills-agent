@@ -237,7 +237,8 @@ class Auxiliary:
         reserve = self.reserve if output_tokens is None else min(output_tokens, self.reserve)
         return count + reserve <= self.window
 
-    def _call(self, log, system, payload, *, on_progress=None, output_tokens=None, disable_thinking=False):
+    def _call(self, log, system, payload, *, on_progress=None, output_tokens=None,
+              disable_thinking=False, accept_summary_text=False):
         tools = []
         messages = _messages(payload)
         log.append(messages[0])
@@ -276,14 +277,14 @@ class Auxiliary:
             except ProviderOutputLimitError as exc:
                 # A normal token-limit terminal event is usable for summaries
                 # when it already contains text. A disconnected stream is not.
-                if not disable_thinking or not _text({"content": exc.partial_content}):
+                if not accept_summary_text or not _text({"content": exc.partial_content}):
                     raise
                 return {"role": "assistant", "content": exc.partial_content,
                         "finish_reason": "length", "_raw": exc.raw}
 
         response = self._with_retries(complete_request, log=log, operation="complete")
         log.append(response)
-        if response.get("tool_calls") and not disable_thinking:
+        if response.get("tool_calls") and not accept_summary_text:
             raise ProviderError("Auxiliary generation unexpectedly requested a tool")
         text = _text(response)
         if not text:
@@ -328,7 +329,7 @@ class Auxiliary:
                                                     log=log, disable_thinking=True, output_tokens=budget), 1):
             draft = self._call(log, _SUMMARY, payload(batch),
                                on_progress=self._compression_progress(number),
-                               disable_thinking=True, output_tokens=budget)
+                               disable_thinking=True, output_tokens=budget, accept_summary_text=True)
         # The model reads this text directly. JSON and citations are a prompt
         # convention, never a machine parsing gate for a usable summary.
         log.append_event({"type": "auxiliary_result", "summary": draft})
@@ -338,10 +339,11 @@ class Auxiliary:
         return self._with_retries(lambda: self.model.count_text(text), log=log, operation="count_text")
 
     def _report(self, log, payload):
-        report = self._call(log, _REPORT, payload)
+        report = self._call(log, _REPORT, payload, disable_thinking=True)
         if self._count_text(log, report) > 2048:
             report = self._call(log, _REPORT + "\nRewrite this draft within 2048 tokens; preserve all material evidence.",
-                                {"draft": report, "task": payload.get("task"), "source": payload.get("source")})
+                                {"draft": report, "task": payload.get("task"), "source": payload.get("source")},
+                                disable_thinking=True)
             if self._count_text(log, report) > 2048:
                 raise ProviderError("Tool report still exceeds 2048 tokens after rewriting")
         return report
@@ -353,7 +355,8 @@ class Auxiliary:
             low, high = 0, len(lines) - index
             while low < high:
                 middle = (low + high + 1) // 2
-                if self._fits(_REPORT, payload("".join(lines[index:index + middle]), index + 1, index + middle), log=log):
+                if self._fits(_REPORT, payload("".join(lines[index:index + middle]), index + 1, index + middle),
+                              log=log, disable_thinking=True):
                     low = middle
                 else:
                     high = middle - 1
@@ -366,7 +369,8 @@ class Auxiliary:
                 low, high = 0, len(line)
                 while low < high:
                     middle = (low + high + 1) // 2
-                    if self._fits(_REPORT, payload(line[:middle], index + 1, index + 1), log=log):
+                    if self._fits(_REPORT, payload(line[:middle], index + 1, index + 1),
+                                  log=log, disable_thinking=True):
                         low = middle
                     else:
                         high = middle - 1
@@ -399,20 +403,20 @@ class Auxiliary:
             if attachments:
                 result["tool_attachments"] = attachments
             return result
-        if not self._fits(_REPORT, payload(""), log=log):
+        if not self._fits(_REPORT, payload(""), log=log, disable_thinking=True):
             entries = background.get("messages", background.get("records", [])) if isinstance(background, dict) else []
             users = [item.get("message", item) for item in entries
                      if item.get("message", item).get("role") == "user"]
             background = {"current_user_task": users[-1] if users else
                           background.get("current_user_task", background.get("current_user"))
                           if isinstance(background, dict) else None}
-        if self._fits(_REPORT, payload(content), log=log):
+        if self._fits(_REPORT, payload(content), log=log, disable_thinking=True):
             return self._report(log, payload(content))
         reports = [self._report(log, payload(part, start, end))
                    for part, start, end in self._text_chunks(content, payload, log=log)]
         while len(reports) > 1:
             combined = "\n\n".join(reports)
-            if self._fits(_REPORT, payload(combined), log=log):
+            if self._fits(_REPORT, payload(combined), log=log, disable_thinking=True):
                 return self._report(log, {**payload(combined), "input_kind": "partial_reports"})
             smaller = [self._report(log, {**payload(part, start, end), "input_kind": "partial_reports"})
                        for part, start, end in self._text_chunks(combined, payload, log=log)]
