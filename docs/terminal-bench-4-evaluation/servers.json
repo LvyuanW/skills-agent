@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "date": "2026-10-16",
+  "experiment_id": "tb4-56-flash-max-v2",
+  "site_url": "https://rehdasu.cn/",
+  "site_binding_status": "not_verified",
+  "model": "deepseek-flash",
+  "reasoning_effort": "max",
+  "credential_values_stored": false,
+  "model_credentials_provisioned": false,
+  "operating_system": "Ubuntu 22.04.5 LTS",
+  "architecture": "x86_64",
+  "visible_memory_gib_approx": 123.66,
+  "reserved_cpus": "0-1",
+  "benchmark_allowed_cpus": "2-31",
+  "benchmark_memory_limit_gib": 115,
+  "trial_admission_cpus": 28,
+  "trial_admission_memory_gib": 107,
+  "maximum_active_trials": 14,
+  "data_mount": "/data",
+  "data_disk_capacity_bytes": 536870912000,
+  "docker_data_root": "/data/docker",
+  "containerd_root": "/data/containerd",
+  "benchmark_user": "tbench",
+  "controller_launcher": "/usr/local/sbin/tb4-exec",
+  "servers": [
+    {"server": "serverA", "name": "tbench-1", "address": "47.91.21.152", "agent": "codex", "api_key_ref": "tbench-1"},
+    {"server": "serverB", "name": "tbench-2", "address": "8.216.13.123", "agent": "claude-code", "api_key_ref": "tbench-2"},
+    {"server": "serverC", "name": "tbench-3", "address": "8.216.11.161", "agent": "skills-agent", "api_key_ref": "tbench-3"}
+  ]
+}

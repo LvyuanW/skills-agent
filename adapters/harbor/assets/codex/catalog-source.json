@@ -1,0 +1,30 @@
+{
+  "retrieved_at": "2026-10-16",
+  "source_url": "https://api-docs.deepseek.com/quick_start/agent_integrations/codex/",
+  "catalog_sha256": "bce20f679495809f4fa6e48672b6dcbab84b6adff5251890b6e6a21eddb9c12f",
+  "note": "Official JSON catalog content, formatting normalized only; embedded model instructions are runtime data.",
+  "codex_version": "0.149.1",
+  "npm_linux_metadata": {
+    "shasum": "4f02df1633de47903829650c38b02ec12f99214b",
+    "tarball": "https://registry.npmjs.org/@openai/codex/-/codex-0.149.1-linux-x64.tgz",
+    "fileCount": 8,
+    "integrity": "sha512-Of5fGYgr7tAMsyj6vhXb4/RM/UoA3Zq8BLegUBDC09UNy1XTLGYP/2XD+UX8z3qh0NDwxYdCjFIWdDNijKZggQ==",
+    "signatures": [
+      {
+        "sig": "MEUCIB7DRjVxqF4knxqiPdpP24raZMQclH76oJlIlpfwma2nAiEAubo6ahPLTzSd0CBY6Ewv9C+wYGwrrW2p5PUkRfv8/qk=",
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+      },
+      {
+        "sig": "MEUCIBBw8lr+uZ6A2Qm6GjqyXmjf1+bZM6UXyXCxxzs5ibcMAiEAuvpBHagT8eysD2NXRxZ6iEyqzItyhPF8s+A8JEaODHE=",
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+      }
+    ],
+    "attestations": {
+      "url": "https://registry.npmjs.org/-/npm/v1/attestations/@openai%2fcodex@0.149.1-linux-x64",
+      "provenance": {
+        "predicateType": "https://slsa.dev/provenance/v1"
+      }
+    },
+    "unpackedSize": 322955698
+  }
+}

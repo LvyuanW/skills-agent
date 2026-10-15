@@ -1,5 +1,7 @@
 # ALE 接入
 
+现有服务器的正式测评核查、固定 release 的启动命令及结果验收，见 [服务器测评启动流程](../../docs/ale-evaluation-runbook.md)。其中包含官方 Docker 镜像证据和该批次的资源配置差异。
+
 适配器使用 ALE 的 `sandbox` executor，在每道题的任务容器内执行。对应官方源码版本：[`d9abc073`](https://github.com/rdi-berkeley/agents-last-exam/tree/d9abc0734b56ea34116c5bfcbdd0b808269ab9e2)。
 
 该版本的 sandbox executor 还需应用本目录的 [取消清理补丁](patches/sandbox-cancellation.patch)。补丁处理外层超时、启动期间取消和启动后的执行异常，等待容器内运行停止后再返回；无法确认停止时跳过评分。已有修改或其他 ALE 版本应先检查补丁适用性；已应用的仓库不要重复应用。
