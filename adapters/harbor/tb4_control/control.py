@@ -384,10 +384,10 @@ def main():
     commands = parser.add_subparsers(dest='command', required=True)
     for name in ['plan', 'status']:
         sub = commands.add_parser(name)
-        sub.add_argument('--manifest', type=Path, default=ROOT / 'plans/task-manifest.json')
+        sub.add_argument('--manifest', type=Path, default=ROOT / 'plans/terminal-bench-4-evaluation/task-manifest.json')
         sub.add_argument('--output', type=Path, default=ROOT / 'runs/prewarm')
     warm = commands.add_parser('prewarm', help='Build/start/probe/stop environments only; zero model calls')
-    warm.add_argument('--manifest', type=Path, default=ROOT / 'plans/task-manifest.json')
+    warm.add_argument('--manifest', type=Path, default=ROOT / 'plans/terminal-bench-4-evaluation/task-manifest.json')
     warm.add_argument('--dataset', type=Path, default=ROOT / 'src/terminal-bench')
     warm.add_argument('--output', type=Path, default=ROOT / 'runs/prewarm')
     warm.add_argument('--sample-seconds', type=int, default=10)
@@ -407,7 +407,7 @@ def main():
     worker.add_argument('--output', type=Path, required=True)
     worker.add_argument('--result-file', type=Path, required=True)
     official = commands.add_parser('formal-start', help='Requires separate formal approval file; never used during preparation')
-    for name, default in [('manifest', ROOT/'plans/task-manifest.json'),
+    for name, default in [('manifest', ROOT/'plans/terminal-bench-4-evaluation/task-manifest.json'),
                           ('dataset', ROOT/'src/terminal-bench'), ('output', ROOT/'runs/formal'),
                           ('unlock', ROOT/'plans/FORMAL_APPROVED.json')]:
         official.add_argument('--' + name, type=Path, default=default)

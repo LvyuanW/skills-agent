@@ -1,17 +1,18 @@
 """Pinned Claude Code deployment with a DeepSeek-only model route."""
 from pathlib import Path
 import json
-import shlex
+from typing import Annotated, Literal
 
 from pydantic import Field
 from harbor.agents.installed.claude_code import ClaudeCode, ClaudeCodeOptions
 from harbor.agents.model_connection import ModelConnectionSpec
+from harbor.agents.options import Cli
 
 
 class DeepSeekClaudeOptions(ClaudeCodeOptions):
     version: str = "2.1.300"
-    reasoning_effort: str = "max"
-    disallowed_tools: str = "WebSearch"
+    reasoning_effort: Annotated[Literal["max"], Cli("--effort")] = "max"
+    disallowed_tools: Annotated[str, Cli("--disallowedTools")] = "WebSearch"
     binary_path: str = "/data/tb4/releases/claude-code/package/claude"
     audit_base_url: str | None = Field(default=None, description="Synthetic preflight only.")
 
