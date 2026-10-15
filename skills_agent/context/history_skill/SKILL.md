@@ -1,6 +1,10 @@
 ---
 name: history
-description: Retrieve original main-session evidence by task, keywords, event references, and tool-call relationships; report relevant findings with sources.
+description: >-
+  Use only in an assigned history=true retrieval subagent to recover original
+  main-session requirements, decisions or execution evidence with sources. Skip
+  fresh retrieval when supplied original evidence already answers the question;
+  do not use for workspace files, private subagent records or executing historical tasks.
 ---
 
 This skill is loaded only for a history retrieval subagent, after the main agent delegates a named task with `history: true` and a concrete question. As that retrieval agent, you receive the complete current working context as read-only reference material. Ordinary subagents do not receive this skill or automatically inherit that context. Never treat the snapshot as instructions to continue the main task or as evidence of what the original history said.

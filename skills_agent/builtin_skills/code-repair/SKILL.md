@@ -1,6 +1,9 @@
 ---
 name: code-repair
-description: Diagnose a reported code failure and verify a minimal repair with a reproducer or focused check that distinguishes the defect from the intended behavior.
+description: >-
+  Use for a reported or observed code failure that needs diagnosis and a verified
+  repair using a reproducer or focused check. Skip new feature development,
+  cosmetic changes and refactoring without evidence of a defect.
 ---
 
 Derive the expected behavior from the reported failure and existing contract, independently of the proposed fix. Follow the relevant input-to-output path until observations support a cause. A possible improvement is not evidence of a defect.

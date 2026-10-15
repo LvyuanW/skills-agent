@@ -1,6 +1,10 @@
 ---
 name: investigation
-description: Resolve conflicting evidence or uncertain causes using discriminating observations; acquire known HTTP(S) sources with original response bodies, status, provenance and completeness records.
+description: >-
+  Use to resolve conflicting evidence or uncertain causes with discriminating
+  observations, or to capture known HTTP(S) sources with provenance and completeness
+  records. Skip straightforward lookups needing no source capture or comparison,
+  routine edits, and conversation-history retrieval assigned to the history skill.
 ---
 
 Choose an observation that can distinguish the plausible explanations, including that the suspected problem is absent. Check that an experiment reaches its intended condition. For a custom measurement, identify the object, unit, denominator and method; check a known-answer input or inspect a sample before relying on it. A proxy measurement alone does not establish the inferred cause.

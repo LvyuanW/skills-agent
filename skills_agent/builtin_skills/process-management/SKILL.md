@@ -1,6 +1,10 @@
 ---
 name: process-management
-description: Keep a server or long-running job observable across shell calls using saved process records, readiness checks and logs, then stop its owned processes when work ends.
+description: >-
+  Use when a server or long-running job must remain active across shell calls,
+  with saved process records, readiness checks, logs and owned-process cleanup.
+  Skip short foreground commands or checks needed immediately; use feedback for
+  a bounded run that does not need background management.
 ---
 
 Use a saved process reference when a program must run while other work proceeds. Start the task's own program through [scripts/process.py](scripts/process.py), then use its returned state and logs rather than assuming launch means readiness. A bounded command needed immediately can instead use the feedback skill's `run` operation.

@@ -1,6 +1,10 @@
 ---
 name: file-editing
-description: Make precise changes to text or code files using unique anchors, preserving surrounding contents, line endings and file mode; create or delete task files and inspect the saved change.
+description: >-
+  Use for precise changes to existing text or code files that must preserve
+  surrounding contents, line endings and file mode, using unique anchors and
+  inspecting the saved change. Skip simple standalone file creation, read-only
+  inspection and binary-file editing.
 ---
 
 Base an edit on the current saved contents. Identify the exact region to change and preserve unrelated content. If a match is missing or ambiguous, inspect the file and refine the match instead of reconstructing it from memory. Group related edits when their inputs are known; inspect a result before choosing a dependent edit.

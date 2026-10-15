@@ -147,7 +147,7 @@ skills_agent/
   tools/             shell、subagent、sandbox
   skills/            技能发现与系统提示词中的技能目录
   sandbox/           Docker 命令执行
-  builtin_skills/    通用读取、编辑、反馈、调查、修复、进程管理和交付审查技能
+  builtin_skills/    通用读取、编辑、反馈、调查、修复、进程管理、验收标准和交付审查技能
 tests/
 adapters/ale/        ALE Deployer 与运行配置
 ```
@@ -210,7 +210,7 @@ skills/my-skill/
 ```markdown
 ---
 name: my-skill
-description: 描述这个技能提供的可复用能力、适用条件和关键边界。
+description: 描述这个技能提供的可复用能力、应该选用的情况和不应该选用的情况。
 ---
 说明如何按当前任务选择操作，以及输入输出约束和能力边界。
 scripts/example.py 提供可复用操作；说明它的参数、输入输出和错误行为。
@@ -246,7 +246,9 @@ API 错误的脱敏诊断保存在对应会话 `events.jsonl` 的 `error.diagnos
 
 `context/history_skill` 提供原始会话检索和报告方法，仅在 `subagent(history=true)` 的检索子任务中加载；主 Agent 通过委派获得结论，不直接执行检索流程。主会话索引包含已返回的子任务报告，不索引私有子会话。中断后先确认已保存产物和原执行结果，再继续下一步；复杂任务可按需保存进度，不强制建立计划文件。
 
-内置 [review skill](skills_agent/builtin_skills/review/SKILL.md) 引导主 Agent 在实质工作完成、准备最终报告时，通过现有 `subagent` 独立检查产物、结论或方案是否满足原始需求及后续修正。主 Agent 提供相关需求原文、实际产物和验证证据；需求不完整时先委派 `history=true` 检索。审查者检查实际材料，返回有依据的缺陷、遗漏和未验证事项，主 Agent 据此修正并按需定向复查。简单问答不要求委派；这是技能和提示词引导，不是运行时强制关卡。
+内置 [acceptance-criteria skill](skills_agent/builtin_skills/acceptance-criteria/SKILL.md) 要求在执行复杂任务前使用：读取理解需求所需的输入，在实质制作或修改前将原始需求、已接受的修正、模型列出的验收标准及验证方式保存为任务项目内的 Markdown 文档，例如 `docs/acceptance/<task>.md`。复杂性来自步骤依赖、相互影响的约束或需要多种证据的不确定性；简单问答、直接查找和局部明确修改无需建立文档。继续同一任务时复用文档，新增要求或发现遗漏时更新，不能为了迁就已有结果而降低标准。
+
+内置 [review skill](skills_agent/builtin_skills/review/SKILL.md) 要求在复杂任务交付前使用，通过现有 `subagent` 独立核对原始需求、项目内的验收标准文档及实际产物。主 Agent 提供文档与附件的实际路径、需求来源和验证证据；需求不完整时先委派 `history=true` 检索。审查者既检查成果，也检查验收标准是否遗漏或曲解需求，返回有依据的缺陷和未验证事项，主 Agent 据此修正并按需定向复查。简单任务适度自检，明确要求审查时也可使用此技能；已受派的审查者不再建文档或委派。上述要求通过技能描述与正文引导，不增加运行时关卡。
 
 内置 [file-editing skill](skills_agent/builtin_skills/file-editing/SKILL.md) 提供新建、精确替换、锚点前后插入、删除内容和删除文件的 Python 脚本，通过现有 shell 调用，不新增 tools。替换和插入要求原文或锚点唯一匹配，失败不写入；成功返回改动位置与有限行号片段。它还提供[跨回合渐进编辑示例](skills_agent/builtin_skills/file-editing/references/incremental-editing.md)：先保存有用产物，读取操作结果，再选择下一段扩展。
 

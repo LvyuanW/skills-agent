@@ -1,6 +1,10 @@
 ---
 name: workspace
-description: Read large or structured local files and attachments with source locations and continuation cursors, including JSON, CSV, DOCX, XLSX and PDF; inspect required local executables or modules.
+description: >-
+  Use for selective, located reads of large or structured files and attachments
+  (JSON, CSV, DOCX, XLSX, PDF), or to check required local executables and modules.
+  Skip simple targeted text reads and searches; use feedback for visual or runtime
+  verification, and delegated history retrieval for conversation records.
 ---
 
 Select the part of an input needed for the current decision. Preserve its path and meaningful location; follow a continuation cursor when omitted content matters. Simple text reads and searches can use ordinary shell commands. Learn from, reuse or adapt the reference scripts below, or write a parser suited to the task.

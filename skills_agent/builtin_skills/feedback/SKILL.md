@@ -1,6 +1,10 @@
 ---
 name: feedback
-description: Obtain execution or artifact evidence with command timeouts and full logs, exact text/JSON checks, and native image feedback from local images or rendered HTML/SVG.
+description: >-
+  Use when the next decision needs actual execution or artifact evidence, including
+  bounded command runs with full logs, exact text/JSON checks, or native image
+  inspection of images and rendered HTML/SVG. Skip pure planning or lookups that
+  require no execution or artifact verification; this does not replace final review.
 ---
 
 Choose the observation needed for the next decision: actual execution for behavior, saved text or values for content, and pixels for appearance. A successful write, file path or screenshot command alone does not establish the contents or visual result.
