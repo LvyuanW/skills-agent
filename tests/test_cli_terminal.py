@@ -196,7 +196,7 @@ class TerminalTests(unittest.TestCase):
     def response(self, text="", *, command=None, summary=None):
         message = {"content": text or None}
         if command is not None:
-            arguments = {"command": command, "name": summary or "运行测试脚本"}
+            arguments = {"command": command, "name": summary or "运行测试脚本", "run_in_background": False}
             message["tool_calls"] = [{"id": "shell-1", "type": "function", "function": {
                 "name": "shell", "arguments": json.dumps(arguments),
             }}]

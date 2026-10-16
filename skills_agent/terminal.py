@@ -3,6 +3,7 @@
 from collections import deque
 from dataclasses import dataclass
 from io import StringIO
+from math import isfinite
 import os
 import signal
 import subprocess
@@ -38,6 +39,7 @@ _LINE_STYLES = {"user": "fg:ansiwhite bg:ansiblack",
                 "tool": "fg:ansiblue bg:default",
                 "error": "fg:ansired bg:default",
                 "thinking": "fg:ansibrightblack bg:default"}
+_RUNNING_JOB_STATES = {"starting", "running", "stopping"}
 
 
 @dataclass(eq=False, frozen=True)
@@ -169,7 +171,9 @@ class TerminalView:
         self._activity_task = None
         self._activity_tool_key = None
         self._activity_started = 0
+        self._background_jobs = {}
         self._animation_scheduled = False
+        self._closed = False
 
         self.buffer = Buffer(multiline=False, history=InMemoryHistory(),
                              read_only=Condition(lambda: self._selecting),
@@ -241,10 +245,11 @@ class TerminalView:
             if not app.is_done:
                 app.output.set_cursor_shape(CursorShape.BLINKING_BEAM)
                 app.output.flush()
-                if ((self._activity or self._turn_started is not None)
+                if ((self._activity or self._turn_started is not None or self._running_jobs())
                         and not self._selecting and not self._animation_scheduled):
                     self._animation_scheduled = True
-                    app.loop.call_later(0.1 if self._turn_started is not None or self._activity_task else 0.4,
+                    app.loop.call_later(0.1 if self._turn_started is not None or self._activity_task
+                                       or self._running_jobs() else 0.4,
                                        self._animate)
 
         self.app = Application(
@@ -359,10 +364,62 @@ class TerminalView:
             self._activity_thinking = thinking
         self.flush()
 
+    def set_background_jobs(self, jobs):
+        """Update runtime snapshots without interrupting the current response."""
+        with self._lock:
+            if self._closed:
+                return
+            observed = monotonic()
+            current = {}
+            for job in jobs:
+                elapsed = job.get("elapsed_seconds")
+                if not isinstance(elapsed, (int, float)) or not isfinite(elapsed):
+                    elapsed = None
+                current[job["id"]] = {**job, "elapsed_seconds": elapsed,
+                                      "observed": observed}
+            self._background_jobs = current
+        self.flush()
+
+    def _running_jobs(self):
+        return any(job["state"] in _RUNNING_JOB_STATES
+                   for job in self._background_jobs.values())
+
+    def _background_blocks(self):
+        now = monotonic()
+        for job in self._background_jobs.values():
+            state, code = job["state"], job.get("returncode")
+            failed = state in {"failed", "timed_out"} or (state == "exited" and code is not None and code != 0)
+            status = {"starting": "启动中", "running": "运行中", "stopping": "停止中",
+                      "exited": "完成", "stopped": "已停止", "orphaned": "失去进程归属"}.get(
+                          state, "状态未知")
+            if state == "exited" and code is None:
+                status = "已退出（退出码未知）"
+            if failed:
+                status = ("已超时" if state == "timed_out" else "失败")
+                if state != "timed_out" and code is not None:
+                    status += f"（退出码 {code}）"
+            cleanup_required = job.get("cleanup_required") is True
+            if state == "exited" and cleanup_required:
+                status = (status if failed else "入口已退出") + "（已清理残留进程）"
+            name = " ".join(str(job.get("display_name", job["name"])).split())
+            name = "".join(char for char in name if char.isprintable())
+            if len(name) > 100:
+                name = name[:99] + "…"
+            label = "服务" if job.get("kind") == "service" else "后台"
+            text = f"· {label}「{name}」：{status}"
+            elapsed = job["elapsed_seconds"]
+            if elapsed is not None:
+                if state in _RUNNING_JOB_STATES:
+                    elapsed += max(0, now - job["observed"])
+                text += f" · {max(0, elapsed):.1f} 秒"
+            yield {"kind": "line", "text": text,
+                   "role": "error" if failed or cleanup_required or state in {"orphaned", "unknown", "stopped"} else "tool"}
+
     def _animate(self):
         self._animation_scheduled = False
         with self._lock:
-            if self._selecting or (not self._activity and self._turn_started is None):
+            if self._selecting or (not self._activity and self._turn_started is None
+                                   and not self._running_jobs()):
                 return
         self.flush()
 
@@ -482,7 +539,7 @@ class TerminalView:
         lines = []
         self._headers = {}
         self._image_links = {}
-        blocks = self.blocks
+        blocks = [*self.blocks, *self._background_blocks()]
         activity_row = None
         activity_block = None
         activity_target = None
@@ -546,7 +603,7 @@ class TerminalView:
         return False
 
     def flush(self):
-        if not self._selecting:
+        if not self._selecting and not self._closed:
             self.app.invalidate()
 
     def start(self):
@@ -587,6 +644,8 @@ class TerminalView:
         return value.text
 
     def close(self):
+        with self._lock:
+            self._closed = True
         if self._thread is not None:
             if self.app.is_running:
                 self.app.loop.call_soon_threadsafe(self.app.exit)

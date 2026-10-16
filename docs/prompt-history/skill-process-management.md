@@ -116,3 +116,157 @@ Within the agent, registered jobs belong to the turn that started them, includin
 
 The supervisor retains its direct child's PID until group cleanup ends and never signals a PID supplied by the model or a record. If ownership cannot be confirmed, status is `orphaned` and stop refuses to guess. Report that gap rather than launching duplicates. Preserve the absolute state directory, name and log paths for an intentionally continuing service. Read [references/across-turns.md](references/across-turns.md) for a start/observe/stop example.
 ````
+
+
+## v4 · 2026-10-17 · 计算终态投递与独立执行期限
+
+来源：当前工作区（未提交）。
+
+- 发现的问题：后台启动成功被误作计算完成；原helper没有执行期限，个性化脱离脚本无法可靠追踪。
+- 本版本目标：复用唯一登记helper，区分启动、等待、作业执行期限，计算默认等待终态，服务显式声明。
+- 本版本效果：新增独立job-timeout、service和完成结果协议，保留原始日志；当前sandbox不支持这套后台协议。
+
+### 完整提示词快照
+
+````markdown
+---
+name: process-management
+description: >-
+  Use when a server or long-running job must remain active across shell calls,
+  with registered execution, independent job deadlines, completion results,
+  readiness checks and owned-process cleanup.
+  Skip short foreground commands or checks needed immediately; use feedback for
+  a bounded run that does not need background management.
+---
+
+For work that must continue across shell calls, launch the task's foreground program through [scripts/process.py](scripts/process.py) using the shell tool. Your program may be an existing command or a task-specific script. Keep the helper's registration protocol; do not replace it with `&`, `nohup`, `setsid`, or a custom detached launcher. A successful `start` only confirms launch, not completion or service readiness. A bounded command needed immediately can instead use the feedback skill's `run` operation.
+
+The helper requires Python 3.11 or newer on POSIX with `ps` and `waitid/WNOWAIT`. Resolve its absolute path from this SKILL.md. Keep the same absolute `--state-dir` and `--name` across calls; shell variables do not persist. This protocol supports host shell execution, including when the whole Agent runs inside a benchmark container. The sandbox tool's short-lived Docker containers do not support registered background jobs; do not launch this helper there or assume a detached process will survive that tool call.
+
+| Operation | Result |
+| --- | --- |
+| `start --state-dir DIR --name NAME [--cwd DIR] [--job-timeout SECONDS] -- COMMAND...` | Registered computation, stable run ID, independent execution deadline and complete stdout/stderr logs |
+| `start ... --service [--persistent] -- COMMAND...` | Explicit ongoing service; its exit is not required before the Agent replies |
+| `status --state-dir DIR --name NAME` | Verified supervisor identity and recorded lifecycle/exit status |
+| `wait --state-dir DIR --name NAME [--timeout 30]` | Actual command status; timeout returns 124 and leaves it running |
+| `wait ... --match TEXT [--stream stdout\|stderr\|both]` | Wait for a literal log marker while the process runs; flush readiness logs |
+| `wait ... --tcp HOST PORT` | Observe reachability, not service identity or correct behavior |
+| `logs --state-dir DIR --name NAME [--max-chars 6000]` | Bounded tails and complete log paths |
+| `stop --state-dir DIR --name NAME [--grace 3 --timeout 10]` | TERM then KILL for the owned process group and confirmation of cleanup |
+
+Arguments execute directly; use `sh -lc '...'` for shell syntax, keeping the actual work in the foreground of that managed command. Do not daemonize or create a new session inside it. Commands needing interactive stdin require another approach. An active or unconfirmed name cannot be reused; an ended run may be replaced with fresh logs. Stable run IDs distinguish these executions even if they share a name.
+
+There are three separate time limits:
+
+- The shell tool's `timeout_seconds` bounds the short launch/status/wait call (default 120 seconds, maximum 600).
+- `start --job-timeout SECONDS` bounds the actual computation from child startup (default 3600 seconds); choose it for the workload and task budget. It is independent of the shell limit. Expiry stops the owned process group and records `timed_out`, effective exit code 124, the real process return code and saved logs.
+- `wait --timeout SECONDS` only bounds that observation. Expiry returns control while the job continues; it does not extend or replace the job deadline.
+
+Registered computations must reach a confirmed terminal state before the Agent accepts a final reply. Their completion results enter the owning Agent's working context at the next safe boundary, with exit status, timeout reason, bounded output and full log paths. Results arriving during a model response are delivered before the next request; launching successfully is never substituted for the actual result. Read those results and complete remaining work, including producing and checking deliverables. Failure or timeout is evidence to inspect, not an instruction to restart automatically.
+
+For a background computation, make progress observable through flushed logs, completed units or saved intermediate results, and inspect those observations against its chosen stopping condition. A `wait --timeout` expiry only returns control; it does not stop the job or enforce its execution deadline. When the stopping condition is reached, use `stop` if the job has not exited and verify the returned state. Choose waits around expected progress and the remaining budget; do not repeat identical polls indefinitely without new information. If progress cannot be established, inspect or report that gap rather than treating elapsed waiting as evidence of useful work.
+
+Use `--service` only for a process intentionally needed while other work continues, such as a development server; check its readiness and actual behavior separately. Do not mark a required computation as a service to bypass completion waiting. Services have no execution deadline by default; an explicit `--job-timeout` can bound their lifetime. Stop them when no longer needed. `--persistent` requires `--service` and an explicit user need to keep it across CLI exit; it is a retention permission, not proof of readiness or completion.
+
+Registered jobs belong to the turn that started them, including subagent jobs. Failed/cancelled turns stop their new work. Successful CLI turns may keep services available for later turns; leaving the CLI stops nonpersistent services. Benchmark runs forbid persistence and clean up all registered processes on exit. Outside the Agent, use `wait`, `logs` and `stop` explicitly: there is no automatic working-context delivery.
+
+The supervisor retains its direct child's PID until group cleanup ends and never signals a PID supplied by the model or a record. If ownership cannot be confirmed, status is `orphaned` and stop refuses to guess. Report that gap rather than launching duplicates. Preserve the absolute state directory, name and log paths for an intentionally continuing service. Read [references/across-turns.md](references/across-turns.md) for a start/observe/stop example.
+````
+
+## v5 · 2026-10-17 · 强制覆盖全部后台任务
+
+来源：当前工作区（未提交）。
+
+- 发现的问题：描述中的长任务条件可能使模型遗漏短后台任务或个性化脚本。
+- 本版本目标：描述与正文明确任何后台任务或持续服务均须使用本技能，普通前台命令除外。
+- 本版本效果：技能目录阶段即可看到强制触发条件，正文保留登记 helper 和禁止自行脱离进程的约束；模型实际遵循情况待观察。
+
+### 完整提示词快照
+
+````markdown
+---
+name: process-management
+description: >-
+  Required for every background task or ongoing service, regardless of duration,
+  including task-specific scripts that continue after a shell call returns.
+  Provides registered execution, independent job deadlines, completion results,
+  readiness checks and owned-process cleanup. Skip ordinary foreground commands.
+---
+
+Before starting any background task or ongoing service, read and use this skill, even for a short task or a task-specific script. Launch the task's foreground program through [scripts/process.py](scripts/process.py) using the shell tool. Your program may be an existing command or a task-specific script. Keep the helper's registration protocol; do not replace it with `&`, `nohup`, `setsid`, or a custom detached launcher. A successful `start` only confirms launch, not completion or service readiness. Ordinary foreground commands do not require this skill; a bounded command needed immediately can instead use the feedback skill's `run` operation.
+
+The helper requires Python 3.11 or newer on POSIX with `ps` and `waitid/WNOWAIT`. Resolve its absolute path from this SKILL.md. Keep the same absolute `--state-dir` and `--name` across calls; shell variables do not persist. This protocol supports host shell execution, including when the whole Agent runs inside a benchmark container. The sandbox tool's short-lived Docker containers do not support registered background jobs; do not launch this helper there or assume a detached process will survive that tool call.
+
+| Operation | Result |
+| --- | --- |
+| `start --state-dir DIR --name NAME [--cwd DIR] [--job-timeout SECONDS] -- COMMAND...` | Registered computation, stable run ID, independent execution deadline and complete stdout/stderr logs |
+| `start ... --service [--persistent] -- COMMAND...` | Explicit ongoing service; its exit is not required before the Agent replies |
+| `status --state-dir DIR --name NAME` | Verified supervisor identity and recorded lifecycle/exit status |
+| `wait --state-dir DIR --name NAME [--timeout 30]` | Actual command status; timeout returns 124 and leaves it running |
+| `wait ... --match TEXT [--stream stdout\|stderr\|both]` | Wait for a literal log marker while the process runs; flush readiness logs |
+| `wait ... --tcp HOST PORT` | Observe reachability, not service identity or correct behavior |
+| `logs --state-dir DIR --name NAME [--max-chars 6000]` | Bounded tails and complete log paths |
+| `stop --state-dir DIR --name NAME [--grace 3 --timeout 10]` | TERM then KILL for the owned process group and confirmation of cleanup |
+
+Arguments execute directly; use `sh -lc '...'` for shell syntax, keeping the actual work in the foreground of that managed command. Do not daemonize or create a new session inside it. Commands needing interactive stdin require another approach. An active or unconfirmed name cannot be reused; an ended run may be replaced with fresh logs. Stable run IDs distinguish these executions even if they share a name.
+
+There are three separate time limits:
+
+- The shell tool's `timeout_seconds` bounds the short launch/status/wait call (default 120 seconds, maximum 600).
+- `start --job-timeout SECONDS` bounds the actual computation from child startup (default 3600 seconds); choose it for the workload and task budget. It is independent of the shell limit. Expiry stops the owned process group and records `timed_out`, effective exit code 124, the real process return code and saved logs.
+- `wait --timeout SECONDS` only bounds that observation. Expiry returns control while the job continues; it does not extend or replace the job deadline.
+
+Registered computations must reach a confirmed terminal state before the Agent accepts a final reply. Their completion results enter the owning Agent's working context at the next safe boundary, with exit status, timeout reason, bounded output and full log paths. Results arriving during a model response are delivered before the next request; launching successfully is never substituted for the actual result. Read those results and complete remaining work, including producing and checking deliverables. Failure or timeout is evidence to inspect, not an instruction to restart automatically.
+
+For a background computation, make progress observable through flushed logs, completed units or saved intermediate results, and inspect those observations against its chosen stopping condition. A `wait --timeout` expiry only returns control; it does not stop the job or enforce its execution deadline. When the stopping condition is reached, use `stop` if the job has not exited and verify the returned state. Choose waits around expected progress and the remaining budget; do not repeat identical polls indefinitely without new information. If progress cannot be established, inspect or report that gap rather than treating elapsed waiting as evidence of useful work.
+
+Use `--service` only for a process intentionally needed while other work continues, such as a development server; check its readiness and actual behavior separately. Do not mark a required computation as a service to bypass completion waiting. Services have no execution deadline by default; an explicit `--job-timeout` can bound their lifetime. Stop them when no longer needed. `--persistent` requires `--service` and an explicit user need to keep it across CLI exit; it is a retention permission, not proof of readiness or completion.
+
+Registered jobs belong to the turn that started them, including subagent jobs. Failed/cancelled turns stop their new work. Successful CLI turns may keep services available for later turns; leaving the CLI stops nonpersistent services. Benchmark runs forbid persistence and clean up all registered processes on exit. Outside the Agent, use `wait`, `logs` and `stop` explicitly: there is no automatic working-context delivery.
+
+The supervisor retains its direct child's PID until group cleanup ends and never signals a PID supplied by the model or a record. If ownership cannot be confirmed, status is `orphaned` and stop refuses to guess. Report that gap rather than launching duplicates. Preserve the absolute state directory, name and log paths for an intentionally continuing service. Read [references/across-turns.md](references/across-turns.md) for a start/observe/stop example.
+````
+
+## v6 · 2026-10-17 · 聚焦已有作业的观察与停止
+
+来源：工作区未提交；`skills_agent/builtin_skills/process-management/SKILL.md`。
+
+- 发现的问题：后台执行模式、服务保留及进程管理的职责需要分开说明。
+- 本版本目标：通过现有 shell 启动，提供可观察执行与协作等待子任务的说明。
+- 本版本效果：计算任务等待完成，服务核实就绪后可交付；状态、日志及停止由进程管理技能提供。范例已离线验证，模型表现待观察。
+
+### 完整提示词
+
+````markdown
+---
+name: process-management
+description: >-
+  Inspect, wait for readiness or completion, read logs, and stop jobs already
+  registered by shell run_in_background=true. Use when an intermediate observation
+  or explicit stop is needed. Starting background work belongs to background-tasks;
+  ordinary foreground execution does not require this skill.
+---
+
+Use this skill to manage an existing registered job. Start all background work with the existing `shell` tool's `run_in_background=true`, following the [background-tasks skill](../background-tasks/SKILL.md). Do not use this helper's legacy `start` operation as a second launch interface. You do not need to read this skill just to start a job or receive the runtime's automatic completion result.
+
+Resolve [scripts/process.py](scripts/process.py) to an absolute path from this SKILL.md. Copy the exact internal `state_dir` and `name` from the shell launch receipt; `display_name` is only the human-facing label. Keep those values across calls; shell variables do not persist. The helper needs Python 3.11 or newer and a POSIX host with `ps` and `waitid/WNOWAIT`.
+
+| Operation | Observation |
+| --- | --- |
+| `status --state-dir DIR --name NAME` | Verified supervisor identity and recorded lifecycle/exit status |
+| `logs --state-dir DIR --name NAME [--max-chars 6000]` | Bounded stdout/stderr tails and complete log paths |
+| `wait --state-dir DIR --name NAME [--timeout 30]` | Wait for actual exit; observation timeout returns 124 and leaves the job running |
+| `wait ... --match TEXT [--stream stdout\|stderr\|both]` | Wait for a literal log marker while the job runs; the program must flush readiness logs |
+| `wait ... --tcp HOST PORT` | Observe reachability, not service identity or correct behavior |
+| `stop --state-dir DIR --name NAME [--grace 3 --timeout 10]` | Request TERM, escalate to KILL for the owned process group, and confirm cleanup |
+
+Invoke these short management commands with `shell run_in_background=false`. Give the shell call enough time for the helper's bounded wait or stop, within the synchronous 600-second maximum. An observation deadline neither extends nor replaces the job's independent execution deadline.
+
+Only wait or poll to answer a concrete dependency, readiness or progress question. Prefer meaningful flushed markers or task-specific checks over elapsed time. TCP reachability alone does not prove your service is ready or behaving correctly. When no intermediate observation is needed, continue independent work and let the runtime deliver completion. A successful launch or a marker is not proof of full computation success.
+
+Explicitly stop a job when it is no longer needed. Read the returned state: a `stop --timeout` expiry only ends that observation, so use `status` to confirm subsequent cleanup. Do not relaunch a duplicate merely because an observation timed out. A `task` must reach a confirmed terminal state before the Agent can finish. A `service` may remain running after a successful reply and normal CLI exit, but needs an actual readiness and behavior check before delivery. Preserve its job ID, absolute state/log paths and exact stop command for later management; stop it when no longer needed. A failed or cancelled turn cleans its newly launched services, while previously retained services remain. Benchmark rejects services.
+
+The supervisor signals only its verified owned process group. If ownership cannot be confirmed, it reports `orphaned` and refuses to guess; report that gap rather than signaling an arbitrary PID or treating it as completion. This is the same cooperative process-group boundary as shell execution, not a hard sandbox: do not create new sessions, daemonize or delegate unmanaged work. Entry exit status does not contain every descendant's status; scripts must wait and aggregate their internal results.
+
+Read [references/across-turns.md](references/across-turns.md) for status, logs, readiness and stop examples using a shell launch receipt.
+````

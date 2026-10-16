@@ -244,7 +244,7 @@ class AdapterTests(unittest.TestCase):
                         return
                     body = {"choices": [{"finish_reason": "tool_calls", "message": {
                         "content": "", "tool_calls": [{"id": "wait", "type": "function", "function": {
-                            "name": "shell", "arguments": json.dumps({"name": "等待取消", "command": command}),
+                            "name": "shell", "arguments": json.dumps({"name": "等待取消", "command": command, "run_in_background": False}),
                         }}],
                     }}]}
                     encoded = responses_stream(body)
@@ -517,11 +517,11 @@ except asyncio.CancelledError:
                             if len(requests) == 1:
                                 body["choices"][0]["message"]["tool_calls"] = [{
                                     "id": "shell1", "type": "function", "function": {"name": "shell",
-                                        "arguments": json.dumps({"name": "写入答案", "command": command})},
+                                        "arguments": json.dumps({"name": "写入答案", "command": command, "run_in_background": False})},
                                 }]
                         else:
                             body = {"stop_reason": "tool_use" if len(requests) == 1 else "end_turn",
-                                    "content": [{"type": "tool_use", "id": "shell1", "name": "shell", "input": {"name": "写入答案", "command": command}}]
+                                    "content": [{"type": "tool_use", "id": "shell1", "name": "shell", "input": {"name": "写入答案", "command": command, "run_in_background": False}}]
                                     if len(requests) == 1 else [{"type": "text", "text": "done"}],
                                     "usage": {"input_tokens": 5, "output_tokens": 2}}
                         encoded = responses_stream(body) if provider == "openai" else stream_response(body)

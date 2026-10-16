@@ -199,3 +199,127 @@
   }
 }
 ```
+
+## v2 · 2026-10-17 · 必填执行模式与后台生命周期
+
+来源：工作区未提交；`skills_agent/tools/__init__.py:ToolRegistry`。
+
+- 发现的问题：同步 shell 无法明确表示提前返回与任务生命周期，后台登记依赖模型选择另一脚本入口。
+- 本版本目标：要求 run_in_background，并提供 task/service 生命周期与独立执行期限。
+- 本版本效果：同步等待入口并清理残留；异步自动登记并返回回执；后台服务不阻挡交付。
+
+### 完整提示词
+
+```json
+{
+  "name": "shell",
+  "description": "Run arbitrary scripts on the host in the workspace. Set required run_in_background=false for synchronous execution or true to return a job ID and continue working while the runtime supervises it. The entry process must wait for internal work; its exit triggers cleanup of remaining processes in the same group, recorded in the result. Read skills and reference source, write task-specific code, inspect results. Filter large data in your script and print relevant evidence.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "Short action and purpose, shown to the user."
+      },
+      "command": {
+        "type": "string",
+        "description": "Arbitrary shell command or multiline script."
+      },
+      "timeout_seconds": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "description": "Execution deadline. Foreground: default 120 seconds, maximum 600. Background task: default 3600 seconds. Service: no default deadline. Background durations may be any positive finite number, independent of the short startup receipt wait. Expiry stops the owned process group."
+      },
+      "result_mode": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "direct",
+          "report"
+        ],
+        "description": "auto: original up to 8192 tokens, otherwise report. direct: exact source (skills/code/data), or a source reference if it cannot fit. report: concise conclusions with evidence. Default auto."
+      },
+      "run_in_background": {
+        "type": "boolean",
+        "description": "Required. false: wait for the entry process, clean remaining processes in its group, then return its result. true: return a registered job receipt while the entry process continues; background_lifecycle determines whether it must finish before a final reply. Read the background-tasks skill before using true. Scripts must wait for their own child work and must not daemonize or detach from the process group."
+      },
+      "background_lifecycle": {
+        "type": "string",
+        "enum": [
+          "task",
+          "service"
+        ],
+        "description": "Background jobs only; default task. task: must finish before the Agent ends its work. service: intentionally stays online after delivery, does not block a final reply, and survives a successful CLI exit; failed or cancelled turns clean up new services. Verify service readiness before delivery. Persistent services are forbidden in benchmark runs. service requires run_in_background=true."
+      }
+    },
+    "required": [
+      "name",
+      "command",
+      "run_in_background"
+    ],
+    "additionalProperties": false
+  }
+}
+```
+
+## v3 · 2026-10-17 · 启动确认放宽至10秒
+
+来源：工作区未提交；`skills_agent/tools/__init__.py:ToolRegistry`。
+
+- 发现的问题：后台启动确认原为5秒，繁忙环境需要更宽的启动窗口。
+- 本版本目标：明确独立的10秒启动确认期限。
+- 本版本效果：启动确认统一为10秒，任务执行期限不变；启动结果仍不等于任务完成。
+
+### 完整提示词
+
+```json
+{
+  "name": "shell",
+  "description": "Run arbitrary scripts on the host in the workspace. Set required run_in_background=false for synchronous execution or true to return a job ID and continue working while the runtime supervises it. The entry process must wait for internal work; its exit triggers cleanup of remaining processes in the same group, recorded in the result. Read skills and reference source, write task-specific code, inspect results. Filter large data in your script and print relevant evidence.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "Short action and purpose, shown to the user."
+      },
+      "command": {
+        "type": "string",
+        "description": "Arbitrary shell command or multiline script."
+      },
+      "timeout_seconds": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "description": "Execution deadline. Foreground: default 120 seconds, maximum 600. Background task: default 3600 seconds. Service: no default deadline. Background durations may be any positive finite number, independent of the 10-second startup confirmation wait. Expiry stops the owned process group."
+      },
+      "result_mode": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "direct",
+          "report"
+        ],
+        "description": "auto: original up to 8192 tokens, otherwise report. direct: exact source (skills/code/data), or a source reference if it cannot fit. report: concise conclusions with evidence. Default auto."
+      },
+      "run_in_background": {
+        "type": "boolean",
+        "description": "Required. false: wait for the entry process, clean remaining processes in its group, then return its result. true: return a registered job receipt while the entry process continues; background_lifecycle determines whether it must finish before a final reply. Read the background-tasks skill before using true. Scripts must wait for their own child work and must not daemonize or detach from the process group."
+      },
+      "background_lifecycle": {
+        "type": "string",
+        "enum": [
+          "task",
+          "service"
+        ],
+        "description": "Background jobs only; default task. task: must finish before the Agent ends its work. service: intentionally stays online after delivery, does not block a final reply, and survives a successful CLI exit; failed or cancelled turns clean up new services. Verify service readiness before delivery. Persistent services are forbidden in benchmark runs. service requires run_in_background=true."
+      }
+    },
+    "required": [
+      "name",
+      "command",
+      "run_in_background"
+    ],
+    "additionalProperties": false
+  }
+}
+```

@@ -19,6 +19,8 @@ from skills_agent.tools import ToolRegistry
 def response(text="done", name=None, values=None):
     result = {"role": "assistant", "content": text}
     if name:
+        if name == "shell":
+            values = {"run_in_background": False, **values}
         result["tool_calls"] = [{"id": "task", "name": name, "arguments": json.dumps(values)}]
     return result
 
@@ -72,15 +74,17 @@ class ProcessLifecycleTests(unittest.TestCase):
                             except ProcessLookupError:
                                 pass
 
-    def command(self, name, *, persistent=False):
+    def command(self, name, *, service=False, persistent=False):
         self.names.add(name)
         code = ("import pathlib,time; p=pathlib.Path(" + repr(str(self.root / name)) + "); "
                 "exec(\"while True:\\n with p.open('a') as out: out.write('x')\\n time.sleep(.02)\")")
-        return shlex.join(self.helper("start", name, *(["--persistent"] if persistent else []),
+        return shlex.join(self.helper("start", name, *(["--service"] if service else []),
+                                      *(["--persistent"] if persistent else []),
                                       "--", sys.executable, "-c", code))
 
-    def shell(self, name, *, persistent=False):
-        return response("", "shell", {"name": name, "command": self.command(name, persistent=persistent)})
+    def shell(self, name, *, service=False, persistent=False):
+        return response("", "shell", {"name": name, "command": self.command(name, service=service,
+                                                                            persistent=persistent)})
 
     def record(self, name):
         return json.loads((self.state / f"{name}.json").read_text())
@@ -100,9 +104,9 @@ class ProcessLifecycleTests(unittest.TestCase):
         unrelated = subprocess.run(self.command("unrelated"), shell=True, cwd=self.root,
                                    capture_output=True, timeout=5)
         self.assertEqual(unrelated.returncode, 0, unrelated.stderr)
-        model = ScriptedModel([self.shell("prior"), response(),
-                               self.shell("cancelled", persistent=True), KeyboardInterrupt(),
-                               self.shell("ongoing", persistent=True), response()])
+        model = ScriptedModel([self.shell("prior", service=True), response(),
+                               self.shell("cancelled", service=True, persistent=True), KeyboardInterrupt(),
+                               self.shell("ongoing", service=True, persistent=True), response()])
         session = Session(self.root, "session")
         agent = Agent(model, session, SkillRegistry([]), self.root, allow_persistent_processes=True)
         self.addCleanup(agent.close)
@@ -119,8 +123,8 @@ class ProcessLifecycleTests(unittest.TestCase):
 
     def test_parent_failure_cleans_a_subagents_background_work(self):
         model = ScriptedModel([
-            response("", "subagent", {"name": "child", "task": "start a worker"}),
-            self.shell("child-worker"), response(), RuntimeError("parent failed"),
+            response("", "subagent", {"name": "child", "task": "start an ongoing service"}),
+            self.shell("child-worker", service=True), response(), RuntimeError("parent failed"),
         ])
         session = Session(self.root, "session")
         agent = Agent(model, session, SkillRegistry([]), self.root)
@@ -135,7 +139,8 @@ class ProcessLifecycleTests(unittest.TestCase):
         tools = ToolRegistry(self.root)
         tools.process_scope = scope
         rejected = json.loads(tools.execute("shell", json.dumps({
-            "name": "persistent", "command": self.command("forbidden", persistent=True),
+            "name": "persistent", "command": self.command("forbidden", service=True, persistent=True),
+            "run_in_background": False,
         })))
         self.assertNotEqual(rejected["exit_code"], 0)
         self.assertIn("not allowed", rejected["stderr"])
@@ -143,6 +148,7 @@ class ProcessLifecycleTests(unittest.TestCase):
         scope.close()
         late = json.loads(tools.execute("shell", json.dumps({
             "name": "late", "command": self.command("late"),
+            "run_in_background": False,
         })))
         self.assertNotEqual(late["exit_code"], 0)
         self.assertIn("closed", late["stderr"])
@@ -157,7 +163,7 @@ class ProcessLifecycleTests(unittest.TestCase):
         quick = shlex.join(self.helper("start", "reuse", "--", sys.executable, "-c", "pass"))
         waited = shlex.join(self.helper("wait", "reuse", "--timeout", "3"))
         for command in (quick, waited, self.command("reuse")):
-            result = json.loads(tools.execute("shell", json.dumps({"name": "run", "command": command})))
+            result = json.loads(tools.execute("shell", json.dumps({"name": "run", "command": command, "run_in_background": False})))
             self.assertEqual(result["exit_code"], 0, result)
         original = self.record("reuse")
         public = self.state / "reuse.json"
@@ -179,6 +185,7 @@ class ProcessLifecycleTests(unittest.TestCase):
         tools.process_scope = foreign
         result = json.loads(tools.execute("shell", json.dumps({
             "name": "foreign", "command": self.command("foreign"),
+            "run_in_background": False,
         })))
         self.assertEqual(result["exit_code"], 0, result)
         record = self.record("foreign")

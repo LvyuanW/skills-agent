@@ -93,19 +93,28 @@ def _wait_for_completion(process, deadline):
     return False
 
 
+def _wait_for_main_exit(process, deadline):
+    """Wait for the entry process without reaping its process-group leader."""
+    while time.monotonic() < deadline:
+        if _peek_exit(process):
+            return True
+        time.sleep(min(_POLL_SECONDS, max(0, deadline - time.monotonic())))
+    return False
+
+
 def _stop_process(process):
     if process.returncode is not None:
         # Completion already confirmed the whole group before reaping.
-        return
+        return False
     deadline = time.monotonic() + CLEANUP_TIMEOUT_SECONDS
     try:
         _signal_group(process, signal.SIGTERM)
         grace_deadline = min(deadline, time.monotonic() + TERM_GRACE_SECONDS)
         if _wait_for_completion(process, grace_deadline):
-            return
+            return False
         _signal_group(process, signal.SIGKILL)
         if _wait_for_completion(process, deadline):
-            return
+            return True
         raise ToolCleanupError("Command process group did not stop before the cleanup deadline")
     except BaseException as exc:
         # Even when observation failed, attempt to stop and reap our own child.
@@ -118,6 +127,35 @@ def _stop_process(process):
         if isinstance(exc, ToolCleanupError):
             raise
         raise ToolCleanupError("Command process group cleanup could not be confirmed") from exc
+
+
+def _finish_main_exit(process):
+    """Reap an exited entry process only after its owned group is empty.
+
+    Scripts must wait for their own internal work. Work left in this process
+    group after the entry process exits is stopped rather than awaited as a
+    successful continuation. A process that changes groups is outside this
+    lightweight ownership boundary.
+    """
+    members = _group_members(process.pid, time.monotonic() + CLEANUP_TIMEOUT_SECONDS)
+    if not members:
+        process.wait(timeout=CLEANUP_TIMEOUT_SECONDS)
+        return {}
+    with _cleanup_signals():
+        forced = _stop_process(process)
+    return {
+        "cleanup_required": True,
+        "cleanup_confirmed": True,
+        "cleanup_reason": "main_process_exited",
+        "cleanup_forced": forced,
+        "cleanup_initial_process_count": len(members),
+        "cleanup_message": (
+            "The entry process exited while other processes in its process group "
+            "were still running. Those remaining processes were stopped; their "
+            "work did not finish naturally. The exit code belongs to the entry "
+            "process only."
+        ),
+    }
 
 
 @contextmanager
@@ -163,7 +201,11 @@ def _read_output(path, *, limit=None):
 
 def run_command(command, *, cwd, shell=False, env=None,
                 timeout_seconds=DEFAULT_TIMEOUT_SECONDS, log_dir=None, cleanup=None):
-    """Run once; timeout is a tool result, cancellation still propagates.
+    """Wait for the entry process, then stop any same-group residual work.
+
+    Timeout is a tool result, cancellation still propagates. Scripts must wait
+    for their own children before exiting. Cleanup of residual same-group
+    processes is reported separately from the entry process's exit code.
 
     ``cleanup`` must perform bounded backend cleanup and raise if it cannot
     confirm completion. It runs after a started command times out or raises.
@@ -184,7 +226,8 @@ def run_command(command, *, cwd, shell=False, env=None,
             stdout=stdout, stderr=stderr, start_new_session=True,
         )
         try:
-            completed = _wait_for_completion(process, started + timeout_seconds)
+            completed = _wait_for_main_exit(process, started + timeout_seconds)
+            cleanup_result = _finish_main_exit(process) if completed else {}
         except BaseException:
             _cleanup(process, cleanup)
             raise
@@ -197,6 +240,7 @@ def run_command(command, *, cwd, shell=False, env=None,
         "exit_code": process.returncode if completed else 124,
         "stdout": output,
         "stderr": errors,
+        **cleanup_result,
     }
     if not completed:
         result.update(

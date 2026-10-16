@@ -108,7 +108,7 @@ class ExecutionTests(unittest.TestCase):
             with self.subTest(cancellation=type(cancellation).__name__):
                 callback = Mock()
                 seen = []
-                original_wait = execution._wait_for_completion
+                original_wait = execution._wait_for_main_exit
                 handlers = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
 
                 def cancel_once(process, deadline):
@@ -117,7 +117,7 @@ class ExecutionTests(unittest.TestCase):
                         raise cancellation
                     return original_wait(process, deadline)
 
-                with patch.object(execution, "_wait_for_completion", side_effect=cancel_once):
+                with patch.object(execution, "_wait_for_main_exit", side_effect=cancel_once):
                     with self.assertRaises(type(cancellation)) as caught:
                         self.run_python("import time; time.sleep(10)", cleanup=callback)
                 self.assertIs(caught.exception, cancellation)
@@ -128,7 +128,7 @@ class ExecutionTests(unittest.TestCase):
     def test_backend_cleanup_failure_overrides_cancellation_and_retains_cause(self):
         failure = RuntimeError("container still running")
         callback = Mock(side_effect=failure)
-        original_wait = execution._wait_for_completion
+        original_wait = execution._wait_for_main_exit
         seen = []
 
         def cancel_once(process, deadline):
@@ -137,7 +137,7 @@ class ExecutionTests(unittest.TestCase):
                 raise KeyboardInterrupt
             return original_wait(process, deadline)
 
-        with patch.object(execution, "_wait_for_completion", side_effect=cancel_once):
+        with patch.object(execution, "_wait_for_main_exit", side_effect=cancel_once):
             with self.assertRaisesRegex(execution.ToolCleanupError, "container still running") as caught:
                 self.run_python("import time; time.sleep(10)", cleanup=callback)
         self.assertIs(caught.exception.__cause__, failure)

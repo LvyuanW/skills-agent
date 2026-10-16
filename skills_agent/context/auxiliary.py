@@ -5,7 +5,7 @@ import json
 import re
 from uuid import uuid4
 
-from . import DEFAULT_CONTEXT_TOKENS, image_records
+from . import DEFAULT_CONTEXT_TOKENS, image_records, is_user_request
 from ..images import project_images
 from ..providers.base import ProviderError, ProviderOutputLimitError, blocks
 from ..providers.retry import retry_call
@@ -439,7 +439,7 @@ class Auxiliary:
         if not self._fits(_REPORT, payload(""), log=log, disable_thinking=True):
             entries = background.get("messages", background.get("records", [])) if isinstance(background, dict) else []
             users = [item.get("message", item) for item in entries
-                     if item.get("message", item).get("role") == "user"]
+                     if is_user_request(item.get("message", item))]
             background = {"current_user_task": users[-1] if users else
                           background.get("current_user_task", background.get("current_user"))
                           if isinstance(background, dict) else None}

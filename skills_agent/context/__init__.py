@@ -19,6 +19,11 @@ class ContextBudgetError(RuntimeError):
     pass
 
 
+def is_user_request(message):
+    """Runtime observations use the wire's user role without replacing user intent."""
+    return message.get("role") == "user" and not message.get("runtime_event")
+
+
 def image_records(records):
     """Project the complete chronology before records are split into summary batches."""
     messages = project_images([record["message"] for record in records])
@@ -238,7 +243,7 @@ class WorkingContext:
     def latest_user(self):
         self._update_images()
         return next((deepcopy(record["message"]) for record in reversed(self.records)
-                     if record["message"].get("role") == "user"), None)
+                     if is_user_request(record["message"])), None)
 
     def _system(self, system, summary=None):
         summary = self.state["summary"] if summary is None else summary
@@ -267,7 +272,7 @@ class WorkingContext:
         call_groups = [group for group in groups if group[0]["message"]["role"] == "assistant"]
         protected = {item["event_id"] for group in call_groups[-self.keep_calls:] for item in group}
         latest_user = next((record for record in reversed(self.records)
-                            if record["message"]["role"] == "user"), None)
+                            if is_user_request(record["message"])), None)
         if latest_user:
             protected.add(latest_user["event_id"])
         # Also keep user instructions in the retained chronological suffix.

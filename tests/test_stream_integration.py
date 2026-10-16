@@ -23,7 +23,7 @@ COMMAND = "printf STREAM_TOOL_OUTPUT; printf result > result.txt"
 
 
 def gated_response(provider):
-    arguments = json.dumps({"command": COMMAND, "name": SUMMARY})
+    arguments = json.dumps({"command": COMMAND, "name": SUMMARY, "run_in_background": False})
     split = arguments.index('"name"')
     if provider == "openai":
         reasoning = {"type": "reasoning", "id": "r1", "encrypted_content": "opaque-reasoning",

@@ -61,7 +61,7 @@ class BenchmarkTests(unittest.TestCase):
         message = {"content": text}
         if command:
             message["tool_calls"] = [{"id": "task", "type": "function", "function": {
-                "name": "shell", "arguments": json.dumps({"name": "完成任务脚本", "command": command}),
+                "name": "shell", "arguments": json.dumps({"name": "完成任务脚本", "command": command, "run_in_background": False}),
             }}]
         return {"choices": [{"finish_reason": reason or ("tool_calls" if command else "stop"),
                              "message": message}], "usage": {"prompt_tokens": 20, "completion_tokens": 10}}
@@ -183,7 +183,7 @@ class BenchmarkTests(unittest.TestCase):
                 (root / "prompt.txt").write_text("start a background writer")
                 writer = "import pathlib,time; p=pathlib.Path('heartbeat'); exec(\"while True:\\n with p.open('a') as f: f.write('x')\\n time.sleep(.02)\")"
                 start = [sys.executable, str(HELPER), "start", "--state-dir", str(state),
-                         "--name", "writer", "--", sys.executable, "-c", writer]
+                         "--name", "writer", "--service", "--", sys.executable, "-c", writer]
                 script = shlex.join(start)
                 if outcome == "sigterm":
                     script += "\nsleep 30"
@@ -223,7 +223,7 @@ class BenchmarkTests(unittest.TestCase):
             root = Path(directory)
             state = root / "process-state"
             script = shlex.join([sys.executable, str(HELPER), "start", "--state-dir", str(state),
-                                 "--name", "writer", "--", sys.executable, "-c", "import time; time.sleep(30)"])
+                                 "--name", "writer", "--service", "--", sys.executable, "-c", "import time; time.sleep(30)"])
             endpoint, requests = self.run_server(lambda count: self.response(script) if count == 1 else self.response())
             argv = [sys.executable, "-m", "skills_agent", "run", "--workspace", str(root),
                     "--model", "test-model", "--base-url", endpoint, "--api-format", "responses"]

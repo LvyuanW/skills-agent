@@ -83,7 +83,7 @@ class ProcessManagementTests(unittest.TestCase):
         argv = [sys.executable, str(SCRIPT), "start", "--state-dir", str(self.state_dir), "--name", "worker", "--", sys.executable, "-u", "-c", "import time; print('READY'); time.sleep(30)"]
         self.names.add("worker")
         began = time.monotonic()
-        shell = json.loads(tools.execute("shell", json.dumps({"name": "start an owned worker", "command": shlex.join(argv)})))
+        shell = json.loads(tools.execute("shell", json.dumps({"name": "start an owned worker", "command": shlex.join(argv), "run_in_background": False})))
         elapsed = time.monotonic() - began
         self.assertEqual(shell["exit_code"], 0, shell)
         self.assertLess(elapsed, 5, "The outer shell must return without waiting for a persistent worker")

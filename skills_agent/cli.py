@@ -1,5 +1,6 @@
 import argparse
 import json
+from math import isfinite
 from pathlib import Path
 import shlex
 import signal
@@ -109,7 +110,7 @@ def _tool_result(message):
 
 
 def _tool_failed(result):
-    return isinstance(result, dict) and bool(result.get("error") or result.get("feedback_errors") or
+    return isinstance(result, dict) and bool(result.get("error") or result.get("feedback_errors") or result.get("cleanup_required") or
                                             "exit_code" in result and result["exit_code"] != 0)
 
 
@@ -138,6 +139,74 @@ def _tool_images(blocks, output):
             _print(f"  {label} {path}", "tool", output)
 
 
+def _background_result(message):
+    """Read the existing runtime observation, without showing its user envelope."""
+    content = message.get("content", [])
+    blocks = [{"type": "text", "text": content}] if isinstance(content, str) else content or []
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") != "text":
+            continue
+        try:
+            result = json.loads(block.get("text"))
+        except (TypeError, ValueError):
+            continue
+        if isinstance(result, dict) and ("job_id" in result or "state" in result):
+            return result, blocks
+    return {}, blocks
+
+
+def _background_result_key(message, result):
+    identifier = message.get("background_result_id") or result.get("job_id") or message.get("background_job_id")
+    return ("background-result", identifier) if isinstance(identifier, str) and identifier else None
+
+
+def _render_background_result(message, output, *, full=False):
+    result, blocks = _background_result(message)
+    state, code = result.get("state"), result.get("exit_code")
+    cleanup = result.get("cleanup_required") is True
+    timed_out = state == "timed_out" or result.get("timed_out") is True
+    if timed_out:
+        status = "超时"
+    elif state == "stopped":
+        status = "已停止"
+    elif state == "failed" or code is not None and code != 0:
+        status = "失败" + (f"（退出码 {code}）" if code is not None else "")
+    elif cleanup:
+        status = "入口已退出" + (f"（退出码 {code}）" if code is not None else "")
+    elif code == 0:
+        status = "完成"
+    else:
+        status = "已退出（退出码未知）"
+    if cleanup:
+        status += "，已清理残留进程"
+    duration = result.get("duration_seconds")
+    if (not isinstance(duration, bool) and isinstance(duration, (int, float))
+            and isfinite(duration)):
+        status += f" · {max(0, duration):.1f} 秒"
+    label = "后台服务" if result.get("kind") == "service" else "后台任务"
+    name = _purpose(result, "display_name", "name")
+    if name:
+        label += f"「{name}」"
+    delegated = _purpose(result, "delegated_task_name")
+    if delegated:
+        label += f"（子任务「{delegated}」）"
+    failed = timed_out or cleanup or state in {"failed", "stopped", "orphaned", "unknown"} or code != 0
+    _tool_note(f"· {label}：{status}；结果已加入上下文", output,
+               key=_background_result_key(message, result), failed=failed)
+    if full:
+        role = "error" if failed else "tool"
+        for block in blocks:
+            if block.get("type") == "text":
+                # The first block is an internal English instruction envelope.
+                # Full history expands the public result and attachments only.
+                if block.get("text", "").startswith("[Runtime background job result"):
+                    continue
+                _print(block["text"], role, output)
+            elif block.get("type") != "image":
+                _print(f"[{block.get('type')}] {block.get('path', '')}", role, output)
+    _tool_images(blocks, output)
+
+
 def _render_full_event(event, output):
     """Render original public content; child calls/results stay in the session log."""
     output = output or sys.stdout
@@ -154,6 +223,8 @@ def _render_full_event(event, output):
         _print(f"error: {event['message']}", "assistant", output)
     elif kind == "message":
         message = event["message"]
+        if message.get("runtime_event") == "background_job_result":
+            return _render_background_result(message, output, full=True)
         role = message["role"]
         if role == "tool" and message.get("name") == "subagent":
             return
@@ -238,6 +309,8 @@ def render_event(event, output=None, *, full=False, echo_user=True, tool_names=N
         _print(f"error: {_brief(event['message'])}", "assistant", output)
     elif kind == "message":
         message = event["message"]
+        if message.get("runtime_event") == "background_job_result":
+            return _render_background_result(message, output)
         role = message["role"]
         if role == "tool":
             if message.get("name") == "subagent":
@@ -247,12 +320,16 @@ def render_event(event, output=None, *, full=False, echo_user=True, tool_names=N
             if isinstance(result, dict):
                 if result.get("error"):
                     status = f"失败：{_brief(result['error'])}"
+                elif result.get("job_id") and result.get("completed") is False:
+                    status = "已返回服务启动回执" if result.get("kind") == "service" else "已返回后台启动回执"
                 elif "exit_code" in result:
                     code = result["exit_code"]
                     status = "完成" if code == 0 else f"失败（退出码 {code}）"
                     lines = sum(len(str(result.get(key, "")).splitlines()) for key in ("stdout", "stderr"))
                     if lines:
                         status += f"，输出 {lines} 行"
+                if result.get("cleanup_required"):
+                    status += "，已清理残留进程"
                 if result.get("feedback_errors"):
                     status += "，反馈获取失败"
             images = sum(isinstance(block, dict) and block.get("type") == "image" for block in blocks)
@@ -302,6 +379,7 @@ class ConsoleRenderer:
         self._tool_names = {}
         self._tool_keys = {}
         self._pending_tools = {}
+        self._background_results = set()
 
     @property
     def _mutable_tools(self):
@@ -421,6 +499,21 @@ class ConsoleRenderer:
             self.output.finish_response()
 
     def __call__(self, event):
+        if (event.get("type") == "message"
+                and event["message"].get("runtime_event") == "background_job_result"):
+            message = event["message"]
+            key = _background_result_key(message, _background_result(message)[0])
+            if key is not None:
+                if key in self._background_results:
+                    return
+                self._background_results.add(key)
+            self._finish_stream()
+            render_event(event, self.output, full=self.full)
+            return
+        if event.get("type") == "background_jobs":
+            if self.live and hasattr(self.output, "set_background_jobs"):
+                self.output.set_background_jobs(event["jobs"])
+            return
         if event.get("type") == "activity":
             if self.live and hasattr(self.output, "set_activity"):
                 activity = event.get("activity")

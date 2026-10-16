@@ -32,6 +32,8 @@ class ScriptedModel(Counter):
 
 
 def call(name, args, number=1):
+    if name == "shell":
+        args = {"run_in_background": False, **args}
     return {"role": "assistant", "content": "", "tool_calls": [
         {"name": name, "arguments": json.dumps(args), "id": f"call-{number}"}]}
 
@@ -208,6 +210,28 @@ class AgentContextTests(unittest.TestCase):
                     self.assertFalse(reports)
                 else:
                     self.assertEqual(len(reports), 1)
+
+    def test_derived_report_cannot_hide_background_receipt_or_residual_cleanup(self):
+        cases = [
+            {"exit_code": 0, "stdout": "partial work", "stderr": "", "cleanup_required": True,
+             "cleanup_confirmed": True, "cleanup_reason": "main_process_exited",
+             "cleanup_message": "Residual work was stopped."},
+            {"status": "started", "completed": False, "job_id": "registered-job",
+             "name": "internal-name", "background_lifecycle": "service", "wait_on_exit": False,
+             "persistent": True, "stdout_path": "/saved/stdout.log", "stderr_path": "/saved/stderr.log"},
+        ]
+        for index, execution in enumerate(cases):
+            with self.subTest(execution=execution):
+                self.session = Session(self.root, f"derived-{index}")
+                model = ScriptedModel([call("shell", {"name": "run", "command": "ignored", "result_mode": "report"}),
+                                       final("done")])
+                agent = self.agent(model)
+                agent.tools.execute = lambda *args: json.dumps(execution)
+                agent.auxiliary.tool_report = lambda *args: "Summary with no execution metadata"
+                agent.run({"role": "user", "content": "run work"})
+                result = json.loads(model.calls[-1][1][-1]["content"])
+                for key in set(execution) - {"stdout", "stderr"}:
+                    self.assertEqual(result[key], execution[key], key)
 
     def test_failed_tool_report_keeps_review_running_without_replaying_commands(self):
         class ReportModel(ScriptedModel):

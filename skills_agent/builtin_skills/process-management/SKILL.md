@@ -1,30 +1,31 @@
 ---
 name: process-management
 description: >-
-  Use when a server or long-running job must remain active across shell calls,
-  with saved process records, readiness checks, logs and owned-process cleanup.
-  Skip short foreground commands or checks needed immediately; use feedback for
-  a bounded run that does not need background management.
+  Inspect, wait for readiness or completion, read logs, and stop jobs already
+  registered by shell run_in_background=true. Use when an intermediate observation
+  or explicit stop is needed. Starting background work belongs to background-tasks;
+  ordinary foreground execution does not require this skill.
 ---
 
-Use a saved process reference when a program must run while other work proceeds. Start the task's own program through [scripts/process.py](scripts/process.py), then use its returned state and logs rather than assuming launch means readiness. A bounded command needed immediately can instead use the feedback skill's `run` operation.
+Use this skill to manage an existing registered job. Start all background work with the existing `shell` tool's `run_in_background=true`, following the [background-tasks skill](../background-tasks/SKILL.md). Do not use this helper's legacy `start` operation as a second launch interface. You do not need to read this skill just to start a job or receive the runtime's automatic completion result.
 
-Read or adapt the script to understand the method; its process registration and ownership protocol are necessary for the agent's automatic cleanup. Direct use requires Python 3.11 or newer on POSIX with `waitid/WNOWAIT`; it is validated on macOS and does not support Windows or container-to-host path translation. Resolve its absolute path from this SKILL.md. Keep the same absolute `--state-dir` and `--name` across calls; shell variables do not persist.
+Resolve [scripts/process.py](scripts/process.py) to an absolute path from this SKILL.md. Copy the exact internal `state_dir` and `name` from the shell launch receipt; `display_name` is only the human-facing label. Keep those values across calls; shell variables do not persist. The helper needs Python 3.11 or newer and a POSIX host with `ps` and `waitid/WNOWAIT`.
 
-| Operation | Result |
+| Operation | Observation |
 | --- | --- |
-| `start --state-dir DIR --name NAME [--cwd DIR] [--persistent] -- COMMAND...` | Detached supervisor, command PID, saved record and complete stdout/stderr logs |
 | `status --state-dir DIR --name NAME` | Verified supervisor identity and recorded lifecycle/exit status |
-| `wait --state-dir DIR --name NAME [--timeout 30]` | Actual command status; timeout returns 124 and leaves it running |
-| `wait ... --match TEXT [--stream stdout\|stderr\|both]` | Wait for a literal log marker while the process runs; flush readiness logs |
+| `logs --state-dir DIR --name NAME [--max-chars 6000]` | Bounded stdout/stderr tails and complete log paths |
+| `wait --state-dir DIR --name NAME [--timeout 30]` | Wait for actual exit; observation timeout returns 124 and leaves the job running |
+| `wait ... --match TEXT [--stream stdout\|stderr\|both]` | Wait for a literal log marker while the job runs; the program must flush readiness logs |
 | `wait ... --tcp HOST PORT` | Observe reachability, not service identity or correct behavior |
-| `logs --state-dir DIR --name NAME [--max-chars 6000]` | Bounded tails and complete log paths |
-| `stop --state-dir DIR --name NAME [--grace 3 --timeout 10]` | TERM then KILL for the owned process group and confirmation of cleanup |
+| `stop --state-dir DIR --name NAME [--grace 3 --timeout 10]` | Request TERM, escalate to KILL for the owned process group, and confirm cleanup |
 
-Arguments execute directly; use `sh -lc '...'` for shell syntax. Commands must remain foreground members of the supervisor's process group. Daemonizing or starting a new session escapes its ownership. Commands needing interactive stdin require another approach. An active or unconfirmed name cannot be reused; an ended run may be replaced with fresh logs. Inspect readiness and actual task behavior separately, and stop only task-owned work.
+Invoke these short management commands with `shell run_in_background=false`. Give the shell call enough time for the helper's bounded wait or stop, within the synchronous 600-second maximum. An observation deadline neither extends nor replaces the job's independent execution deadline.
 
-For a background computation, make progress observable through flushed logs, completed units or saved intermediate results, and inspect those observations against its chosen stopping condition. A `wait --timeout` expiry only returns control; it does not stop the job or enforce its execution deadline. When the stopping condition is reached, use `stop` if the job has not exited and verify the returned state. Choose waits around expected progress and the remaining budget; do not repeat identical polls indefinitely without new information. If progress cannot be established, inspect or report that gap rather than treating elapsed waiting as evidence of useful work.
+Only wait or poll to answer a concrete dependency, readiness or progress question. Prefer meaningful flushed markers or task-specific checks over elapsed time. TCP reachability alone does not prove your service is ready or behaving correctly. When no intermediate observation is needed, continue independent work and let the runtime deliver completion. A successful launch or a marker is not proof of full computation success.
 
-Within the agent, registered jobs belong to the turn that started them, including subagent jobs. Failed/cancelled turns stop their new jobs. Successful CLI turns keep them available across turns; leaving the CLI stops them. Only a user-requested ongoing service should use `--persistent`, and it survives exit only after its creating turn succeeds. Benchmark runs forbid persistence and clean up all registered jobs on success, failure or interruption. Outside the agent, use `stop` explicitly. Do not detach to evade this ownership.
+Explicitly stop a job when it is no longer needed. Read the returned state: a `stop --timeout` expiry only ends that observation, so use `status` to confirm subsequent cleanup. Do not relaunch a duplicate merely because an observation timed out. A `task` must reach a confirmed terminal state before the Agent can finish. A `service` may remain running after a successful reply and normal CLI exit, but needs an actual readiness and behavior check before delivery. Preserve its job ID, absolute state/log paths and exact stop command for later management; stop it when no longer needed. A failed or cancelled turn cleans its newly launched services, while previously retained services remain. Benchmark rejects services.
 
-The supervisor retains its direct child's PID until group cleanup ends and never signals a PID supplied by the model or a record. If ownership cannot be confirmed, status is `orphaned` and stop refuses to guess. Report that gap rather than launching duplicates. Preserve the absolute state directory, name and log paths for an intentionally continuing service. Read [references/across-turns.md](references/across-turns.md) for a start/observe/stop example.
+The supervisor signals only its verified owned process group. If ownership cannot be confirmed, it reports `orphaned` and refuses to guess; report that gap rather than signaling an arbitrary PID or treating it as completion. This is the same cooperative process-group boundary as shell execution, not a hard sandbox: do not create new sessions, daemonize or delegate unmanaged work. Entry exit status does not contain every descendant's status; scripts must wait and aggregate their internal results.
+
+Read [references/across-turns.md](references/across-turns.md) for status, logs, readiness and stop examples using a shell launch receipt.

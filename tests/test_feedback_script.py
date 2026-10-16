@@ -321,7 +321,7 @@ class FeedbackScriptTests(unittest.TestCase):
         command = shlex.join([sys.executable, str(SCRIPT), "text", str(target)])
         result = json.loads(tools.execute("shell", json.dumps({
             "name": "Inspect the saved artifact using feedback", "command": command,
-            "result_mode": "direct",
+            "result_mode": "direct", "run_in_background": False,
         })))
         self.assertEqual(result["exit_code"], 0, result["stderr"])
         data = json.loads(result["stdout"])

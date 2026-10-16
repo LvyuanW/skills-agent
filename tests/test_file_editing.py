@@ -289,7 +289,7 @@ class FileEditingTests(unittest.TestCase):
                               "--text", "literal $(printf wrong) `pwd` 中文"])
         result = json.loads(tools.execute("shell", json.dumps({
             "name": "Create an artifact using the file-editing skill", "command": command,
-            "result_mode": "direct",
+            "result_mode": "direct", "run_in_background": False,
         })))
         self.assertEqual(result["exit_code"], 0, result["stderr"])
         self.assertEqual(json.loads(result["stdout"])["operation"], "create")

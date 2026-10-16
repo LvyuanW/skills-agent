@@ -24,10 +24,13 @@ from skills_agent.tools import ToolRegistry
 
 
 def tool_response(command, *, identifier="command", name="shell", timeout_seconds=0.5):
+    arguments = {"name": "Run bounded work", "command": command,
+                 "timeout_seconds": timeout_seconds}
+    if name == "shell":
+        arguments["run_in_background"] = False
     return {"role": "assistant", "content": "", "tool_calls": [{
         "id": identifier, "name": name,
-        "arguments": json.dumps({"name": "Run bounded work", "command": command,
-                                 "timeout_seconds": timeout_seconds}),
+        "arguments": json.dumps(arguments),
     }]}
 
 
@@ -88,6 +91,7 @@ class ToolExecutionTimeoutTests(unittest.TestCase):
     def shell(self, command, *, timeout_seconds=0.5):
         return json.loads(self.tools.execute("shell", json.dumps({
             "name": "Run bounded work", "command": command, "timeout_seconds": timeout_seconds,
+            "run_in_background": False,
         })))
 
     def assert_stopped(self, *pid_files):
@@ -160,9 +164,12 @@ print('parent-exited', flush=True)
         started = time.monotonic()
         result = self.shell(self.command(launcher))
         self.assertLess(time.monotonic() - started, 6)
-        self.assertEqual(result["exit_code"], 124)
-        self.assertIs(result["timed_out"], True)
-        self.assertEqual(result["process_returncode"], 0)
+        self.assertEqual(result["exit_code"], 0)
+        self.assertIs(result["cleanup_required"], True)
+        self.assertIs(result["cleanup_confirmed"], True)
+        self.assertIs(result["cleanup_forced"], True)
+        self.assertEqual(result["cleanup_reason"], "main_process_exited")
+        self.assertNotIn("timed_out", result)
         self.assertIn("parent-exited", result["stdout"])
         self.assert_stopped(child_pid)
 
@@ -262,7 +269,7 @@ print('parent-exited', flush=True)
     def test_timeout_preserves_registered_service_from_a_previous_tool_call(self):
         state = self.root / "services"
         start = shlex.join([sys.executable, str(HELPER), "start", "--state-dir", str(state),
-                            "--name", "existing", "--", sys.executable, "-c", "import time; time.sleep(10)"])
+                            "--name", "existing", "--service", "--", sys.executable, "-c", "import time; time.sleep(10)"])
         slow = self.script("slow.py", "import time\ntime.sleep(10)\n")
 
         def run_slow(messages):

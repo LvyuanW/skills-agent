@@ -28,7 +28,7 @@ class SkillsToolsTests(unittest.TestCase):
         self.tools = ToolRegistry(self.workspace)
 
     def shell(self, command):
-        return json.loads(self.tools.execute("shell", json.dumps({"name": "执行测试脚本", "command": command})))
+        return json.loads(self.tools.execute("shell", json.dumps({"name": "执行测试脚本", "command": command, "run_in_background": False})))
 
     def script(self, *arguments):
         return self.shell(shlex.join([sys.executable, str(SCRIPT), *arguments]))
@@ -103,6 +103,7 @@ class SkillsToolsTests(unittest.TestCase):
         (self.workspace / "result.txt").unlink()
         result = json.loads(self.tools.execute("shell", json.dumps({
             "command": command, "name": "touch summary-must-not-run", "result_mode": "direct",
+            "run_in_background": False,
         })))
         self.assertEqual(result, expected)
         self.assertEqual(result["stdout"], "exact\noutput")
@@ -129,12 +130,14 @@ class SkillsToolsTests(unittest.TestCase):
             schema = next(item for item in tools.schemas if item["name"] == name)
             timeout = schema["parameters"]["properties"]["timeout_seconds"]
             self.assertEqual(timeout["type"], "number")
-            self.assertEqual(timeout["maximum"], 600)
+            if name == "sandbox":
+                self.assertEqual(timeout["maximum"], 600)
             for value in (True, False, 0, -1, float("nan"), float("inf"), 601, "5", None):
                 with self.subTest(name=name, value=value), patch("skills_agent.tools.run_command") as host, \
                         patch.object(sandbox, "run") as container:
                     result = json.loads(tools.execute(name, json.dumps({
                         "name": "deadline", "command": "touch should-not-exist", "timeout_seconds": value,
+                        **({"run_in_background": False} if name == "shell" else {}),
                     })))
                     self.assertIn("timeout_seconds", result["error"])
                     host.assert_not_called()
@@ -154,7 +157,8 @@ class SkillsToolsTests(unittest.TestCase):
                              on_activity=activity.append)
         schemas = {item["name"]: item["parameters"] for item in tools.schemas}
         for name in ["shell", "sandbox"]:
-            self.assertEqual(schemas[name]["required"], ["name", "command"])
+            self.assertEqual(schemas[name]["required"], ["name", "command", "run_in_background"]
+                             if name == "shell" else ["name", "command"])
             self.assertEqual(schemas[name]["properties"]["name"]["type"], "string")
             self.assertNotIn("summary", schemas[name]["properties"])
             for arguments in [
@@ -166,6 +170,8 @@ class SkillsToolsTests(unittest.TestCase):
                 {"command": "touch should-not-exist", "name": "description", "result_mode": True},
                 {"command": "touch should-not-exist", "name": "description", "extra": "x"},
             ]:
+                if name == "shell":
+                    arguments = {"run_in_background": False, **arguments}
                 with self.subTest(name=name, arguments=arguments), patch.object(sandbox, "run") as run:
                     self.assertIn("error", json.loads(tools.execute(name, json.dumps(arguments))))
                     run.assert_not_called()
@@ -187,7 +193,7 @@ class SkillsToolsTests(unittest.TestCase):
             "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
             "Path('child.pid').write_text(str(child.pid)); time.sleep(60)"
         )
-        real_wait = execution._wait_for_completion
+        real_wait = execution._wait_for_main_exit
         launched = []
 
         def interrupt_when_child_starts(process, deadline):
@@ -201,7 +207,7 @@ class SkillsToolsTests(unittest.TestCase):
             return real_wait(process, deadline)
 
         try:
-            with patch("skills_agent.execution._wait_for_completion", side_effect=interrupt_when_child_starts):
+            with patch("skills_agent.execution._wait_for_main_exit", side_effect=interrupt_when_child_starts):
                 with self.assertRaises(KeyboardInterrupt):
                     self.shell(shlex.join([sys.executable, "-c", source]))
             self.assertIsNotNone(launched[0].returncode)

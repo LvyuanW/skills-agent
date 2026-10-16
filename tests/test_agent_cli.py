@@ -43,6 +43,8 @@ def answer(text, calls=None):
 
 
 def call(name, values, identifier="c1"):
+    if name == "shell":
+        values = {"run_in_background": False, **values}
     return {"id": identifier, "name": name, "arguments": json.dumps(values)}
 
 
@@ -243,7 +245,8 @@ class AgentTests(unittest.TestCase):
             self.assertEqual((path / "generated.py").read_text(), source)
             self.assertEqual((path / "runs.txt").read_text(), "executed once\n")
             saved_call = next(message for message in session.messages() if message.get("tool_calls"))
-            self.assertEqual(json.loads(saved_call["tool_calls"][0]["arguments"]), {"name": "运行测试脚本", "command": command})
+            self.assertEqual(json.loads(saved_call["tool_calls"][0]["arguments"]),
+                             {"name": "运行测试脚本", "command": command, "run_in_background": False})
             context_call = next(message for message in model.observed if message.get("tool_calls"))
             excerpt = json.loads(context_call["tool_calls"][0]["arguments"])["command"]
             self.assertEqual(excerpt, command)
@@ -482,7 +485,7 @@ class CLIProtocolTests(unittest.TestCase):
                         requests.append((self.path, data))
                         if len(requests) <= len(commands):
                             arguments = {"command": commands[len(requests) - 1],
-                                         "name": summaries[len(requests) - 1]}
+                                         "name": summaries[len(requests) - 1], "run_in_background": False}
                             identifier = f"shell{len(requests)}"
                             if provider == "openai":
                                 response = {"choices": [{"finish_reason": "tool_calls", "message": {

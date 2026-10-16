@@ -124,7 +124,7 @@ macOS 下在输入行按 **Ctrl-V** 粘贴剪贴板中的图片或已复制的�
   --log-dir /path/to/run-logs
 ```
 
-完整任务从 UTF-8 文件读取，执行到模型返回最终回答后退出。配置文件的读取规则、模型、技能和附件参数与 `run` 相同。每次运行使用独立的 `<log-dir>/session`，已存在时直接报错。退出码为成功 `0`、失败 `1`、中断 `130`。正常结束、失败或接到 SIGTERM 时，均清理当前脚本及通过 process-management 启动的本任务后台进程，再退出；benchmark 不允许创建跨任务保留的服务。
+完整任务从 UTF-8 文件读取，执行到模型返回最终回答后退出。配置文件的读取规则、模型、技能和附件参数与 `run` 相同。每次运行使用独立的 `<log-dir>/session`，已存在时直接报错。退出码为成功 `0`、失败 `1`、中断 `130`。正常结束、失败或接到 SIGTERM 时，均清理当前脚本及通过 shell 登记的本任务后台进程，再退出；benchmark 明确拒绝 `background_lifecycle=service`，不允许创建跨任务保留的服务。
 
 [ALE 接入说明](adapters/ale/README.md) 包含可复制到 ALE 仓库的 Deployer、Agent 配置及单任务 smoke 配置。适配器在 ALE 的任务 sandbox 内安装并运行本项目，产物由 Agent 按题目指定路径写入，日志写入 ALE 的 `executor.work_dir`。
 
@@ -147,7 +147,7 @@ skills_agent/
   tools/             shell、subagent、sandbox
   skills/            技能发现与系统提示词中的技能目录
   sandbox/           Docker 命令执行
-  builtin_skills/    通用读取、编辑、反馈、调查、修复、进程管理、验收标准和交付审查技能
+  builtin_skills/    通用读取、编辑、反馈、调查、修复、后台任务、进程管理、验收标准和交付审查技能
 tests/
 adapters/ale/        ALE Deployer 与运行配置
 ```
@@ -165,7 +165,7 @@ adapters/ale/        ALE Deployer 与运行配置
 - 压缩摘要关闭思考，默认生成上限为8192 tokens，提示词要求正文和引用合计在本次额度内完成。用旧摘要和本次移出的工作记录生成新摘要；材料过长时按完整调用组分批合并。摘要期望格式为 `{"summary": "正文，可使用【R1】", "references": {"R1": ["event-123"]}}`；引用作为原文定位线索，JSON 格式、引用或引文错误不阻断压缩，旧 Markdown 摘要仍可继续使用。程序直接保存模型返回文本，不调用独立模型核验。达到生成上限而正常结束时，已返回的非空文本仍可采用，结束原因保存在私有日志中。候选请求仍超预算时，在同一摘要流程中继续缩短摘要；装入预算后直接替换，不要求 token 数严格减少。网络断流、取消或程序异常时保留旧上下文；辅助生成和远程 token 计量遇到可重试故障时，每次失败后固定等待5秒，无次数上限；不拼接残片，不重跑工具。Ctrl-C、进程退出和 ALE 等外层运行时限仍可终止等待。
 - `--summary-output-tokens` 默认8192，是辅助生成的输出额度，与工具报告正文预算分开；需符合实际模型输出能力。摘要请求的实际额度同时受模型剩余窗口和主请求可容纳摘要的空间约束。最近10组、最新用户任务或固定输入本身过长时明确报告预算限制，不缩短保护范围。
 - Anthropic 客户端压缩在协议允许的边界移除失效 thinking 的发送副本，原始历史不变。工具结果尚待回送且需要原签名时延后压缩；硬预算仍不能超出。
-- shell/sandbox 必填 `name`，并可选择 `result_mode: auto | direct | report`。`auto` 默认保留不超过8192 tokens的结果，超过则生成2048 tokens以内的报告；`direct` 保留原文，装不下时返回原始事件和行范围；`report` 直接形成有证据的结论。工具报告的生成与计量均关闭思考，截断正文不作为完整报告采用；报告失败时返回明确的 `report_error`、原执行状态及原始结果读取位置，保留图片，当前任务继续。原始结果总是先完整落盘，取消仍立即中断。官方接口对报告正文的独立计量包含少量请求开销，因此是保守预算。
+- shell/sandbox 必填 `name`，shell 另必填布尔值 `run_in_background`；可选择 `result_mode: auto | direct | report`。`auto` 默认保留不超过8192 tokens的结果，超过则生成2048 tokens以内的报告；`direct` 保留原文，装不下时返回原始事件和行范围；`report` 直接形成有证据的结论。工具报告的生成与计量均关闭思考，截断正文不作为完整报告采用；报告失败时返回明确的 `report_error`、原执行状态及原始结果读取位置，保留图片，当前任务继续。原始结果总是先完整落盘，取消仍立即中断。官方接口对报告正文的独立计量包含少量请求开销，因此是保守预算。
 - sub-agent 必填 `name + task`，最终返回 Markdown 报告，说明适用的结论、证据、产物和未解决事项；内部对话不进入主上下文或 UI。`history=true` 时，加载检索专用 history skill，并携带完整工作上下文只读快照搜索父会话；快照装不下就报错，不截断。主 Agent 和普通子任务的技能目录不包含该技能，普通子任务只接收明确交代的输入。
 - 普通子任务和历史检索子任务均继承主 Agent 的上下文预算配置。普通子任务不继承主对话，`task` 须交代目标、相关约束、必要材料、操作边界和预期交付。主 Agent 根据报告中的证据、执行结果和未解决事项继续工作，定点核验关键或矛盾之处，不盲信完成声明，也不重做整个子任务。
 - `history.sqlite` 增量索引原始主会话，支持中文与英文检索、事件/路径精确查找、行范围、邻近记录及工具配对。检索子任务通过查询扩展、回看证据和检查后续修正生成报告，只把最终报告带回主上下文。任何时候均可检索，不必等到压缩后。
@@ -232,11 +232,22 @@ PY
 python3 analyze.py
 ```
 
-脚本可使用当前环境中安装的语言与库，无需注册、固定入口或统一返回格式。shell 返回退出码、stdout 和 stderr，模型据此继续修改代码。配置的技能说明作为任务指导，普通输入资料与执行结果作为数据。
+脚本可使用当前环境中安装的语言与库，无需固定入口或统一返回格式。同步 shell 返回退出码、stdout 和 stderr，后台 shell 返回启动回执，实际完成结果由运行时随后交付；模型据此继续修改代码。配置的技能说明作为任务指导，普通输入资料与执行结果作为数据。
 
-shell 和 sandbox 必填 `name`，用简短自然语言说明脚本用途，供终端显示。参数尚未收全时显示“接收调用”，完整后更新为名称和“调用”，实际开始执行后更新为“执行中”；收到工具结果后更新为完成或失败，交互终端不另留调用占位行。断流或中断时保留已经显示的正文，工具摘要更新为失败或中断，并记录错误，不执行不完整的工具调用。
+shell 和 sandbox 必填 `name`，用简短自然语言说明脚本用途，供终端显示。shell 另必填布尔值 `run_in_background`：`false` 同步等待入口主进程，退出并清理同进程组残留后返回；`true` 自动登记后台作业，返回启动回执，由运行时继续监管。参数尚未收全时显示“接收调用”，完整后更新为名称和“调用”，实际开始执行后更新为“执行中”；收到工具结果后更新为完成或失败，交互终端不另留调用占位行。断流或中断时保留已经显示的正文，工具摘要更新为失败或中断，并记录错误，不执行不完整的工具调用。
 
-shell/sandbox 支持可选 `timeout_seconds`：默认120秒，须为正有限数值，最多600秒。达到时限后终止本次进程组，必要时从 TERM 升级 KILL；Docker sandbox 还须确认容器已移除。执行与清理均有时间边界，正常超时返回 `timed_out: true`、`exit_code: 124`、真实 `process_returncode`、已取得的 stdout/stderr 和完整日志路径，让模型继续调整方法；不自动重跑命令。超时结果中每个输出流至多返回末尾1 MiB，以 `stdout_truncated`／`stderr_truncated` 标记截断，完整字节日志仍保留。清理无法确认时终止当前 Agent 并明确报错。命令输出保存在会话 `tool-runs/` 中，用户取消仍在清理后传播；进程组清理需要宿主提供 POSIX `waitid/WNOWAIT` 和 `ps`。长任务使用进程管理技能后台运行，其 `wait --timeout` 只结束等待，不结束任务执行。递归搜索应先定位相关目录，在遍历端排除无关路径；下游过滤和 `head` 不构成执行时限。
+同步 shell（`run_in_background=false`）和 sandbox 支持可选 `timeout_seconds`：默认120秒，须为正有限数值，最多600秒。达到时限后终止本次进程组，必要时从 TERM 升级 KILL；Docker sandbox 还须确认容器已移除。执行与清理均有时间边界，正常超时返回 `timed_out: true`、`exit_code: 124`、真实 `process_returncode`、已取得的 stdout/stderr 和完整日志路径，让模型继续调整方法；不自动重跑命令。同步超时结果中每个输出流至多返回末尾1 MiB，以 `stdout_truncated`／`stderr_truncated` 标记截断，完整字节日志仍保留。清理无法确认时终止当前 Agent 并明确报错。同步命令输出保存在会话 `tool-runs/` 中，用户取消仍在清理后传播；进程组清理需要宿主提供 POSIX `waitid/WNOWAIT` 和 `ps`。后台 shell 的执行期限独立于启动回执：task 默认3600秒，service 默认无执行期限，两者均可用正有限 `timeout_seconds` 显式设置，且可超过600秒；启动回执另有10秒时限。管理 helper 的 `wait --timeout` 只结束一次观察，不改变作业期限。递归搜索应先定位相关目录，在遍历端排除无关路径；下游过滤和 `head` 不构成执行时限。
+
+普通同步调用示例：
+
+```json
+{
+  "name": "Inspect analysis inputs",
+  "command": "python3 -c 'from pathlib import Path; print(list(Path(\"input\").glob(\"*.csv\")))'",
+  "run_in_background": false,
+  "timeout_seconds": 30
+}
+```
 
 DeepSeek 本地完整请求计数会在副本中把保留字面量 `<｜image｜>` 替换为 `<|image|>`，避免编码库因普通工具文本包含该串而拒绝转换。实际发送请求及原始记录保留原文；计数量允许存在少量近似误差。
 
@@ -270,9 +281,36 @@ API 错误的脱敏诊断保存在对应会话 `events.jsonl` 的 `error.diagnos
 
 文件元数据、文本检查、截图和视觉判断各有适用范围：保存或渲染成功不能证明画面正确，单张截图不能证明动画流畅。视觉判断要求所用模型支持图片输入；`render` 需要现有浏览器，不自动安装依赖。PDF、办公文件等需用适当的已安装读取器提取文字或渲染页面，再获取相应文本或图片。
 
-内置 [process-management skill](skills_agent/builtin_skills/process-management/SKILL.md) 通过 `start/status/wait/logs/stop` 跨 shell 调用管理任务自有进程。独立 supervisor 保存实际状态和完整 stdout／stderr 日志，后台启动不会阻塞当前 shell；可以等待日志标记、TCP 可达或实际退出，再在后续回合读取状态、日志并停止进程。支持具备 waitid/WNOWAIT 的宿主 POSIX，已在 macOS 验证；不支持交互输入或自行脱离进程组的 daemon。停止仅由确认归属的 supervisor 清理自己的进程组，归属丢失时明确报告。分回合使用见[进程生命周期示例](skills_agent/builtin_skills/process-management/references/across-turns.md)。
+内置 [background-tasks skill](skills_agent/builtin_skills/background-tasks/SKILL.md) 是后台执行的启动说明：当 shell 需要先交还控制权而入口命令继续运行时必须使用，与命令运行多久、是否有子进程无关。普通同步命令无需使用；脚本内部并行但会等待全部子任务，也不因此要求使用。无需新增工具，在 shell 指定 `run_in_background=true`，可选 `background_lifecycle`：
 
-通过 Agent 的 shell 启动的后台任务会登记所属回合。回合失败或取消时清理该回合新建的任务，子 Agent 的任务也在此范围内；成功回合的后台服务可以继续供后续回合使用。普通 CLI 会话退出时清理本次会话登记的非持久任务。用户明确需要跨会话运行的服务，可用 helper 的 `start --persistent`；该选项仅在普通会话中允许，任务所属回合仍须成功完成。benchmark 总是在退出前清理所有登记任务，并拒绝 `--persistent`。直接在 Agent 之外运行 helper 时，进程仍由调用者通过 `stop` 管理。
+| 生命周期 | 默认执行期限 | 最终回复与保留规则 |
+| --- | --- | --- |
+| `task`（默认） | 3600秒 | 必须结束或停止，收到实际结果后才能完成会话 |
+| `service` | 无；可显式限制 | 验证健康和实际行为后允许交付，成功交付和正常 CLI 退出后由独立 supervisor 保持运行 |
+
+`run_in_background` 决定工具是否先返回；生命周期决定最终回复是否等待作业结束。`background_lifecycle` 用于后台调用，同步调用指定 `service` 会报错。不能把待完成的计算标记为 service 绕过等待。后台 task 示例：
+
+```json
+{
+  "name": "Build analysis outputs",
+  "command": "python3 -u analyze.py",
+  "run_in_background": true,
+  "background_lifecycle": "task",
+  "timeout_seconds": 7200
+}
+```
+
+启动回执只表示启动成功，启动确认期限独立为10秒，包含稳定 `job_id`、显示名称 `display_name`、`process_record_path`、`stdout_path`、`stderr_path`，以及管理所需的 `state_dir` 和内部安全 `name`。运行时登记所属回合、Agent 和原启动工具调用。脚本实际工作保持前台运行，脚本内部子进程必须逐个等待并汇总失败；入口退出后统一清理同组残留，再保存结果。清理过残留必须明确记录，不能仅以入口返回0认定全部自然完成。禁止 `nohup`、`setsid`、自行 daemonize 或把实际计算放出去后提前退出；允许内部并行的 `&`，但入口必须等待每个子任务。这是进程组与脚本协作的契约，不能硬性阻止更换进程组、创建新会话或委托外部服务的脱离行为，不是任意脚本都无法绕过的沙箱。技能附有无子进程、同步子程序、并行等待、失败汇总及取消清理的可运行范例。
+
+完成后，Agent 在工具结果配对完成、下一次模型请求之前将真实状态、有限日志及完整日志路径送入工作上下文；模型响应期间完成的结果先保存，安全边界再交付。每次运行有稳定ID，原始会话中的投递记录用于去重。存在未完成 task 时，无工具调用的回复会进入等待，收到结果后继续请求模型；不把启动成功替代为任务完成，也不在无新结果时反复请求模型。
+
+后台 supervisor 只保存作业记录，界面观察线程只更新显示，工作上下文由 Agent 主循环统一写入。当前回复的整组工具调用必须全部配齐结果后，才能追加后台完成观察；模型正在输出时不改动在途请求。上下文计数、压缩和拼接结束后再次收取结果，有新结果则重建请求；API 每次重试发送前也执行此检查。观察是标明运行时来源的新消息，不重复返回已经收到启动回执的旧工具调用，也不替换真实用户任务。最后一次检查之后才完成的任务在下一安全边界投递，尚未结束的 task 仍会阻止正常结束。
+
+常驻服务使用同一 shell 接口的 `run_in_background=true, background_lifecycle=service`，启动后还须检查就绪和实际业务行为，再交付地址、作业ID、绝对状态/日志路径和准确的停止命令。成功回合的服务可跨回合及正常 CLI 退出继续运行；失败或取消回合清理本回合新建任务和服务，保留此前成功交付的服务。benchmark 明确拒绝 service，退出时清理本任务登记工作。当前 Docker sandbox 工具每次使用短生命周期容器，不支持这套后台协议；整个 Agent 在 ALE 容器内运行时，其 shell 仍可使用受管后台 task。
+
+内置 [process-management skill](skills_agent/builtin_skills/process-management/SKILL.md) 保留为已登记作业的管理能力，通过 `status/wait/logs/stop` 读取状态和日志、等待就绪或退出、停止任务。模型需要中途管理时才读取，不要求每次后台启动额外读取；不再通过 helper 的 start 启动作业。使用回执中的 `state_dir` 和内部 `name`，不要以显示名称推测。管理命令本身使用同步 shell。停止仅由确认归属的 supervisor 清理自己的进程组，归属丢失时明确报告；不支持交互输入或自行脱离监管的 daemon。分回合使用见[进程生命周期示例](skills_agent/builtin_skills/process-management/references/across-turns.md)。
+
+交互界面为 shell 自动登记的每个后台作业单独显示名称、状态和耗时，包括启动中、运行中、停止中、完成、失败、已超时和已停止；失败时显示退出码。后台计时精确到0.1秒，作业退出后保留最终状态和耗时；多个作业并行、模型回复或等待下一条用户消息时仍持续更新。F2选择模式冻结画面，返回后显示最新状态。动画和轮询快照不增加模型调用，也不写入对话或历史回放；完成结果则独立持久化并进入工作上下文。自行绕开后台接口启动的进程不具备这套登记和结果通知。
 
 内置 [investigation skill](skills_agent/builtin_skills/investigation/SKILL.md) 增加已知 HTTP(S) URL 的获取脚本，分别保存响应体、来源元数据和可选提取文本，保留实际 HTTP 状态、重定向、完整性与哈希；有界预览不足时可继续读取保存资料。默认响应上限 64 MiB，网络 deadline 覆盖重定向与渐进读取，超限或失败保留已取得的资料并明确标记不完整。它提供资料获取，不提供搜索、登录或页面脚本执行。
 
