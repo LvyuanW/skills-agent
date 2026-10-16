@@ -1,7 +1,9 @@
 import base64
 import json
+import platform
 from copy import deepcopy
 from http.client import HTTPException
+from importlib import metadata
 from pathlib import Path
 from typing import Protocol
 from urllib import error, request
@@ -179,9 +181,19 @@ class Provider(Protocol):
     def can_compact(self, messages: list[dict]) -> bool: ...
 
 
+def _user_agent() -> str:
+    try:
+        version = metadata.version("skills-cli-agent")
+    except metadata.PackageNotFoundError:
+        version = "dev"
+    return (f"skills-agent/{version} ({platform.system()}; {platform.machine()}) "
+            f"Python/{platform.python_version()}")
+
+
 def post_json(url: str, payload: dict, headers: dict) -> dict:
     req = request.Request(url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-                          headers={"Content-Type": "application/json", **headers}, method="POST")
+                          headers={"Content-Type": "application/json", "User-Agent": _user_agent(), **headers},
+                          method="POST")
     diagnostic = RequestDiagnostics(url, headers, len(req.data))
     try:
         with request.urlopen(req, timeout=120) as response:
@@ -226,7 +238,8 @@ def post_stream(url: str, payload: dict, headers: dict):
     req = request.Request(
         url,
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json", "Accept": "text/event-stream", **headers},
+        headers={"Content-Type": "application/json", "Accept": "text/event-stream",
+                 "User-Agent": _user_agent(), **headers},
         method="POST",
     )
     diagnostic = RequestDiagnostics(url, headers, len(req.data))
