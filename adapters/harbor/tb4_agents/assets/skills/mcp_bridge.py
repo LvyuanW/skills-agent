@@ -7,6 +7,7 @@ from contextlib import AsyncExitStack
 import json
 import os
 from pathlib import Path
+import signal
 import socket
 import sys
 import uuid
@@ -20,6 +21,10 @@ async def serve(config_path, socket_path):
 
     configurations = {item["name"]: item for item in json.loads(Path(config_path).read_text())}
     sessions, locks = {}, {}
+    stopping = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(signum, stopping.set)
     async with AsyncExitStack() as stack:
         async def session_for(name):
             if name not in configurations:
@@ -73,8 +78,11 @@ async def serve(config_path, socket_path):
         path.unlink(missing_ok=True)
         server = await asyncio.start_unix_server(handle, path=socket_path, limit=16 * 1024 * 1024)
         os.chmod(socket_path, 0o600)
-        async with server:
-            await server.serve_forever()
+        try:
+            async with server:
+                await stopping.wait()
+        finally:
+            path.unlink(missing_ok=True)
 
 
 def call(socket_path, request, image_dir):

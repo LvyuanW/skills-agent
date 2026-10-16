@@ -1,0 +1,14 @@
+{
+  "import_path": "adapters.harbor.tb4_agents.claude:DeepSeekClaude",
+  "model_name": "deepseek-v4.1-flash[1m]",
+  "kwargs": {
+    "api_base": "https://yuzhiapi.xyz",
+    "version": "2.1.300",
+    "reasoning_effort": "max",
+    "disallowed_tools": "WebSearch",
+    "binary_path": "/data/tb4/releases/claude-code/glibc/package/claude"
+  },
+  "env": {
+    "DEEPSEEK_API_KEY": "${DEEPSEEK_API_KEY}"
+  }
+}

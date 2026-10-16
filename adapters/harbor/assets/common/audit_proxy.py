@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Smoke-only DeepSeek relay that records allowlisted request/usage metadata.
+"""Smoke-only gateway relay that records allowlisted request/usage metadata.
 
 Run on a test host, then temporarily point a sandbox at its bridge IP. No API
 key is read from disk: the client's authorization is forwarded in memory only.
+The upstream origin must be selected from the user-confirmed allowlist.
 Prompts, response text, raw headers, and provider error bodies are never logged.
 This relay is deliberately not part of the formal benchmark network path.
 """
@@ -21,12 +22,30 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import sys
+
+# Keep standalone helper invocations usable from outside the release directory.
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
+
+from adapters.harbor.tb4_agents.gateway import AUTHORIZED_GATEWAY_HOSTS, gateway_base
+
+
+MODELS = ("deepseek-v4.1-flash", "deepseek-v4-1-flash-260910")
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, new_url):
+        return None
+
 
 _PATHS = {
     "/responses",
     "/v1/responses",
     "/anthropic/v1/messages",
     "/anthropic/v1/messages/count_tokens",
+    "/v1/messages",
+    "/v1/messages/count_tokens",
 }
 _NUMBER_KEYS = {
     "input_tokens", "output_tokens", "total_tokens", "prompt_tokens",
@@ -102,8 +121,14 @@ def request_metadata(body: dict) -> dict:
 class MetadataServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address: tuple, log_path: Path):
+    def __init__(self, address: tuple, log_path: Path, upstream_base: str, model: str = MODELS[0]):
+        upstream_base = gateway_base(upstream_base, protocol="anthropic")
+        if model not in MODELS:
+            raise ValueError("Smoke relay requires an explicitly supported model")
         super().__init__(address, Relay)
+        self.upstream_base = upstream_base
+        self.model = model
+        self.opener = urllib.request.build_opener(NoRedirect())
         self.log_path = log_path
         self.log_lock = threading.Lock()
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -147,14 +172,14 @@ class Relay(BaseHTTPRequestHandler):
             self.reject(400)
             return
         model = body.get("model", "")
-        if not isinstance(model, str) or model.removesuffix("[1m]") != "deepseek-flash":
+        if not isinstance(model, str) or model.removesuffix("[1m]") != self.server.model:
             self.reject(400)
             return
         request_id = str(uuid.uuid4())
-        endpoint = "https://api.deepseek.com" + self.path
+        endpoint = self.server.upstream_base + self.path
         self.server.record({
             "event": "request", "request_id": request_id,
-            "upstream_endpoint": "https://api.deepseek.com" + path,
+            "upstream_endpoint": self.server.upstream_base + path,
             **request_metadata(body),
         })
         headers = {
@@ -169,7 +194,7 @@ class Relay(BaseHTTPRequestHandler):
         started = time.monotonic()
         try:
             try:
-                response = urllib.request.urlopen(upstream, timeout=300)
+                response = self.server.opener.open(upstream, timeout=300)
             except urllib.error.HTTPError as error:
                 response = error
             with response:
@@ -222,5 +247,10 @@ if __name__ == "__main__":
     parser.add_argument("--bind", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--log", type=Path, required=True)
+    parser.add_argument("--upstream-base", required=True,
+                        choices=sorted(f"https://{host}" for host in AUTHORIZED_GATEWAY_HOSTS),
+                        help="User-confirmed upstream origin; original /v1/... paths are preserved.")
+    parser.add_argument("--model", choices=MODELS, default=MODELS[0],
+                        help="Exact allowed model; select the old ID explicitly for historical replay.")
     args = parser.parse_args()
-    MetadataServer((args.bind, args.port), args.log).serve_forever()
+    MetadataServer((args.bind, args.port), args.log, args.upstream_base, args.model).serve_forever()

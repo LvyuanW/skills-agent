@@ -1,0 +1,16 @@
+{
+  "package": "certifi",
+  "version": "2026.1.4",
+  "source": "Pinned Harbor virtual environment certifi distribution",
+  "source_file": "/data/tb4/venvs/harbor/lib/python3.12/site-packages/certifi/cacert.pem",
+  "upstream_package": "https://pypi.org/project/certifi/2026.1.4/",
+  "bundle_file": "ca-bundle.pem",
+  "sha256": "4f3975ff30abbf35443b486064ae8bcb41dff707ffdf576c76d292fb458aa0a9",
+  "runtime_environment_variable": "CODEX_CA_CERTIFICATE",
+  "remote_path": "/installed-agent/tb4-codex-ca-bundle.pem",
+  "purpose": "Public HTTPS roots for native Codex in task images lacking OS certificates; does not change OS trust files.",
+  "contains_private_credentials": false,
+  "license_file": "LICENSE.certifi",
+  "codex_tls_source_commit": "ff29a44391deccde0aba0f8390337d7f3c319ea4",
+  "codex_tls_source_url": "https://github.com/openai/codex/blob/rust-v0.149.1/codex-rs/http-client/src/custom_ca.rs"
+}

@@ -1,0 +1,16 @@
+{
+  "name": "freecad-conda-vtk92-compat-v1",
+  "benchmark_commit": "452bf305c6daa62fc59061d22133a7cbc7c1572e",
+  "tasks": ["freecad-impeller", "freecad-platform-drawing", "freecad-spring-clip"],
+  "phase": "verifier",
+  "validator": "gnucleus-freecad-validator[render]==0.1.3",
+  "pins": ["pyvista==0.48.4", "vtk==9.2.6"],
+  "reason": "Preserve the FreeCAD conda VTK 9.2 ABI. PyVista 0.49+ requires a newer VTK and pip cannot safely uninstall conda's distutils VTK.",
+  "sources": [
+    "https://pypi.org/pypi/gnucleus-freecad-validator/0.1.3/json",
+    "https://pypi.org/pypi/pyvista/0.48.4/json",
+    "https://github.com/pyvista/pyvista/releases/tag/v0.49.0"
+  ],
+  "official_task_sources_modified": false,
+  "validator_or_tests_modified": false
+}

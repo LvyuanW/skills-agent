@@ -1,0 +1,8 @@
+{
+  "import_path": "tb4_agents.skills:SkillsAgent",
+  "model_name": "deepseek-v4.1-flash",
+  "kwargs": {
+    "assets_path": "/data/tb4/experiments/gateway-yuzhi-20261016/skills-assets-7441b0691f21",
+    "api_base": "https://yuzhiapi.xyz/v1"
+  }
+}

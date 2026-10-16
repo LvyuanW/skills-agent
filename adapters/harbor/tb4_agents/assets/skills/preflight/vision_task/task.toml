@@ -1,0 +1,26 @@
+artifacts = ["/app/answer.txt"]
+
+[task]
+name = "local/tb4-skills-vision-child-preflight"
+
+[metadata]
+category = "Infrastructure"
+
+[agent]
+timeout_sec = 180.0
+
+[environment]
+cpus = 2
+memory_mb = 4096
+storage_mb = 2048
+build_timeout_sec = 600.0
+
+[verifier]
+environment_mode = "separate"
+timeout_sec = 60.0
+
+[verifier.environment]
+cpus = 1
+memory_mb = 512
+storage_mb = 2048
+build_timeout_sec = 600.0

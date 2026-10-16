@@ -1,8 +1,7 @@
 {
   "retrieved_at": "2026-10-16",
   "source_url": "https://api-docs.deepseek.com/quick_start/agent_integrations/codex/",
-  "catalog_sha256": "bce20f679495809f4fa6e48672b6dcbab84b6adff5251890b6e6a21eddb9c12f",
-  "note": "Official JSON catalog content, formatting normalized only; embedded model instructions are runtime data.",
+  "note": "Official snapshot remains intact. Experiment derivative maps the official Flash metadata slug to the user-confirmed exact gateway model deepseek-v4.1-flash, removes other models, permits only max effort and makes max the default. Other Flash metadata and model prompt fields are unchanged.",
   "codex_version": "0.149.1",
   "npm_linux_metadata": {
     "shasum": "4f02df1633de47903829650c38b02ec12f99214b",
@@ -26,5 +25,12 @@
       }
     },
     "unpackedSize": 322955698
-  }
+  },
+  "official_catalog_file": "official-models.json",
+  "official_catalog_sha256": "bce20f679495809f4fa6e48672b6dcbab84b6adff5251890b6e6a21eddb9c12f",
+  "experiment_catalog_file": "models.json",
+  "experiment_catalog_sha256": "9d11eb2daa7d6732162a6b6fc304a47f55681a25e4fe64ede864d482149a944e",
+  "source_model_slug": "deepseek-flash",
+  "experiment_model": "deepseek-v4.1-flash",
+  "transport_ca_provenance": "certs/source.json"
 }

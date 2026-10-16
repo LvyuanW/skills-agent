@@ -1,0 +1,10 @@
+{
+  "import_path": "adapters.harbor.tb4_agents.codex:DeepSeekCodex",
+  "model_name": "deepseek-v4.1-flash",
+  "kwargs": {
+    "api_base": "https://yuzhiapi.xyz/v1",
+    "version": "0.149.1",
+    "reasoning_effort": "max",
+    "web_search": "disabled"
+  }
+}

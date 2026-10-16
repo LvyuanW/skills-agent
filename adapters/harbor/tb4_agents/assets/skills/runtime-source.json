@@ -1,0 +1,36 @@
+{
+  "kind": "external_runtime_release_provenance",
+  "artifact_files_in_git": false,
+  "note": "This directory contains adapter source, metadata and fixtures, not an installable runtime bundle. Retain or reconstruct the separately published artifacts before install; the adapter verifies runtime-bundle.sha256.",
+  "evidence_source": "../output/terminal-bench4-preparation-20261016/gateway-yuzhi-20261016/skills-release.json (relative to repository root)",
+  "remote_assets_path": "/data/tb4/experiments/gateway-yuzhi-20261016/skills-assets-7441b0691f21",
+  "wheel_sha256": "7441b0691f21a78c49520b4b94865eb9d8d95ec842e4fe9a5a0a423c2190ec34",
+  "runtime_bundle_sha256": "c21f880cb717c066e58db343f01044db0f2eb818bbb633eafb8ee058b887b767",
+  "runtime_bundle_bytes": 61748213,
+  "source_git_head": "38be40e000c6da91e6722bee76b527288c60634f",
+  "source_tree_sha256": "01147222332d76ca3070aac044dc409d9d84e1ebfec0538c8ab1e0b9fe8005c7",
+  "package_files_byte_matched": 54,
+  "third_party_wheels_unchanged": 37,
+  "tokenizer_sha256": "81f64d1248a68ce3663e07ab3ee48b851e5df0e32d27cb98e4c9a268151e8d99",
+  "toml_sha256": "a482c0b7215325f901ac84e22718631aeb19a02c2e25f892f5a1b78da96f98e1",
+  "uv_lock_sha256": "206ab4c6c79f186726eed05298e8f6fe4a4317ed636f7c4163f4dc568875cad9",
+  "core_config_values": {
+    "context_tokens": 524000,
+    "model_context_window": 524000,
+    "max_output_tokens": 131072,
+    "summary_output_tokens": 8192
+  },
+  "effective_input_token_limit": 392928,
+  "compression_trigger_tokens": 392928,
+  "primary_model": "deepseek-v4.1-flash",
+  "api_base": "https://yuzhiapi.xyz/v1",
+  "external_inventory_file": "runtime-manifest.json",
+  "historical_releases": [
+    {
+      "assets_path": "/data/tb4/releases/skills-assets-31829dde914b",
+      "wheel_sha256": "31829dde914bd50997ca5d7d72304ce176ca70dfaba5f60c0a152e28bd4820ae",
+      "runtime_bundle_sha256": "4d179e78b72462efe6f3cd319f9cb17c7dc056b27a4c8f2897ca1105288200f6",
+      "runtime_bundle_bytes": 64398308
+    }
+  ]
+}

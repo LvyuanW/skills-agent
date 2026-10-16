@@ -1,0 +1,1987 @@
+{
+  "schema_version": "1.0",
+  "profile_id": "tb4-fixed-5cpu-21g-five-slots-v5",
+  "benchmark_commit": "452bf305c6daa62fc59061d22133a7cbc7c1572e",
+  "experimental_sidecar_limits": true,
+  "limits_are_official_workload_peaks": false,
+  "parent": {
+    "cpus": 30,
+    "memory_mb": 117760,
+    "cpuset": "2-31",
+    "swap_mb": 0
+  },
+  "host_reserved": {
+    "cpus": 2,
+    "memory_mb_minimum": 8192
+  },
+  "admission": {
+    "cpus": 28,
+    "memory_mb": 109568,
+    "slot_cpus": 5,
+    "slot_memory_mb": 21504,
+    "max_concurrent": 5,
+    "policy": "uniform_fixed_slots"
+  },
+  "harbor_egress_helper": {
+    "service": "harbor-docker-egress-control-sidecar",
+    "cpus": 0.25,
+    "memory_mb": 256,
+    "origin": "new_experimental_infrastructure_limit"
+  },
+  "storage": {
+    "declared_maximum_mb": 51200,
+    "docker_storage_limit_supported": false,
+    "disk_free_floor_percent": 20,
+    "note": "Pinned Harbor Docker backend enforces CPU/RAM only; storage_mb is a task declaration, not a per-container writable-layer quota. Cached image storage and writable layers share /data; admission pauses below the free-space floor."
+  },
+  "tasks": {
+    "atrx-vep-crispr": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 1800,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 1800,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "batched-eval-parity": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 1,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "no-network"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 900,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 1.25,
+          "memory_mb": 4352
+        }
+      }
+    },
+    "biped-contact-dynamics": {
+      "agent": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0,
+        "build_timeout_sec": 1800,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0,
+        "build_timeout_sec": 1800,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 2640,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 4,
+          "memory_mb": 8192
+        },
+        "verifier": {
+          "cpus": 4,
+          "memory_mb": 8192
+        }
+      }
+    },
+    "bun-sourcemap-leak": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "cad-model": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 240,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 8192
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 8192
+        }
+      }
+    },
+    "cargo-flight-dispatch": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 1200,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 1200,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "coq-block-bound": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 1800,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 1800,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 1200,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "ctr-optimization": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 180,
+      "compose": {
+        "path": "tasks/ctr-optimization/environment/docker-compose.yaml",
+        "sha256": "bc1b9cbe7c484c32222d1c8c3674032e0beb5398be7604747db80ce519a5245b"
+      },
+      "sidecars": {
+        "api": {
+          "cpus": 2,
+          "memory_mb": 4096,
+          "rationale": "Flask/ML inference API; generous fixed CPU/RAM envelope, subject to keyless acceptance.",
+          "origin": "new_experimental_limit"
+        }
+      },
+      "phase_envelope": {
+        "agent": {
+          "cpus": 4,
+          "memory_mb": 12288
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 8192
+        }
+      }
+    },
+    "cumulative-layout-shift": {
+      "agent": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 900,
+      "compose": {
+        "path": "tasks/cumulative-layout-shift/environment/docker-compose.yaml",
+        "sha256": "0dcf5b7e9092a75aef4bb08bc5f1be7f8dc5257c4996b182eded71d5726df836"
+      },
+      "sidecars": {
+        "barber-shop-data-backend": {
+          "cpus": 1,
+          "memory_mb": 1024,
+          "rationale": "Node data API.",
+          "origin": "new_experimental_limit"
+        }
+      },
+      "phase_envelope": {
+        "agent": {
+          "cpus": 5,
+          "memory_mb": 9216
+        },
+        "verifier": {
+          "cpus": 4,
+          "memory_mb": 8192
+        }
+      }
+    },
+    "data-anonymization": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 7200,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 8192
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 8192
+        }
+      }
+    },
+    "embedding-drift-monitor": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "fin-saccr-rwa": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "foodstuff-beta-activity": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 120,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "freecad-impeller": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 1800,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 1800,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "freecad-platform-drawing": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 1800,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 1800,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "freecad-spring-clip": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 1800,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 1800,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "freight-dispatch-shift": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 1200,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 1200,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "compose": {
+        "path": "tasks/freight-dispatch-shift/environment/docker-compose.yaml",
+        "sha256": "b993953ffbabbe8d3be2dffec3209c82178b13a178bebb81877e14771be21a3b"
+      },
+      "sidecars": {
+        "event-feed": {
+          "cpus": 0.5,
+          "memory_mb": 512,
+          "rationale": "Small Python event-feed HTTP service.",
+          "origin": "new_experimental_limit"
+        }
+      },
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2.5,
+          "memory_mb": 4608
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "glycan-ms2-elucidation": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "gsea-proteomics": {
+      "agent": {
+        "cpus": 4,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 900,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 4,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 900,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 4,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 4,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "heat-pump-warranty": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 1200,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 1200,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "compose": {
+        "path": "tasks/heat-pump-warranty/environment/docker-compose.yaml",
+        "sha256": "66b882130246c99d85df7f22648dcbf818ed5b2d6dcc789af4b704f56b41e71f"
+      },
+      "sidecars": {
+        "warranty-portal": {
+          "cpus": 0.5,
+          "memory_mb": 512,
+          "rationale": "Independent small Python HTTP service.",
+          "origin": "new_experimental_limit"
+        },
+        "asset-ledger": {
+          "cpus": 0.5,
+          "memory_mb": 512,
+          "rationale": "Independent small Python HTTP service.",
+          "origin": "new_experimental_limit"
+        },
+        "document-vault": {
+          "cpus": 0.5,
+          "memory_mb": 512,
+          "rationale": "Independent small Python HTTP service.",
+          "origin": "new_experimental_limit"
+        },
+        "returns-ledger": {
+          "cpus": 0.5,
+          "memory_mb": 512,
+          "rationale": "Independent small Python HTTP service.",
+          "origin": "new_experimental_limit"
+        },
+        "compliance-ledger": {
+          "cpus": 0.5,
+          "memory_mb": 512,
+          "rationale": "Independent small Python HTTP service.",
+          "origin": "new_experimental_limit"
+        },
+        "warranty-inbox": {
+          "cpus": 0.5,
+          "memory_mb": 512,
+          "rationale": "Independent small Python HTTP service.",
+          "origin": "new_experimental_limit"
+        }
+      },
+      "phase_envelope": {
+        "agent": {
+          "cpus": 5,
+          "memory_mb": 7168
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "hof-topology-interpenetration": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 2400,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 2400,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 8192
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 8192
+        }
+      }
+    },
+    "html-js-filter": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 1800,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 8192
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 8192
+        }
+      }
+    },
+    "interleaved-vigenere": {
+      "agent": {
+        "cpus": 4,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 900,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 4,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 900,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 900,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 4,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 4,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "intrastat-meldung": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0,
+        "build_timeout_sec": 1200,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0,
+        "build_timeout_sec": 1200,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 180,
+      "compose": {
+        "path": "tasks/intrastat-meldung/environment/docker-compose.yaml",
+        "sha256": "23325d720531ec259be0792e40b44678be1921fc6c6898ccf8a08db86ff7478a"
+      },
+      "sidecars": {
+        "odoo": {
+          "cpus": 0.5,
+          "memory_mb": 512,
+          "rationale": "Independent Python role endpoint, not a full external Odoo installation.",
+          "origin": "new_experimental_limit"
+        },
+        "compliance-hub": {
+          "cpus": 0.5,
+          "memory_mb": 512,
+          "rationale": "Independent Python role endpoint, not a full external Odoo installation.",
+          "origin": "new_experimental_limit"
+        },
+        "idev": {
+          "cpus": 0.5,
+          "memory_mb": 512,
+          "rationale": "Independent Python role endpoint, not a full external Odoo installation.",
+          "origin": "new_experimental_limit"
+        },
+        "services": {
+          "cpus": 0.5,
+          "memory_mb": 512,
+          "rationale": "Independent Python role endpoint, not a full external Odoo installation.",
+          "origin": "new_experimental_limit"
+        },
+        "dms": {
+          "cpus": 0.5,
+          "memory_mb": 512,
+          "rationale": "Independent Python role endpoint, not a full external Odoo installation.",
+          "origin": "new_experimental_limit"
+        }
+      },
+      "phase_envelope": {
+        "agent": {
+          "cpus": 4.5,
+          "memory_mb": 10752
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 8192
+        }
+      }
+    },
+    "ks-solver-cpp": {
+      "agent": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 300,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 300,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 180,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 4,
+          "memory_mb": 8192
+        },
+        "verifier": {
+          "cpus": 4,
+          "memory_mb": 8192
+        }
+      }
+    },
+    "kv-live-surgery": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "compose": {
+        "path": "tasks/kv-live-surgery/environment/docker-compose.yaml",
+        "sha256": "55e23f0f568582ddeea98b6bbf013da22614f35edfc1274e4730d251a9fa9527"
+      },
+      "sidecars": {
+        "loadgen": {
+          "cpus": 1,
+          "memory_mb": 1024,
+          "rationale": "Preserve official 1 CPU; add a fixed Go load-generator memory limit.",
+          "origin": "new_experimental_limit"
+        }
+      },
+      "phase_envelope": {
+        "agent": {
+          "cpus": 3,
+          "memory_mb": 5120
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "layout-config-recreation": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 900,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 900,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 180,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 8192
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 8192
+        }
+      }
+    },
+    "layout-config-recreation2": {
+      "agent": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 900,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 900,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 180,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 4,
+          "memory_mb": 8192
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "legacy-utility-triage": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0,
+        "build_timeout_sec": 1200,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0,
+        "build_timeout_sec": 1200,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "compose": {
+        "path": "tasks/legacy-utility-triage/environment/docker-compose.yaml",
+        "sha256": "f6a69e64954596c09adee9cccd8eb4ce6fd38e6b16d691eaff32a97f12aa877d"
+      },
+      "sidecars": {
+        "legacy-workstation": {
+          "cpus": 2,
+          "memory_mb": 4096,
+          "rationale": "Desktop/browser/VNC service, retaining official 1 GiB shared-memory setting.",
+          "origin": "new_experimental_limit"
+        },
+        "legacy-app": {
+          "cpus": 0.5,
+          "memory_mb": 1024,
+          "rationale": "Companion application HTTP service.",
+          "origin": "new_experimental_limit"
+        }
+      },
+      "phase_envelope": {
+        "agent": {
+          "cpus": 4.5,
+          "memory_mb": 13312
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 8192
+        }
+      }
+    },
+    "medical-claims-processing": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 16384,
+        "storage_mb": 20480,
+        "gpus": 0,
+        "build_timeout_sec": 1200,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 16384,
+        "storage_mb": 20480,
+        "gpus": 0,
+        "build_timeout_sec": 1200,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 120,
+      "compose": {
+        "path": "tasks/medical-claims-processing/environment/docker-compose.yaml",
+        "sha256": "dc9f619168eeaf363a087df8cb4029a669a9ae697853d93394282370880c2295"
+      },
+      "sidecars": {
+        "playwright-mcp": {
+          "cpus": 2,
+          "memory_mb": 4096,
+          "rationale": "Chromium/Playwright/VNC service, retaining official 1 GiB shared-memory setting.",
+          "origin": "new_experimental_limit"
+        },
+        "workspace": {
+          "cpus": 0.5,
+          "memory_mb": 1024,
+          "rationale": "Case workspace HTTP service.",
+          "origin": "new_experimental_limit"
+        }
+      },
+      "phase_envelope": {
+        "agent": {
+          "cpus": 4.5,
+          "memory_mb": 21504
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 16384
+        }
+      }
+    },
+    "mp-checkpoint-consolidation": {
+      "agent": {
+        "cpus": 4,
+        "memory_mb": 4096,
+        "storage_mb": 5120,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 4,
+        "memory_mb": 4096,
+        "storage_mb": 5120,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 4,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 4,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "music-harmony": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 60,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "mvcc-lsm-compaction": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 900,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "nextjs-performance": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 15360,
+        "gpus": 0,
+        "build_timeout_sec": 900,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 15360,
+        "gpus": 0,
+        "build_timeout_sec": 900,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "compose": {
+        "path": "tasks/nextjs-performance/environment/docker-compose.yaml",
+        "sha256": "e79a0a92e81429796f6845c5688a235f2264abf5022480a87c47b8663917f8c1"
+      },
+      "sidecars": {
+        "warehouse-api": {
+          "cpus": 1,
+          "memory_mb": 1024,
+          "rationale": "Node warehouse/audit HTTP service.",
+          "origin": "new_experimental_limit"
+        }
+      },
+      "phase_envelope": {
+        "agent": {
+          "cpus": 3,
+          "memory_mb": 5120
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "ontology-kg-querying": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 1200,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 1200,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 1500,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "photonic-waveguide-routing": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "pretrain-shard-corruption": {
+      "agent": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 4096,
+        "gpus": 0,
+        "build_timeout_sec": 900,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 4096,
+        "gpus": 0,
+        "build_timeout_sec": 900,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 4,
+          "memory_mb": 8192
+        },
+        "verifier": {
+          "cpus": 4,
+          "memory_mb": 8192
+        }
+      }
+    },
+    "production-planning": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 120,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "protein-autointerp-disulfide": {
+      "agent": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0,
+        "build_timeout_sec": 900,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0,
+        "build_timeout_sec": 900,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 180,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 4,
+          "memory_mb": 8192
+        },
+        "verifier": {
+          "cpus": 4,
+          "memory_mb": 8192
+        }
+      }
+    },
+    "react-lead-form": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 900,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "retro-console-soc": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 1200,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "risk-scorer-replay": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "roy-polymorph-cn": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "rs-archive-clone": {
+      "agent": {
+        "cpus": 4,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 4,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 1200,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 4,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 4,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "satb-audio-transcription": {
+      "agent": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 4,
+          "memory_mb": 8192
+        },
+        "verifier": {
+          "cpus": 4,
+          "memory_mb": 8192
+        }
+      }
+    },
+    "session-window-debug": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "sglang-qwen-burst": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 18000,
+        "gpus": 0,
+        "build_timeout_sec": 1800,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 18000,
+        "gpus": 0,
+        "build_timeout_sec": 1800,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 420,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 8192
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 8192
+        }
+      }
+    },
+    "sound-change-cascade": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "takens-embedding-lean": {
+      "agent": {
+        "cpus": 4,
+        "memory_mb": 16384,
+        "storage_mb": 51200,
+        "gpus": 0,
+        "build_timeout_sec": 1800,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 4,
+        "memory_mb": 16384,
+        "storage_mb": 51200,
+        "gpus": 0,
+        "build_timeout_sec": 1800,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 1800,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 4,
+          "memory_mb": 16384
+        },
+        "verifier": {
+          "cpus": 4,
+          "memory_mb": 16384
+        }
+      }
+    },
+    "telecom-entity-resolution": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 1500,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 8192
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 8192
+        }
+      }
+    },
+    "uefi-bootkit": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 16384,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 900,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 16384,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 900,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 700,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 16384
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 16384
+        }
+      }
+    },
+    "vba-userform-port": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0,
+        "build_timeout_sec": 1200,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0,
+        "build_timeout_sec": 1200,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 900,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 8192
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 8192
+        }
+      }
+    },
+    "vf2-speedup-networkx": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 900,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 8192
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 8192
+        }
+      }
+    },
+    "vllm-deepseek-streaming": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 600,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    },
+    "vpp-loss-divergence": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 15360,
+        "gpus": 0,
+        "build_timeout_sec": 1200,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 15360,
+        "gpus": 0,
+        "build_timeout_sec": 1200,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 900,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 8192
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 8192
+        }
+      }
+    },
+    "wal-recovery-ordering": {
+      "agent": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 900,
+        "network_mode": "public"
+      },
+      "verifier": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0,
+        "build_timeout_sec": 900,
+        "network_mode": "public"
+      },
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 1800,
+      "compose": null,
+      "sidecars": {},
+      "phase_envelope": {
+        "agent": {
+          "cpus": 2,
+          "memory_mb": 4096
+        },
+        "verifier": {
+          "cpus": 2,
+          "memory_mb": 4096
+        }
+      }
+    }
+  }
+}

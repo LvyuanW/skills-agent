@@ -1,0 +1,13 @@
+{
+  "import_path": "adapters.harbor.tb4_agents.codex:DeepSeekCodex",
+  "model_name": "deepseek-v4.1-flash",
+  "kwargs": {
+    "audit_base_url": "http://172.17.0.1:8765/v1",
+    "version": "0.149.1",
+    "reasoning_effort": "max",
+    "web_search": "disabled"
+  },
+  "env": {
+    "DEEPSEEK_BASE_URL": "http://172.17.0.1:8765/v1"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "benchmark_commit": "452bf305c6daa62fc59061d22133a7cbc7c1572e",
+  "selected_tasks": 56,
+  "task_mcp_count": 1,
+  "mcp": [
+    {
+      "task": "medical-claims-processing",
+      "servers": [
+        {
+          "name": "playwright",
+          "transport": "sse",
+          "url": "http://playwright-mcp:3080/sse"
+        }
+      ]
+    }
+  ],
+  "sidecar_tasks": [
+    "ctr-optimization",
+    "cumulative-layout-shift",
+    "freight-dispatch-shift",
+    "heat-pump-warranty",
+    "intrastat-meldung",
+    "kv-live-surgery",
+    "legacy-utility-triage",
+    "medical-claims-processing",
+    "nextjs-performance"
+  ],
+  "audit_method": "Parsed every selected task with pinned Harbor Task and inspected task.config.environment.mcp_servers."
+}

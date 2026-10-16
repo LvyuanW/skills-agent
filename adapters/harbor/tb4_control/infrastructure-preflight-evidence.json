@@ -1,0 +1,405 @@
+{
+  "kind": "model_free_infrastructure_preflight",
+  "date": "2026-10-16",
+  "no_formal_evaluation": true,
+  "no_model_calls": true,
+  "note": "Transport reward belongs only to a deterministic synthetic infrastructure task, never an Agent capability score.",
+  "servers": [
+    {
+      "host": "47.91.21.152",
+      "freecad": [
+        {
+          "task": "freecad-impeller",
+          "report_path": "/data/tb4/runs/prewarm/freecad-impeller/verifier/report.json",
+          "status": "passed",
+          "dependency_overlay": {
+            "dependency_profile_sha256": "df8b95de0baab4edcb7a8a04fee47023e3ad8446e8e28b8f3d7bb1136c041d14",
+            "environment_adapter_sha256": "d978c865f3f795c6cdecebc25bb3de8f351ad179547da11ce40661e7b5a8b331",
+            "runtime_probe_sha256": "fd9e7bf855fc6f3214a20e4e01ae47486f54662f071bdc4df93e69e72e98dc06",
+            "profile": "freecad-conda-vtk92-compat-v1",
+            "official_sources_modified": false,
+            "validator_or_tests_modified": false,
+            "original_dockerfile_sha256": "52cfae1a265b797e44baa6a4ae3d028a68f5ac073b3d35138687294e16ccdb82",
+            "effective_dockerfile_sha256": "c47f42d319ccaa6399a289a502ba09ce420ebf0690516808f3169294233c685b",
+            "overlay_sha256": "3f7ef73cfc3243563673d1f36e2158e35d0a116fe63bbc8e94b2a6d79206aa75",
+            "pins": [
+              "pyvista==0.48.4",
+              "vtk==9.2.6"
+            ]
+          },
+          "runtime_validation": {
+            "passed": true,
+            "synthetic_only": true,
+            "no_model_calls": true,
+            "validator": "0.1.3",
+            "pyvista": "0.48.4",
+            "vtk": "9.2.6",
+            "numpy": "2.4.6",
+            "freecad": [
+              "0",
+              "21",
+              "2"
+            ],
+            "numpy_vtk_roundtrip": true,
+            "box_volume": 6,
+            "offscreen_render_bytes": 4375
+          },
+          "cleaned_up": true
+        },
+        {
+          "task": "freecad-platform-drawing",
+          "report_path": "/data/tb4/runs/prewarm/freecad-platform-drawing/verifier/report.json",
+          "status": "passed",
+          "dependency_overlay": {
+            "dependency_profile_sha256": "df8b95de0baab4edcb7a8a04fee47023e3ad8446e8e28b8f3d7bb1136c041d14",
+            "environment_adapter_sha256": "d978c865f3f795c6cdecebc25bb3de8f351ad179547da11ce40661e7b5a8b331",
+            "runtime_probe_sha256": "fd9e7bf855fc6f3214a20e4e01ae47486f54662f071bdc4df93e69e72e98dc06",
+            "profile": "freecad-conda-vtk92-compat-v1",
+            "official_sources_modified": false,
+            "validator_or_tests_modified": false,
+            "original_dockerfile_sha256": "da9d887e80959b123ac445d224377182fea91b7f1cfd026de658c25775bfc90e",
+            "effective_dockerfile_sha256": "6f16694738f8ea79144fbd807ff39c6b1e7a843c6fc161a1721e370da62c9712",
+            "overlay_sha256": "e0edc0c5ae16f2ecf4191d4972f48394e8e41b939ab74449cd00eb2942205ebc",
+            "pins": [
+              "pyvista==0.48.4",
+              "vtk==9.2.6"
+            ]
+          },
+          "runtime_validation": {
+            "passed": true,
+            "synthetic_only": true,
+            "no_model_calls": true,
+            "validator": "0.1.3",
+            "pyvista": "0.48.4",
+            "vtk": "9.2.6",
+            "numpy": "2.4.6",
+            "freecad": [
+              "0",
+              "21",
+              "2"
+            ],
+            "numpy_vtk_roundtrip": true,
+            "box_volume": 6,
+            "offscreen_render_bytes": 4375
+          },
+          "cleaned_up": true
+        },
+        {
+          "task": "freecad-spring-clip",
+          "report_path": "/data/tb4/runs/prewarm/freecad-spring-clip/verifier/report.json",
+          "status": "passed",
+          "dependency_overlay": {
+            "dependency_profile_sha256": "df8b95de0baab4edcb7a8a04fee47023e3ad8446e8e28b8f3d7bb1136c041d14",
+            "environment_adapter_sha256": "d978c865f3f795c6cdecebc25bb3de8f351ad179547da11ce40661e7b5a8b331",
+            "runtime_probe_sha256": "fd9e7bf855fc6f3214a20e4e01ae47486f54662f071bdc4df93e69e72e98dc06",
+            "profile": "freecad-conda-vtk92-compat-v1",
+            "official_sources_modified": false,
+            "validator_or_tests_modified": false,
+            "original_dockerfile_sha256": "52cfae1a265b797e44baa6a4ae3d028a68f5ac073b3d35138687294e16ccdb82",
+            "effective_dockerfile_sha256": "c47f42d319ccaa6399a289a502ba09ce420ebf0690516808f3169294233c685b",
+            "overlay_sha256": "3f7ef73cfc3243563673d1f36e2158e35d0a116fe63bbc8e94b2a6d79206aa75",
+            "pins": [
+              "pyvista==0.48.4",
+              "vtk==9.2.6"
+            ]
+          },
+          "runtime_validation": {
+            "passed": true,
+            "synthetic_only": true,
+            "no_model_calls": true,
+            "validator": "0.1.3",
+            "pyvista": "0.48.4",
+            "vtk": "9.2.6",
+            "numpy": "2.4.6",
+            "freecad": [
+              "0",
+              "21",
+              "2"
+            ],
+            "numpy_vtk_roundtrip": true,
+            "box_volume": 6,
+            "offscreen_render_bytes": 4375
+          },
+          "cleaned_up": true
+        }
+      ],
+      "real_mcp": {
+        "server": "playwright",
+        "tool_count": 22,
+        "listed_tools": true,
+        "read_only_browser_tabs_succeeded": true
+      },
+      "transport_only": {
+        "result_path": "/data/tb4/runs/infra-preflight/transport-only-20261015T182241/controller-result.json",
+        "agent": "tb4-shell-transport-check",
+        "reward": 1,
+        "input_tokens": 0,
+        "output_tokens": 0
+      }
+    },
+    {
+      "host": "8.216.13.123",
+      "freecad": [
+        {
+          "task": "freecad-impeller",
+          "report_path": "/data/tb4/runs/prewarm/freecad-impeller/verifier/report.json",
+          "status": "passed",
+          "dependency_overlay": {
+            "dependency_profile_sha256": "df8b95de0baab4edcb7a8a04fee47023e3ad8446e8e28b8f3d7bb1136c041d14",
+            "environment_adapter_sha256": "d978c865f3f795c6cdecebc25bb3de8f351ad179547da11ce40661e7b5a8b331",
+            "runtime_probe_sha256": "fd9e7bf855fc6f3214a20e4e01ae47486f54662f071bdc4df93e69e72e98dc06",
+            "profile": "freecad-conda-vtk92-compat-v1",
+            "official_sources_modified": false,
+            "validator_or_tests_modified": false,
+            "original_dockerfile_sha256": "52cfae1a265b797e44baa6a4ae3d028a68f5ac073b3d35138687294e16ccdb82",
+            "effective_dockerfile_sha256": "c47f42d319ccaa6399a289a502ba09ce420ebf0690516808f3169294233c685b",
+            "overlay_sha256": "3f7ef73cfc3243563673d1f36e2158e35d0a116fe63bbc8e94b2a6d79206aa75",
+            "pins": [
+              "pyvista==0.48.4",
+              "vtk==9.2.6"
+            ]
+          },
+          "runtime_validation": {
+            "passed": true,
+            "synthetic_only": true,
+            "no_model_calls": true,
+            "validator": "0.1.3",
+            "pyvista": "0.48.4",
+            "vtk": "9.2.6",
+            "numpy": "2.4.6",
+            "freecad": [
+              "0",
+              "21",
+              "2"
+            ],
+            "numpy_vtk_roundtrip": true,
+            "box_volume": 6,
+            "offscreen_render_bytes": 4375
+          },
+          "cleaned_up": true
+        },
+        {
+          "task": "freecad-platform-drawing",
+          "report_path": "/data/tb4/runs/prewarm/freecad-platform-drawing/verifier/report.json",
+          "status": "passed",
+          "dependency_overlay": {
+            "dependency_profile_sha256": "df8b95de0baab4edcb7a8a04fee47023e3ad8446e8e28b8f3d7bb1136c041d14",
+            "environment_adapter_sha256": "d978c865f3f795c6cdecebc25bb3de8f351ad179547da11ce40661e7b5a8b331",
+            "runtime_probe_sha256": "fd9e7bf855fc6f3214a20e4e01ae47486f54662f071bdc4df93e69e72e98dc06",
+            "profile": "freecad-conda-vtk92-compat-v1",
+            "official_sources_modified": false,
+            "validator_or_tests_modified": false,
+            "original_dockerfile_sha256": "da9d887e80959b123ac445d224377182fea91b7f1cfd026de658c25775bfc90e",
+            "effective_dockerfile_sha256": "6f16694738f8ea79144fbd807ff39c6b1e7a843c6fc161a1721e370da62c9712",
+            "overlay_sha256": "e0edc0c5ae16f2ecf4191d4972f48394e8e41b939ab74449cd00eb2942205ebc",
+            "pins": [
+              "pyvista==0.48.4",
+              "vtk==9.2.6"
+            ]
+          },
+          "runtime_validation": {
+            "passed": true,
+            "synthetic_only": true,
+            "no_model_calls": true,
+            "validator": "0.1.3",
+            "pyvista": "0.48.4",
+            "vtk": "9.2.6",
+            "numpy": "2.4.6",
+            "freecad": [
+              "0",
+              "21",
+              "2"
+            ],
+            "numpy_vtk_roundtrip": true,
+            "box_volume": 6,
+            "offscreen_render_bytes": 4375
+          },
+          "cleaned_up": true
+        },
+        {
+          "task": "freecad-spring-clip",
+          "report_path": "/data/tb4/runs/prewarm/freecad-spring-clip/verifier/report.json",
+          "status": "passed",
+          "dependency_overlay": {
+            "dependency_profile_sha256": "df8b95de0baab4edcb7a8a04fee47023e3ad8446e8e28b8f3d7bb1136c041d14",
+            "environment_adapter_sha256": "d978c865f3f795c6cdecebc25bb3de8f351ad179547da11ce40661e7b5a8b331",
+            "runtime_probe_sha256": "fd9e7bf855fc6f3214a20e4e01ae47486f54662f071bdc4df93e69e72e98dc06",
+            "profile": "freecad-conda-vtk92-compat-v1",
+            "official_sources_modified": false,
+            "validator_or_tests_modified": false,
+            "original_dockerfile_sha256": "52cfae1a265b797e44baa6a4ae3d028a68f5ac073b3d35138687294e16ccdb82",
+            "effective_dockerfile_sha256": "c47f42d319ccaa6399a289a502ba09ce420ebf0690516808f3169294233c685b",
+            "overlay_sha256": "3f7ef73cfc3243563673d1f36e2158e35d0a116fe63bbc8e94b2a6d79206aa75",
+            "pins": [
+              "pyvista==0.48.4",
+              "vtk==9.2.6"
+            ]
+          },
+          "runtime_validation": {
+            "passed": true,
+            "synthetic_only": true,
+            "no_model_calls": true,
+            "validator": "0.1.3",
+            "pyvista": "0.48.4",
+            "vtk": "9.2.6",
+            "numpy": "2.4.6",
+            "freecad": [
+              "0",
+              "21",
+              "2"
+            ],
+            "numpy_vtk_roundtrip": true,
+            "box_volume": 6,
+            "offscreen_render_bytes": 4375
+          },
+          "cleaned_up": true
+        }
+      ],
+      "real_mcp": {
+        "server": "playwright",
+        "tool_count": 22,
+        "listed_tools": true,
+        "read_only_browser_tabs_succeeded": true
+      },
+      "transport_only": {
+        "result_path": "/data/tb4/runs/infra-preflight/transport-only-20261015T182242/controller-result.json",
+        "agent": "tb4-shell-transport-check",
+        "reward": 1,
+        "input_tokens": 0,
+        "output_tokens": 0
+      }
+    },
+    {
+      "host": "8.216.11.161",
+      "freecad": [
+        {
+          "task": "freecad-impeller",
+          "report_path": "/data/tb4/runs/prewarm/freecad-impeller/verifier/report.json",
+          "status": "passed",
+          "dependency_overlay": {
+            "dependency_profile_sha256": "df8b95de0baab4edcb7a8a04fee47023e3ad8446e8e28b8f3d7bb1136c041d14",
+            "environment_adapter_sha256": "d978c865f3f795c6cdecebc25bb3de8f351ad179547da11ce40661e7b5a8b331",
+            "runtime_probe_sha256": "fd9e7bf855fc6f3214a20e4e01ae47486f54662f071bdc4df93e69e72e98dc06",
+            "profile": "freecad-conda-vtk92-compat-v1",
+            "official_sources_modified": false,
+            "validator_or_tests_modified": false,
+            "original_dockerfile_sha256": "52cfae1a265b797e44baa6a4ae3d028a68f5ac073b3d35138687294e16ccdb82",
+            "effective_dockerfile_sha256": "c47f42d319ccaa6399a289a502ba09ce420ebf0690516808f3169294233c685b",
+            "overlay_sha256": "3f7ef73cfc3243563673d1f36e2158e35d0a116fe63bbc8e94b2a6d79206aa75",
+            "pins": [
+              "pyvista==0.48.4",
+              "vtk==9.2.6"
+            ]
+          },
+          "runtime_validation": {
+            "passed": true,
+            "synthetic_only": true,
+            "no_model_calls": true,
+            "validator": "0.1.3",
+            "pyvista": "0.48.4",
+            "vtk": "9.2.6",
+            "numpy": "2.4.6",
+            "freecad": [
+              "0",
+              "21",
+              "2"
+            ],
+            "numpy_vtk_roundtrip": true,
+            "box_volume": 6,
+            "offscreen_render_bytes": 4375
+          },
+          "cleaned_up": true
+        },
+        {
+          "task": "freecad-platform-drawing",
+          "report_path": "/data/tb4/runs/prewarm/freecad-platform-drawing/verifier/report.json",
+          "status": "passed",
+          "dependency_overlay": {
+            "dependency_profile_sha256": "df8b95de0baab4edcb7a8a04fee47023e3ad8446e8e28b8f3d7bb1136c041d14",
+            "environment_adapter_sha256": "d978c865f3f795c6cdecebc25bb3de8f351ad179547da11ce40661e7b5a8b331",
+            "runtime_probe_sha256": "fd9e7bf855fc6f3214a20e4e01ae47486f54662f071bdc4df93e69e72e98dc06",
+            "profile": "freecad-conda-vtk92-compat-v1",
+            "official_sources_modified": false,
+            "validator_or_tests_modified": false,
+            "original_dockerfile_sha256": "da9d887e80959b123ac445d224377182fea91b7f1cfd026de658c25775bfc90e",
+            "effective_dockerfile_sha256": "6f16694738f8ea79144fbd807ff39c6b1e7a843c6fc161a1721e370da62c9712",
+            "overlay_sha256": "e0edc0c5ae16f2ecf4191d4972f48394e8e41b939ab74449cd00eb2942205ebc",
+            "pins": [
+              "pyvista==0.48.4",
+              "vtk==9.2.6"
+            ]
+          },
+          "runtime_validation": {
+            "passed": true,
+            "synthetic_only": true,
+            "no_model_calls": true,
+            "validator": "0.1.3",
+            "pyvista": "0.48.4",
+            "vtk": "9.2.6",
+            "numpy": "2.4.6",
+            "freecad": [
+              "0",
+              "21",
+              "2"
+            ],
+            "numpy_vtk_roundtrip": true,
+            "box_volume": 6,
+            "offscreen_render_bytes": 4375
+          },
+          "cleaned_up": true
+        },
+        {
+          "task": "freecad-spring-clip",
+          "report_path": "/data/tb4/runs/prewarm/freecad-spring-clip/verifier/report.json",
+          "status": "passed",
+          "dependency_overlay": {
+            "dependency_profile_sha256": "df8b95de0baab4edcb7a8a04fee47023e3ad8446e8e28b8f3d7bb1136c041d14",
+            "environment_adapter_sha256": "d978c865f3f795c6cdecebc25bb3de8f351ad179547da11ce40661e7b5a8b331",
+            "runtime_probe_sha256": "fd9e7bf855fc6f3214a20e4e01ae47486f54662f071bdc4df93e69e72e98dc06",
+            "profile": "freecad-conda-vtk92-compat-v1",
+            "official_sources_modified": false,
+            "validator_or_tests_modified": false,
+            "original_dockerfile_sha256": "52cfae1a265b797e44baa6a4ae3d028a68f5ac073b3d35138687294e16ccdb82",
+            "effective_dockerfile_sha256": "c47f42d319ccaa6399a289a502ba09ce420ebf0690516808f3169294233c685b",
+            "overlay_sha256": "3f7ef73cfc3243563673d1f36e2158e35d0a116fe63bbc8e94b2a6d79206aa75",
+            "pins": [
+              "pyvista==0.48.4",
+              "vtk==9.2.6"
+            ]
+          },
+          "runtime_validation": {
+            "passed": true,
+            "synthetic_only": true,
+            "no_model_calls": true,
+            "validator": "0.1.3",
+            "pyvista": "0.48.4",
+            "vtk": "9.2.6",
+            "numpy": "2.4.6",
+            "freecad": [
+              "0",
+              "21",
+              "2"
+            ],
+            "numpy_vtk_roundtrip": true,
+            "box_volume": 6,
+            "offscreen_render_bytes": 4375
+          },
+          "cleaned_up": true
+        }
+      ],
+      "real_mcp": {
+        "server": "playwright",
+        "tool_count": 22,
+        "listed_tools": true,
+        "read_only_browser_tabs_succeeded": true
+      },
+      "transport_only": {
+        "result_path": "/data/tb4/runs/infra-preflight/transport-only-20261015T182241/controller-result.json",
+        "agent": "tb4-shell-transport-check",
+        "reward": 1,
+        "input_tokens": 0,
+        "output_tokens": 0
+      }
+    }
+  ]
+}

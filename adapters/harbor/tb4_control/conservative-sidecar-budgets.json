@@ -1,0 +1,47 @@
+{
+  "ctr-optimization": {
+    "reviewed": true,
+    "exclusive": true,
+    "basis": "No workload peak evidence. Reserve the entire 28 CPU / 107 GiB admission pool; preserve official container settings."
+  },
+  "cumulative-layout-shift": {
+    "reviewed": true,
+    "exclusive": true,
+    "basis": "No workload peak evidence. Reserve the entire 28 CPU / 107 GiB admission pool; preserve official container settings."
+  },
+  "freight-dispatch-shift": {
+    "reviewed": true,
+    "exclusive": true,
+    "basis": "No workload peak evidence. Reserve the entire 28 CPU / 107 GiB admission pool; preserve official container settings."
+  },
+  "heat-pump-warranty": {
+    "reviewed": true,
+    "exclusive": true,
+    "basis": "No workload peak evidence. Reserve the entire 28 CPU / 107 GiB admission pool; preserve official container settings."
+  },
+  "intrastat-meldung": {
+    "reviewed": true,
+    "exclusive": true,
+    "basis": "No workload peak evidence. Reserve the entire 28 CPU / 107 GiB admission pool; preserve official container settings."
+  },
+  "kv-live-surgery": {
+    "reviewed": true,
+    "exclusive": true,
+    "basis": "No workload peak evidence. Reserve the entire 28 CPU / 107 GiB admission pool; preserve official container settings."
+  },
+  "legacy-utility-triage": {
+    "reviewed": true,
+    "exclusive": true,
+    "basis": "No workload peak evidence. Reserve the entire 28 CPU / 107 GiB admission pool; preserve official container settings."
+  },
+  "medical-claims-processing": {
+    "reviewed": true,
+    "exclusive": true,
+    "basis": "No workload peak evidence. Reserve the entire 28 CPU / 107 GiB admission pool; preserve official container settings."
+  },
+  "nextjs-performance": {
+    "reviewed": true,
+    "exclusive": true,
+    "basis": "No workload peak evidence. Reserve the entire 28 CPU / 107 GiB admission pool; preserve official container settings."
+  }
+}

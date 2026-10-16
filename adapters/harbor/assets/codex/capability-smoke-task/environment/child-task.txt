@@ -1,0 +1,4 @@
+TB4_PREFLIGHT_CHILD: Independently open /app/smoke.png using your native view_image
+tool. Determine its single dominant color. Use a file or terminal tool to create
+/app/child.txt containing the lowercase English color name and one newline. Do
+not delegate further. Report completion and finish.
