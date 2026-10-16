@@ -1,7 +1,10 @@
 import base64
 import json
 import platform
+import math
+import time
 from copy import deepcopy
+from email.utils import parsedate_to_datetime
 from http.client import HTTPException
 from importlib import metadata
 from pathlib import Path
@@ -48,6 +51,8 @@ _ERROR_CATEGORIES = {
     "server_overloaded": "service_unavailable",
     "service_unavailable": "service_unavailable",
     "service_unavailable_error": "service_unavailable",
+    "upstream_stream_read_error": "connection",
+    "upstream_error": "server_error",
     "context_length_exceeded": "output_limit",
     "content_filter": "content_filter",
     "content_policy_violation": "content_filter",
@@ -156,6 +161,29 @@ class ProviderError(RuntimeError):
     @property
     def retryable(self) -> bool:
         return self.category in _RETRYABLE_CATEGORIES
+
+    @property
+    def retry_after_seconds(self) -> float | None:
+        """Return the server's delay without interpreting human-readable prose."""
+        diagnostics = self.diagnostics if isinstance(self.diagnostics, dict) else {}
+        response = diagnostics.get("response")
+        headers = response.get("headers", {}) if isinstance(response, dict) else {}
+        if not isinstance(headers, dict):
+            return None
+        value = next((v for k, v in headers.items() if str(k).lower() == "retry-after"), None)
+        if not isinstance(value, (str, int, float)) or isinstance(value, bool):
+            return None
+        try:
+            delay = float(value)
+        except (ValueError, OverflowError):
+            try:
+                instant = parsedate_to_datetime(str(value))
+                if instant.tzinfo is None:
+                    return None
+                delay = instant.timestamp() - time.time()
+            except (ValueError, TypeError, OverflowError):
+                return None
+        return max(0.0, delay) if math.isfinite(delay) else None
 
 
 class ProviderConnectionError(ProviderError):

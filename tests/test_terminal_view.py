@@ -68,13 +68,13 @@ class TerminalViewTests(unittest.TestCase):
             {"type": "text", "text": "部分**正文**"},
         ]})
         self.assertEqual(self.lines()[:4], [
-            "▶ 思考", "· shell「读取目录」：调用", "assistant:", "部分正文",
+            "▶ 思考", "· shell「读取目录」：已中断", "assistant:", "部分正文",
         ])
         self.assertIn("error: Interrupted", self.lines())
         self.mouse(MouseEventType.MOUSE_UP, 0)
         expanded = self.lines()
         self.assertEqual(expanded[:5], [
-            "▼ 思考", "检查工作目录", "· shell「读取目录」：调用", "assistant:", "部分正文",
+            "▼ 思考", "检查工作目录", "· shell「读取目录」：已中断", "assistant:", "部分正文",
         ])
         self.assertEqual(expanded.count("检查工作目录"), 1)
         self.assertEqual(expanded.count("部分正文"), 1)

@@ -24,7 +24,7 @@ class FakeCounter:
     max_output_tokens = 4096
     model_context_window = 272000
 
-    def count_tokens(self, system, messages, tools):
+    def count_tokens(self, system, messages, tools, *, disable_thinking=False):
         return 128
 
     def count_text(self, text):
@@ -187,8 +187,10 @@ class AgentTests(unittest.TestCase):
             def count_text(self, text):
                 return 9000 if "x" * 15000 in text else 64
 
-            def complete(self, system, messages, tools, *, on_event=None, max_output_tokens=None):
+            def complete(self, system, messages, tools, *, on_event=None, max_output_tokens=None,
+                         disable_thinking=False):
                 if not tools:
+                    assert disable_thinking
                     assert "x" * 15000 in messages[0]["content"]
                     return answer("Generated 15000 x characters; exit code 0.")
                 if messages[-1]["role"] == "user":

@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import shutil
 import socket
 import subprocess
 import sys
@@ -155,6 +156,10 @@ def require_platform() -> None:
 def start(args: argparse.Namespace) -> int:
     import fcntl
 
+    # Ownership checks need ps. Fail before leaving an unconfirmable registration.
+    if shutil.which("ps") is None:
+        raise ValueError("process-management requires ps; install the procps package before starting a process")
+
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command:
         raise ValueError("Provide a command after --")
@@ -195,7 +200,7 @@ def start(args: argparse.Namespace) -> int:
                                        "--record", str(path), "--token", token]
                     if scope:
                         supervisor_args.extend(["--scope-id", scope_id(scope)])
-                    subprocess.Popen(
+                    supervisor = subprocess.Popen(
                         supervisor_args,
                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=diagnostic,
                         close_fds=True, start_new_session=True,
@@ -206,9 +211,21 @@ def start(args: argparse.Namespace) -> int:
         deadline = time.monotonic() + args.startup_timeout
         while time.monotonic() < deadline:
             record = load_record(path)
+            supervisor_exited = record["state"] == "starting" and supervisor.poll() is not None
+            if supervisor_exited:
+                # Identity and completion may have been published after our read.
+                record = load_record(path)
             if record["state"] != "starting":
                 emit("start", observed_record(record), ok=record["state"] not in {"failed", "orphaned"})
                 return status_code(record["returncode"]) if record["state"] == "failed" else 0
+            if supervisor_exited and record.get("supervisor_pid") is None and record.get("child_pid") is None:
+                # The supervisor publishes its identity before it can spawn a
+                # child. A confirmed earlier exit is consequently a failed start.
+                record.update(state="failed", error="Supervisor exited before starting the managed command",
+                              returncode=supervisor.returncode or 1, ended_at=now())
+                save_record(path, record)
+                emit("start", record, ok=False, error=record["error"])
+                return status_code(record["returncode"])
             time.sleep(0.05)
         emit("start", observed_record(record), ok=False, error="Supervisor startup was not confirmed before the deadline; inspect this record before retrying")
         return 124
@@ -245,7 +262,16 @@ def supervise(args: argparse.Namespace) -> int:
     record = load_record(path)
     if record["token"] != args.token or record["state"] != "starting":
         raise ValueError("Supervisor ownership token or initial state does not match")
-    record.update(supervisor_pid=os.getpid(), supervisor_identity=pid_identity(os.getpid()))
+    try:
+        identity = pid_identity(os.getpid())
+        if identity is None:
+            raise RuntimeError("Supervisor identity could not be verified")
+    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        # No child exists at this point. Record failure so close can confirm it.
+        record.update(state="failed", error=str(error), returncode=127, ended_at=now())
+        save_record(path, record)
+        return 127
+    record.update(supervisor_pid=os.getpid(), supervisor_identity=identity)
     scope = record.get("process_scope")
     if (scope_id(scope) if scope else None) != args.scope_id:
         raise ValueError("Supervisor process scope does not match its ownership arguments")
@@ -253,6 +279,8 @@ def supervise(args: argparse.Namespace) -> int:
         record.update(state="stopped", returncode=0, ended_at=now())
         save_record(path, record)
         return 0
+    # Publish ownership before creating a child, making early-exit cleanup safe.
+    save_record(path, record)
     artifacts = Path(record["artifacts"])
     request_path = artifacts / "stop.json"
     requested_signal = [False]

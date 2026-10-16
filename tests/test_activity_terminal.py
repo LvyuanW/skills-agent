@@ -48,11 +48,12 @@ class ActivityTerminalTests(unittest.TestCase):
     events = terminal_helpers.TerminalTests.events
     terminal = terminal_helpers.TerminalTests.terminal
 
-    def gate_command(self, gate):
+    def gate_command(self, gate, *, exit_code=0):
         script = ("from pathlib import Path\nimport time\n"
                   f"gate = Path({str(gate)!r})\n"
                   "while not gate.exists():\n    time.sleep(0.02)\n"
-                  "print('PRIVATE_TOOL_OUTPUT')\n")
+                  "print('PRIVATE_TOOL_OUTPUT')\n"
+                  f"raise SystemExit({exit_code})\n")
         return f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}"
 
     def activity_line(self, terminal, marker):
@@ -84,6 +85,7 @@ class ActivityTerminalTests(unittest.TestCase):
         terminal.send("run the gated tool\n")
         marker = "· shell「等待文件」：执行中"
         self.assert_animates(terminal, marker)
+        self.assertEqual(terminal.visible.count("shell「等待文件」"), 1)
         self.assertNotIn("PRIVATE_TOOL_OUTPUT", terminal.visible)
         terminal.send("\x1bOQ")  # F2 hands mouse selection back to the emulator.
         terminal.wait_for(lambda output: "选择文本（F2 返回）" in terminal.visible)
@@ -105,6 +107,8 @@ class ActivityTerminalTests(unittest.TestCase):
         terminal.send("\x1bOQ")
         terminal.prompt("TOOL_FINISHED")
         self.assertNotIn(marker, terminal.visible)
+        self.assertEqual(terminal.visible.count("shell「等待文件」"), 1)
+        self.assertIn("shell「等待文件」：完成", terminal.visible)
         self.assertNotIn("PRIVATE_TOOL_OUTPUT", terminal.visible)
         self.assertEqual(len(requests), 2)
         self.assert_no_persisted_activity()
@@ -121,8 +125,44 @@ class ActivityTerminalTests(unittest.TestCase):
         terminal.send("\x03")
         terminal.prompt("Interrupted")
         self.assertNotIn(marker, terminal.visible)
+        self.assertEqual(terminal.visible.count("shell「等待取消」"), 1)
+        self.assertIn("shell「等待取消」：已中断", terminal.visible)
         terminal.send("continue after interruption\n")
         terminal.prompt("AFTER_CANCEL")
+        self.assertEqual(len(requests), 2)
+        self.assert_no_persisted_activity()
+
+    def test_failed_tool_has_one_red_final_row_live_and_after_session_replay(self):
+        gate = self.workspace / "release-failing-tool"
+        command = self.gate_command(gate, exit_code=7)
+        terminal, requests = self.terminal(lambda payload, count:
+            self.response(command=command, summary="失败检查") if count == 1
+            else self.response("FAILURE_RECORDED"))
+        terminal.send("run failing check\n")
+        self.assert_animates(terminal, "· shell「失败检查」：执行中")
+        self.assertEqual(terminal.visible.count("shell「失败检查」"), 1)
+        gate.write_text("release")
+        terminal.prompt("FAILURE_RECORDED")
+
+        def assert_failure(view):
+            self.assertEqual(view.visible.count("shell「失败检查」"), 1)
+            self.assertIn("shell「失败检查」：失败（退出码 7），输出 1 行", view.visible)
+            self.assertNotIn("：调用", view.visible)
+            self.assertNotIn("接收调用", view.visible)
+            self.assertNotIn("执行中", view.visible)
+            self.assertNotIn("PRIVATE_TOOL_OUTPUT", view.visible)
+            row = next(index for index, line in enumerate(view.screen.display)
+                       if "shell「失败检查」" in line)
+            self.assertEqual((view.screen.buffer[row][0].fg, view.screen.buffer[row][0].bg),
+                             ("red", "default"))
+
+        assert_failure(terminal)
+        terminal.send("/exit\n")
+        terminal.wait_exit()
+        replay = Terminal(self.workspace, terminal.endpoint)
+        self.addCleanup(replay.close)
+        replay.prompt("FAILURE_RECORDED")
+        assert_failure(replay)
         self.assertEqual(len(requests), 2)
         self.assert_no_persisted_activity()
 

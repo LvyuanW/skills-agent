@@ -32,10 +32,11 @@ from .markdown import _Body
 
 
 _STYLES = {"user": "bright_white on black", "assistant": "black on bright_white",
-           "tool": "blue on default"}
+           "tool": "blue on default", "error": "red on default"}
 _LINE_STYLES = {"user": "fg:ansiwhite bg:ansiblack",
                 "assistant": "fg:ansiblack bg:ansiwhite",
                 "tool": "fg:ansiblue bg:default",
+                "error": "fg:ansired bg:default",
                 "thinking": "fg:ansibrightblack bg:default"}
 
 
@@ -136,6 +137,7 @@ class _Transcript(UIControl):
 class TerminalView:
     def __init__(self, key_bindings=None, *, context_usage=None, input=None, output=None):
         self.blocks = []
+        self._tool_blocks = {}
         self._lock = RLock()
         self._stream = None
         self._response = []
@@ -165,6 +167,7 @@ class TerminalView:
         self._activity_preview = None
         self._activity_thinking = False
         self._activity_task = None
+        self._activity_tool_key = None
         self._activity_started = 0
         self._animation_scheduled = False
 
@@ -344,12 +347,14 @@ class TerminalView:
             os.kill(os.getpid(), signal.SIGINT)
         self.flush()
 
-    def set_activity(self, text, *, task=None, preview=None, thinking=False):
+    def set_activity(self, text, *, task=None, preview=None, thinking=False, tool_key=None):
         with self._lock:
-            if not self._activity or task != self._activity_task:
+            if (not self._activity or task != self._activity_task
+                    or tool_key != self._activity_tool_key):
                 self._activity_started = monotonic()
             self._activity = text
             self._activity_task = task if text else None
+            self._activity_tool_key = tool_key if text else None
             self._activity_preview = preview if text else None
             self._activity_thinking = thinking
         self.flush()
@@ -371,6 +376,24 @@ class TerminalView:
         with self._lock:
             self.finish_stream()
             self.blocks.append({"kind": "line", "text": str(text), "role": role})
+        self.flush()
+
+    def upsert_tool(self, key, text, role="tool"):
+        with self._lock:
+            self.finish_stream()
+            block = self._tool_blocks.get(key)
+            if block is None:
+                block = {"kind": "line", "text": str(text), "role": role}
+                self.blocks.append(block)
+                self._tool_blocks[key] = block
+            else:
+                block.update(text=str(text), role=role)
+            if self._activity_tool_key is not None and self._activity_tool_key == key:
+                self._activity = None
+                self._activity_task = None
+                self._activity_tool_key = None
+                self._activity_preview = None
+                self._activity_thinking = False
         self.flush()
 
     def append_image_link(self, label, path):
@@ -437,7 +460,7 @@ class TerminalView:
         self.flush()
 
     def _render(self, block, width):
-        key = (width, block["text"])
+        key = (width, block["text"], block.get("role"))
         if block.get("render_key") != key:
             output = StringIO()
             console = Console(file=output, width=width, height=1, force_terminal=True,
@@ -461,7 +484,11 @@ class TerminalView:
         self._image_links = {}
         blocks = self.blocks
         activity_row = None
+        activity_block = None
+        activity_target = None
         if self._activity:
+            if self._activity_tool_key is not None:
+                activity_target = self._tool_blocks.get(self._activity_tool_key)
             elapsed = monotonic() - self._activity_started
             dots = int(elapsed / 0.4) % 3 + 1
             duration = f" · {elapsed:.1f} 秒" if self._activity_task else ""
@@ -480,9 +507,17 @@ class TerminalView:
                 activity_row = [(style, prefix), (preview_style, preview), (style, suffix)]
                 activity_row.append((style, " " * max(0, width - fragment_list_width(activity_row))))
             else:
-                blocks = [*blocks, {"kind": "line", "role": "tool",
-                                   "text": self._activity + "." * dots + duration}]
+                activity_block = {"kind": "line", "role": "tool",
+                                  "text": self._activity + "." * dots + duration}
+                if activity_target is None:
+                    blocks = [*blocks, activity_block]
         for block in blocks:
+            if block is activity_target:
+                if activity_row is not None:
+                    lines.append(activity_row)
+                    activity_row = None
+                    continue
+                block = activity_block
             role = "thinking" if block["kind"] == "thinking" else block.get("role", "assistant")
             style = _LINE_STYLES[role]
             if block["kind"] == "thinking":

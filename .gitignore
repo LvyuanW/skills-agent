@@ -2,8 +2,14 @@
 .venv/
 .agent/
 .env
+.env.*
+!.env.example
 __pycache__/
 *.py[cod]
 *.egg-info/
 build/
 dist/
+/output/
+.pytest_cache/
+.coverage
+htmlcov/

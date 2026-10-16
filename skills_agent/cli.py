@@ -16,7 +16,7 @@ from .session import Session
 
 
 _COLORS = {"user": "\033[97;40m", "assistant": "\033[30;107m", "tool": "\033[34;49m",
-           "thinking": "\033[90;49m"}
+           "thinking": "\033[90;49m", "error": "\033[31;49m"}
 _RESET = "\033[0m"
 
 
@@ -88,15 +88,42 @@ def _tool_call_summary(name, arguments):
     return f"· {name}：{_purpose(arguments, 'summary') or '接收调用'}"
 
 
-def _subagent_summary(event, output):
+def _tool_note(text, output, *, key=None, failed=False):
+    role = "error" if failed else "tool"
+    if key is not None and hasattr(output, "upsert_tool"):
+        output.upsert_tool(key, text, role)
+    else:
+        _print(text, role, output)
+
+
+def _tool_result(message):
+    content = message.get("content")
+    blocks = content if isinstance(content, list) else []
+    text = next((block.get("text") for block in blocks
+                 if isinstance(block, dict) and block.get("type") == "text"), None) if blocks else content
+    try:
+        result = json.loads(text)
+    except (ValueError, TypeError):
+        result = None
+    return result, blocks
+
+
+def _tool_failed(result):
+    return isinstance(result, dict) and bool(result.get("error") or result.get("feedback_errors") or
+                                            "exit_code" in result and result["exit_code"] != 0)
+
+
+def _subagent_summary(event, output, *, key=None):
+    failed = event.get("status") in {"failed", "interrupted"}
     name = _purpose(event, "name")
     if name:
         status = {"completed": "已返回报告", "failed": "失败", "interrupted": "已中断"}.get(
             event.get("status"), "未完成")
-        _print(f"· sub-agent「{name}」：{status}", "tool", output)
+        _tool_note(f"· sub-agent「{name}」：{status}", output, key=key, failed=failed)
     else:
         action = "处理了" if event.get("status") == "completed" else "未完成"
-        _print(f"sub-agent {action}：{_brief(event.get('goal', '子任务'))}", "tool", output)
+        _tool_note(f"sub-agent {action}：{_brief(event.get('goal', '子任务'))}", output,
+                   key=key, failed=failed)
 
 
 def _tool_images(blocks, output):
@@ -136,10 +163,11 @@ def _render_full_event(event, output):
             _assistant_content(message, output)
         elif blocks:
             label = f"tool {message['name']}" if role == "tool" else role
-            _print(f"{label}:", role, output)
+            display_role = "error" if role == "tool" and _tool_failed(_tool_result(message)[0]) else role
+            _print(f"{label}:", display_role, output)
             for block in blocks:
                 if block["type"] == "text":
-                    _print(block["text"], role, output)
+                    _print(block["text"], display_role, output)
                 elif role == "tool" and block["type"] == "image":
                     continue
                 else:
@@ -185,7 +213,7 @@ def _partial_counts(content):
     return text, thinking
 
 
-def render_event(event, output=None, *, full=False, echo_user=True, tool_names=None):
+def render_event(event, output=None, *, full=False, echo_user=True, tool_names=None, tool_keys=None):
     """Summarize intermediate work without changing the stored events."""
     output = output or sys.stdout
     kind = event.get("type")
@@ -214,16 +242,7 @@ def render_event(event, output=None, *, full=False, echo_user=True, tool_names=N
         if role == "tool":
             if message.get("name") == "subagent":
                 return
-            content = message.get("content")
-            blocks = content if isinstance(content, list) else []
-            result_text = content
-            if isinstance(content, list):
-                result_text = next((block.get("text") for block in blocks
-                                    if isinstance(block, dict) and block.get("type") == "text"), None)
-            try:
-                result = json.loads(result_text)
-            except (ValueError, TypeError):
-                result = None
+            result, blocks = _tool_result(message)
             status = "结果已记录"
             if isinstance(result, dict):
                 if result.get("error"):
@@ -241,12 +260,16 @@ def render_event(event, output=None, *, full=False, echo_user=True, tool_names=N
                 status += f"，图片 {images} 张"
             purpose = _purpose(message, "task_name") or (tool_names or {}).get(message.get("tool_call_id"))
             label = f"{message['name']}「{purpose}」" if purpose else message["name"]
-            _print(f"· {label}：{status}", "tool", output)
+            identifier = message.get("tool_call_id")
+            _tool_note(f"· {label}：{status}", output, key=(tool_keys or {}).get(identifier, identifier),
+                       failed=_tool_failed(result))
             _tool_images(blocks, output)
         elif role == "assistant":
             _assistant_content(message, output)
             for call in message.get("tool_calls", []):
-                _print(_tool_call_summary(call["name"], _arguments(call)), "tool", output)
+                identifier = call.get("id")
+                _tool_note(_tool_call_summary(call["name"], _arguments(call)), output,
+                           key=(tool_keys or {}).get(identifier, identifier))
         elif role == "user":
             content = message.get("content", [])
             blocks = [{"type": "text", "text": content}] if isinstance(content, str) else content
@@ -277,6 +300,50 @@ class ConsoleRenderer:
         self._calls = {}
         self._channel = None
         self._tool_names = {}
+        self._tool_keys = {}
+        self._pending_tools = {}
+
+    @property
+    def _mutable_tools(self):
+        return not self.full and hasattr(self.output, "upsert_tool")
+
+    def _matching_tool(self, name, purpose):
+        return next((identifier for identifier, call in self._pending_tools.items()
+                     if call["name"] == name and
+                     _purpose(_arguments(call), "name", "goal") == purpose), None)
+
+    def _register_tools(self, calls):
+        # Provider block indices can include text/thinking blocks. Match IDs first;
+        # sorted stream order also supports older logs that omitted delta IDs.
+        streamed = [self._calls[index] for index in sorted(self._calls)]
+        by_id = {item["id"]: item for item in streamed if item["id"]}
+        anonymous = iter(item for item in streamed if not item["id"])
+        for call in calls:
+            identifier = call["id"]
+            purpose = _purpose(_arguments(call), "name")
+            if purpose:
+                self._tool_names[identifier] = purpose
+            if not self._mutable_tools:
+                continue
+            delta = by_id.pop(identifier, None)
+            if delta is None:
+                delta = next(anonymous, None)
+            self._tool_keys[identifier] = delta["key"] if delta is not None else object()
+            self._pending_tools[identifier] = call
+
+    def _finish_tool_notes(self, status):
+        if not self._mutable_tools:
+            return
+        for call in self._calls.values():
+            if call["announced"]:
+                label = _tool_call_summary(call["name"], _arguments(call)).rsplit("：", 1)[0]
+                _tool_note(f"{label}：{status}", self.output, key=call["key"], failed=True)
+        for identifier, call in self._pending_tools.items():
+            label = _tool_call_summary(call["name"], _arguments(call)).rsplit("：", 1)[0]
+            _tool_note(f"{label}：{status}", self.output, key=self._tool_keys[identifier], failed=True)
+        self._pending_tools.clear()
+        self._tool_keys.clear()
+        self._tool_names.clear()
 
     def _write_delta(self, text, *, channel="text"):
         if not text:
@@ -303,9 +370,10 @@ class ConsoleRenderer:
 
     def _tool_delta(self, event):
         call = self._calls.setdefault(event["index"], {
-            "name": "", "arguments": "", "announced": False, "shown": False,
+            "id": "", "name": "", "arguments": "", "announced": False, "shown": False,
+            "key": object(),
         })
-        for key in ("name", "arguments"):
+        for key in ("id", "name", "arguments"):
             call[key] += event.get(key) or ""
         if call["name"] not in {"shell", "sandbox", "subagent"}:
             return
@@ -328,7 +396,7 @@ class ConsoleRenderer:
             display = receiving
         if display is not None:
             self._finish_stream()
-            _print(display, "tool", self.output)
+            _tool_note(display, self.output, key=call["key"] if self._mutable_tools else None)
             call["announced"] = True
 
     def _finish_stream(self):
@@ -358,6 +426,7 @@ class ConsoleRenderer:
                 activity = event.get("activity")
                 text = None
                 task = None
+                tool_key = None
                 preview = None
                 thinking = False
                 if activity:
@@ -379,7 +448,13 @@ class ConsoleRenderer:
                         text = f"· sub-agent「{_purpose(activity, 'task_name')}」：{stage}"
                     else:
                         text = f"· {activity['name']}「{_purpose(activity, 'task_name')}」：执行中"
-                self.output.set_activity(text, task=task, preview=preview, thinking=thinking)
+                    if activity["kind"] == "tool" and self._mutable_tools:
+                        identifier = self._matching_tool(activity["name"], _purpose(activity, "task_name"))
+                        tool_key = self._tool_keys.get(identifier)
+                options = {"task": task, "preview": preview, "thinking": thinking}
+                if self._mutable_tools:
+                    options["tool_key"] = tool_key
+                self.output.set_activity(text, **options)
             return
         if event.get("type") in {"text_delta", "thinking_delta"}:
             self._had_deltas = self._had_deltas or bool(event["text"])
@@ -395,25 +470,49 @@ class ConsoleRenderer:
             if hasattr(self.output, "finish_response"):
                 self.output.finish_response()
         if event.get("type") == "message" and event["message"]["role"] == "assistant":
-            for call in event["message"].get("tool_calls", []):
-                purpose = _purpose(_arguments(call), "name")
-                if purpose:
-                    self._tool_names[call["id"]] = purpose
+            calls = event["message"].get("tool_calls", [])
+            self._register_tools(calls)
             streamed = event.get("streamed") or self._had_deltas
             self._had_deltas = False
             self._calls.clear()
             if streamed:
+                if self._mutable_tools:
+                    for call in calls:
+                        _tool_note(_tool_call_summary(call["name"], _arguments(call)), self.output,
+                                   key=self._tool_keys[call["id"]])
                 return
         elif event.get("type") in {"error", "retry"}:
             streamed = self._had_deltas
             self._had_deltas = False
+            status = ("未完成（请求重试）" if event["type"] == "retry" else
+                      "已中断" if event.get("message") == "Interrupted" else "失败")
+            self._finish_tool_notes(status)
             self._calls.clear()
             if self.full and streamed and event.get("partial_content"):
                 event = {key: value for key, value in event.items() if key != "partial_content"}
+        if event.get("type") == "subagent_summary" and self._mutable_tools:
+            identifier = self._matching_tool("subagent", _purpose(event, "name", "goal"))
+            _subagent_summary(event, self.output, key=self._tool_keys.get(identifier))
+            self._pending_tools.pop(identifier, None)
+            return
+        if (self._mutable_tools and event.get("type") == "message"
+                and event["message"]["role"] == "tool" and event["message"].get("name") == "subagent"):
+            identifier = event["message"].get("tool_call_id")
+            call = self._pending_tools.get(identifier)
+            if call is not None:
+                # Validation can fail before the child starts and emits a summary.
+                # Keep the child's result and error details private in either case.
+                failed = _tool_failed(_tool_result(event["message"])[0])
+                label = _tool_call_summary(call["name"], _arguments(call)).rsplit("：", 1)[0]
+                status = "失败" if failed else "已返回报告"
+                _tool_note(f"{label}：{status}", self.output, key=self._tool_keys[identifier], failed=failed)
         render_event(event, self.output, full=self.full, echo_user=self.echo_user,
-                     tool_names=self._tool_names)
+                     tool_names=self._tool_names, tool_keys=self._tool_keys)
         if event.get("type") == "message" and event["message"]["role"] == "tool":
-            self._tool_names.pop(event["message"].get("tool_call_id"), None)
+            identifier = event["message"].get("tool_call_id")
+            self._tool_names.pop(identifier, None)
+            self._tool_keys.pop(identifier, None)
+            self._pending_tools.pop(identifier, None)
 
 
 def parser():

@@ -96,6 +96,8 @@ class ProviderClassificationTests(unittest.TestCase):
             ("code", "service_unavailable", "service_unavailable"),
             ("code", "service_unavailable_error", "service_unavailable"),
             ("type", "service_unavailable_error", "service_unavailable"),
+            ("code", "upstream_stream_read_error", "connection"),
+            ("type", "upstream_error", "server_error"),
         )
         for status in (None, 200):
             for field, value, category in cases:
