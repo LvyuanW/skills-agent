@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from .base import (
     DEFAULT_MAX_OUTPUT_TOKENS, HTTPProvider, ProviderError, ProviderConnectionError, ProviderOutputLimitError,
     blocks, encoded_file, parse_arguments, input_token_count, post_json,
-    post_stream, stream_ended, stream_error, validate_calls, tool_feedback_messages,
+    post_stream, stream_ended, stream_error, validate_calls, request_messages,
 )
 from .responses import ResponsesMixin
 
@@ -92,7 +92,7 @@ class OpenAIProvider(ResponsesMixin, HTTPProvider):
     def _chat_payload(self, system: str, messages: list[dict], tools: list[dict],
                       *, disable_thinking: bool = False) -> dict:
         converted = [{"role": "system", "content": system}] if system else []
-        for message in tool_feedback_messages(messages):
+        for message in request_messages(messages):
             role = message["role"]
             item = {"role": role}
             if role == "tool":

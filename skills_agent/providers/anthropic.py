@@ -5,7 +5,7 @@ import json
 from .base import (
     DEFAULT_MAX_OUTPUT_TOKENS, HTTPProvider, ProviderError, ProviderConnectionError, ProviderOutputLimitError,
     blocks, encoded_file, parse_arguments, input_token_count, post_json,
-    post_stream, stream_ended, stream_error, received_text, validate_calls, tool_feedback_messages,
+    post_stream, stream_ended, stream_error, received_text, validate_calls, request_messages,
 )
 
 
@@ -78,7 +78,7 @@ class AnthropicProvider(HTTPProvider):
     def _payload(self, system: str, messages: list[dict], tools: list[dict],
                  *, disable_thinking: bool = False) -> dict:
         converted = []
-        for message in tool_feedback_messages(messages):
+        for message in request_messages(messages):
             role = message["role"]
             if role == "tool":
                 role = "user"

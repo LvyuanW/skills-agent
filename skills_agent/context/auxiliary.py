@@ -5,7 +5,8 @@ import json
 import re
 from uuid import uuid4
 
-from . import DEFAULT_CONTEXT_TOKENS
+from . import DEFAULT_CONTEXT_TOKENS, image_records
+from ..images import project_images
 from ..providers.base import ProviderError, ProviderOutputLimitError, blocks
 from ..providers.retry import retry_call
 from ..session import Session
@@ -87,8 +88,39 @@ def _evidence_message(message):
     return result
 
 
+def _image_references(message):
+    """Keep image evidence addresses without attaching its pixels again."""
+    if message is None:
+        return None
+    # This boundary is only for projection; it is never sent or logged.
+    return project_images([message, {"role": "assistant", "content": ""}])[0]
+
+
+def _image_payload(payload):
+    payload = deepcopy(payload)
+    if "records" in payload:
+        payload["records"] = image_records(payload["records"])
+    if payload.get("current_user_task"):
+        payload["current_user_task"] = _image_references(payload["current_user_task"])
+    if payload.get("input_kind") == "partial_reports" and payload.get("tool_attachments"):
+        payload["tool_attachments"] = _image_references({"content": payload["tool_attachments"]})["content"]
+    background = payload.get("background")
+    if isinstance(background, dict):
+        for key in ("current_user_task", "current_user"):
+            if background.get(key):
+                background[key] = _image_references(background[key])
+        if "records" in background:
+            background["records"] = image_records([
+                {**record, "message": _image_references(record["message"])}
+                for record in background["records"]])
+        if "messages" in background:
+            background["messages"] = [_image_references(message) for message in background["messages"]]
+    return payload
+
+
 def _messages(payload):
     """Use the same native attachment-bearing request for counting and completion."""
+    payload = _image_payload(payload)
     evidence = [(record["event_id"], record["message"]) for record in payload.get("records", [])]
     if payload.get("tool_attachments"):
         evidence.append(("tool_output", {"content": payload["tool_attachments"]}))
@@ -115,7 +147,7 @@ def _messages(payload):
             seen.add(key)
             content.append({"type": "text", "text": f"Read-only attachment from {reference}: {block.get('name') or block.get('path')}"})
             content.append(deepcopy(block))
-    return [{"role": "user", "content": content if seen else content[0]["text"]}]
+    return project_images([{"role": "user", "content": content if seen else content[0]["text"]}])
 
 
 def _groups(records):
@@ -315,7 +347,8 @@ class Auxiliary:
         if output_tokens is not None and output_tokens <= 0:
             raise ValueError("Summary output_tokens must be positive")
         budget = min(self.output_tokens, output_tokens or self.output_tokens)
-        records = [{**deepcopy(record), "message": _evidence_message(record["message"])} for record in records]
+        records = image_records([
+            {**deepcopy(record), "message": _evidence_message(record["message"])} for record in records])
         current_user = _evidence_message(current_user)
         ids = [record["event_id"] for record in records]
         if any(not isinstance(identifier, str) for identifier in ids) or len(ids) != len(set(ids)):
@@ -412,8 +445,12 @@ class Auxiliary:
                           if isinstance(background, dict) else None}
         if self._fits(_REPORT, payload(content), log=log, disable_thinking=True):
             return self._report(log, payload(content))
-        reports = [self._report(log, payload(part, start, end))
-                   for part, start, end in self._text_chunks(content, payload, log=log)]
+        reports = []
+        for part, start, end in self._text_chunks(content, payload, log=log):
+            reports.append(self._report(log, payload(part, start, end)))
+            # Counting and retries may reuse this request, but a successful
+            # report consumes its images before the next chunk is generated.
+            attachments = _image_references({"content": attachments})["content"]
         while len(reports) > 1:
             combined = "\n\n".join(reports)
             if self._fits(_REPORT, payload(combined), log=log, disable_thinking=True):

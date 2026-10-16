@@ -8,6 +8,7 @@ import re
 from copy import deepcopy
 
 from ..feedback import replace_result_text
+from ..images import project_images
 from ..providers.retry import retry_call, retry_event
 
 
@@ -16,6 +17,21 @@ DEFAULT_CONTEXT_TOKENS = 1_000_000
 
 class ContextBudgetError(RuntimeError):
     pass
+
+
+def image_records(records):
+    """Project the complete chronology before records are split into summary batches."""
+    messages = project_images([record["message"] for record in records])
+    selected = [{**deepcopy(record), "message": message} for record, message in zip(records, messages)]
+    for record in selected:
+        content = record["message"].get("content")
+        for block in content if isinstance(content, list) else []:
+            reference = block.get("image_reference")
+            if (isinstance(reference, dict) and "event_id" not in reference
+                    and isinstance(record.get("event_id"), str)):
+                reference["event_id"] = record["event_id"]
+                block["text"] += f"\nEvidence event: {record['event_id']}"
+    return selected
 
 
 def working_message(message):
@@ -162,6 +178,7 @@ class WorkingContext:
         }
         if self.state.get("version") != 1:
             raise ValueError("Unsupported working context version")
+        self._update_images()
 
     @property
     def records(self):
@@ -172,8 +189,17 @@ class WorkingContext:
         temporary.write_text(json.dumps(self.state, ensure_ascii=False, indent=2) + "\n")
         temporary.replace(self.path)
 
+    def _update_images(self, *, save=True):
+        selected = image_records(self.records)
+        if selected != self.records:
+            self.state["records"] = selected
+            self.state["token_count"] = None
+            if save:
+                self.save()
+
     def sync(self, select=None):
         """Select newly appended messages and stopped response text, without replaying history."""
+        self._update_images()
         saved_cursor = self.state["cursor"]
         for cursor, event in self.session.iter_events(self.state["cursor"]):
             message = None
@@ -197,6 +223,10 @@ class WorkingContext:
                                  if call["id"] == message.get("tool_call_id")), None)
                     record = select(record, call)
                 self.records.append(record)
+                # An assistant response consumes the images supplied to that
+                # request. Expire them before a following tool's report can
+                # read the current task or background from this context.
+                self._update_images(save=False)
                 self.state["token_count"] = None
                 self.state["cursor"] = cursor
                 self.save()
@@ -206,6 +236,7 @@ class WorkingContext:
             self.save()
 
     def latest_user(self):
+        self._update_images()
         return next((deepcopy(record["message"]) for record in reversed(self.records)
                      if record["message"].get("role") == "user"), None)
 
@@ -218,6 +249,7 @@ class WorkingContext:
         return system
 
     def snapshot(self, system, tools):
+        self._update_images()
         return deepcopy({"system": self._system(system), "tools": tools,
                          "records": self.records,
                          "covered_event_ids": self.state["covered_event_ids"]})
@@ -253,6 +285,7 @@ class WorkingContext:
         # anything still unanswered here is the group being executed now.
         recover_interrupted_calls(self.records)
         record_groups(self.records)  # Never compact while waiting for tool results.
+        self._update_images()
         limit = self.max_tokens
         window = getattr(self.model, "model_context_window", None)
         if window is not None:

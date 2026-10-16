@@ -80,8 +80,11 @@ class FeedbackRuntimeTests(unittest.TestCase):
 
         def resumed(system, messages, tools, on_event):
             tool = next(message for message in messages if message['role'] == 'tool')
-            saved = next(block for block in tool['content'] if block['type'] == 'image')
-            self.assertEqual(Path(saved['path']).read_bytes(), self.pixels)
+            self.assertFalse(any(block['type'] == 'image' for block in tool['content']))
+            reference = next(block['image_reference'] for block in tool['content']
+                             if 'image_reference' in block)
+            self.assertEqual(reference['url'], Path(image['path']).as_uri())
+            self.assertEqual(Path(reference['path']).read_bytes(), self.pixels)
             return final('Continued from saved feedback.')
 
         self.agent(ScriptedModel([resumed])).run(self.session.make_user_message('Continue.', []))
@@ -108,6 +111,42 @@ class FeedbackRuntimeTests(unittest.TestCase):
                 self.assertEqual(result['exit_code'], 7)
                 self.assertEqual(result['stderr'], 'original failure')
         self.assertFalse((self.session.path / 'attachments').exists())
+
+    def test_eighteen_image_observations_do_not_accumulate_in_serialized_requests(self):
+        from skills_agent.images import MAX_IMAGE_BYTES
+
+        self.image.write_bytes(self.pixels + bytes(MAX_IMAGE_BYTES - len(self.pixels)))
+        provider = OpenAIProvider('model', 'unused', api_format='chat')
+        counts, sizes = [], []
+
+        def inspect(system, messages, tools, on_event):
+            payload = provider._chat_payload(system, messages, tools)
+            images = [block for message in payload['messages']
+                      for block in (message.get('content') or []) if isinstance(block, dict)
+                      and block.get('type') == 'image_url']
+            counts.append(len(images))
+            sizes.append(len(json.dumps(payload, ensure_ascii=False).encode('utf-8')))
+            if len(counts) > 1:
+                self.assertEqual(len(images), 1)
+                current = next(block for message in reversed(messages)
+                               for block in message.get('content', []) if isinstance(block, dict)
+                               and block.get('type') == 'image')
+                self.assertIn(current['url'], json.dumps(payload))
+            return (final('Reviewed all observations.') if len(counts) == 19 else
+                    call('shell', {'name': 'Read current observation', 'command': 'feedback'}, len(counts)))
+
+        agent = self.agent(ScriptedModel([inspect] * 19))
+        with patch.object(agent.tools, 'execute', return_value=self.output(self.envelope())):
+            agent.run(self.session.make_user_message('Inspect the sequence.', []))
+        self.assertEqual(counts, [0] + [1] * 18)
+        self.assertLess(max(sizes), 1_500_000)
+        raw_images = [block for message in self.session.messages()
+                      for block in message.get('content', []) if isinstance(block, dict)
+                      and block.get('type') == 'image']
+        self.assertEqual(len(raw_images), 18)
+        self.assertEqual(len(list((self.session.path / 'attachments').iterdir())), 18)
+        self.assertFalse(any(block.get('type') == 'image' for record in agent.context.records
+                             for block in record['message'].get('content', []) if isinstance(block, dict)))
 
     def test_one_bad_attachment_does_not_silently_hide_the_others_or_the_error(self):
         payload = self.envelope(attachments=[self.envelope()['attachments'][0],

@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+from .images import MAX_REQUEST_IMAGES, image_bytes
+
 
 def image_mime(data: bytes) -> str:
     """Identify supported image headers, without claiming full pixel validation."""
@@ -32,6 +34,10 @@ def feedback_content(result: str, session):
         errors.append("Unsupported skills_agent_feedback version; expected 1")
     elif not isinstance(payload.get("attachments"), list):
         errors.append("Feedback attachments must be a list")
+    elif len(payload["attachments"]) > MAX_REQUEST_IMAGES:
+        errors.append(f"A request can contain at most {MAX_REQUEST_IMAGES} images; "
+                      "use the images skill to compose the required sources into a labeled image "
+                      "within 1 MB, then send a new feedback envelope")
     else:
         for index, attachment in enumerate(payload["attachments"], 1):
             try:
@@ -49,14 +55,18 @@ def feedback_content(result: str, session):
                 label = attachment.get("label", path.name)
                 if not isinstance(label, str):
                     raise ValueError("Image feedback label must be text")
-                data = path.read_bytes()
+                data = image_bytes({"path": str(path)})
                 mime = image_mime(data)
+                source_url = attachment.get("source_url") or path.as_uri()
+                if not isinstance(source_url, str) or not source_url.startswith(("file://", "https://", "http://")):
+                    raise ValueError("Image source_url must be a file:// or HTTP(S) URL")
                 metadata = session.save_attachment(path, data=data)
                 media.extend([
                     {"type": "text", "text": f"Image feedback: {label}\nSource: {path}\n"
-                     f"Snapshot: {metadata['path']}"},
+                     f"Snapshot: {metadata['path']}\nImage URL: {metadata['url']}\n"
+                     f"Source URL: {source_url}"},
                     {"type": "image", **metadata, "mime_type": mime,
-                     "source_path": str(path), "label": label},
+                     "source_path": str(path), "source_url": source_url, "label": label},
                 ])
             except (OSError, ValueError) as exc:
                 errors.append(f"Feedback attachment {index}: {exc}")
@@ -69,6 +79,7 @@ def feedback_content(result: str, session):
 def replace_result_text(message: dict, text: str) -> None:
     """Reports and direct-result fallbacks replace text while retaining native media."""
     content = message.get("content")
-    media = ([block for block in content if block.get("type") in {"image", "file"}]
+    media = ([block for block in content if block.get("type") in {"image", "file"}
+              or (block.get("type") == "text" and isinstance(block.get("image_reference"), dict))]
              if isinstance(content, list) else [])
     message["content"] = [{"type": "text", "text": text}, *media] if media else text

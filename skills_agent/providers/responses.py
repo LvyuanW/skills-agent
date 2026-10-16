@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .base import (
     ProviderError, ProviderConnectionError, ProviderOutputLimitError, blocks,
-    encoded_file, parse_arguments, post_stream, stream_ended, stream_error, received_text, validate_calls, tool_feedback_messages,
+    encoded_file, parse_arguments, post_stream, stream_ended, stream_error, received_text, validate_calls, request_messages,
 )
 
 
@@ -56,7 +56,7 @@ def _normalized(output):
 class ResponsesMixin:
     def _responses_payload(self, system, messages, tools, *, disable_thinking=False):
         items = []
-        for message in tool_feedback_messages(messages):
+        for message in request_messages(messages):
             role = message['role']
             if role == 'tool':
                 items.append({'type': 'function_call_output', 'call_id': message['tool_call_id'],

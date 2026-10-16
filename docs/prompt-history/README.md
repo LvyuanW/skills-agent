@@ -23,7 +23,7 @@
 
 | 文档 | 源位置或用途 | 当前版本 |
 | --- | --- | --- |
-| [主工作提示词](agent-system.md) | `Agent._system()`；含共用工作规则及 subagent 可用时的沟通、委派、review 段 | v7 |
+| [主工作提示词](agent-system.md) | `Agent._system()`；含共用工作规则及 subagent 可用时的沟通、委派、review 段 | v8 |
 | [子 Agent 最终报告](subagent-report.md) | `Agent._subagent()` 的公共角色追加指令 | v1 |
 | [历史检索子 Agent 角色](history-retrieval-role.md) | `history=True` 的专用角色追加指令 | v1 |
 | [子 Agent 任务输入](subagent-task-input.md) | 子任务名称、任务文本、只读快照和原生附件标签 | v1 |
@@ -43,13 +43,15 @@
 | [file-editing 技能](skill-file-editing.md) | `builtin_skills/file-editing/SKILL.md` | v3 |
 | [file-editing 渐进编辑示例](skill-file-editing-incremental-examples.md) | `builtin_skills/file-editing/references/incremental-editing.md` | v2 |
 | [review 技能](skill-review.md) | `builtin_skills/review/SKILL.md` | v2 |
-| [feedback 技能](skill-feedback.md) | `builtin_skills/feedback/SKILL.md` | v5 |
+| [images 技能](skill-images.md) | `builtin_skills/images/SKILL.md` | v1 |
+| [feedback 技能](skill-feedback.md) | `builtin_skills/feedback/SKILL.md` | v6 |
 | [feedback 跨回合反馈示例](skill-feedback-loop.md) | `builtin_skills/feedback/references/feedback-loop.md` | v2 |
 | [feedback 验收检查参考](skill-feedback-acceptance.md) | `builtin_skills/feedback/references/acceptance-checks.md` | v2 |
 | [workspace 定位提取参考](skill-workspace-extraction.md) | `builtin_skills/workspace/references/extraction.md` | v2 |
 | [process-management 技能](skill-process-management.md) | `builtin_skills/process-management/SKILL.md` | v3 |
 | [process-management 跨回合参考](skill-process-management-across-turns.md) | `builtin_skills/process-management/references/across-turns.md` | v1 |
-| [反馈图片来源标签](feedback-image-label.md) | `feedback_content()` 的源文件与会话快照标签 | v1 |
+| [反馈图片来源标签](feedback-image-label.md) | `feedback_content()` 的源文件与会话快照标签 | v2 |
+| [图片引用](image-reference.md) | `images.image_reference()` 与工作上下文的图片 URL/事件引用 | v1 |
 | [工具附件观察包装](tool-feedback-observation.md) | 请求中工具产生的只读观察与附件来源标签 | v1 |
 | [history 技能](skill-history.md) | `context/history_skill/SKILL.md`，包含旧目录历史 | v2 |
 

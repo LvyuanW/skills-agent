@@ -97,7 +97,8 @@ class FeedbackProviderTests(unittest.TestCase):
         chat = OpenAIProvider("model", "key", api_format="chat")._chat_payload("", self.messages, [])
         self.assertEqual([message["role"] for message in chat["messages"]],
                          ["user", "assistant", "tool", "tool", "user"])
-        self.assertEqual(chat["messages"][2]["content"], self.original_result)
+        self.assertTrue(chat["messages"][2]["content"].startswith(self.original_result))
+        self.assertIn(Path(self.images[0]["path"]).as_uri(), chat["messages"][2]["content"])
         self.assertEqual(chat["messages"][1]["reasoning_content"], "preserved provider state")
         self.assertEqual([block["image_url"]["url"] for block in chat["messages"][-1]["content"]
                           if block["type"] == "image_url"],
@@ -115,7 +116,8 @@ class FeedbackProviderTests(unittest.TestCase):
         anthropic = AnthropicProvider("model", "key")._payload("", self.messages, [])
         content = anthropic["messages"][-1]["content"]
         self.assertEqual([block["tool_use_id"] for block in content[:2]], ["frame-a", "frame-b"])
-        self.assertEqual(content[0]["content"], self.original_result)
+        self.assertTrue(content[0]["content"].startswith(self.original_result))
+        self.assertIn(Path(self.images[0]["path"]).as_uri(), content[0]["content"])
         self.assertEqual([block["source"]["data"] for block in content if block["type"] == "image"], self.encoded)
         self.assertEqual(self.messages, original)
 

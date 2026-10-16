@@ -20,6 +20,11 @@ import subprocess
 import sys
 import tempfile
 import time
+from urllib.parse import urlsplit
+
+
+MAX_IMAGES = 5
+MAX_IMAGE_BYTES = 1_000_000
 
 
 class FeedbackError(Exception):
@@ -214,13 +219,43 @@ def image_format(path: Path) -> str:
     raise FeedbackError(f"{path}: unsupported or invalid image header; expected PNG, JPEG, GIF, or WebP")
 
 
-def attachment(path: Path, label: str) -> dict:
-    return {"type": "image", "path": str(path), "mime_type": image_format(path), "label": label}
+def validate_source_url(source_url: str | None) -> None:
+    if source_url is not None:
+        try:
+            parsed = urlsplit(source_url)
+        except ValueError:
+            raise FeedbackError("--source-url must be an absolute HTTP(S) or file URL") from None
+        if parsed.scheme not in {"http", "https", "file"} or (
+            parsed.scheme in {"http", "https"} and not parsed.netloc
+        ) or (parsed.scheme == "file" and not parsed.path.startswith("/")):
+            raise FeedbackError("--source-url must be an absolute HTTP(S) or file URL")
+
+
+def attachment(path: Path, label: str, source_url: str | None = None) -> dict:
+    mime = image_format(path)
+    size = path.stat().st_size
+    if size > MAX_IMAGE_BYTES:
+        raise FeedbackError(f"{path}: image has {size} bytes; maximum is {MAX_IMAGE_BYTES} bytes (1 MB). "
+                            "Keep the original, then crop, resize or compress a separate copy and attach that copy.")
+    validate_source_url(source_url)
+    result = {"type": "image", "path": str(path), "mime_type": mime, "label": label,
+              "url": path.as_uri()}
+    if source_url is not None:
+        result["source_url"] = source_url
+    return result
 
 
 def image_feedback(args: argparse.Namespace) -> dict:
+    if len(args.paths) > MAX_IMAGES:
+        raise FeedbackError(f"At most {MAX_IMAGES} images may be attached to one model request. "
+                            "Select the images needed now, or use images/scripts/images.py compose "
+                            "to combine needed sources into one bounded image; do not split tool calls to bypass this limit.")
+    source_urls = args.source_url or [None] * len(args.paths)
+    if len(source_urls) != len(args.paths):
+        raise FeedbackError("Provide one --source-url per image path, in the same order, or omit all source URLs")
     paths = [absolute(value) for value in args.paths]
-    attachments = [attachment(path, args.label or path.name) for path in paths]
+    attachments = [attachment(path, args.label or path.name, source_url)
+                   for path, source_url in zip(paths, source_urls)]
     return envelope("image", str(paths[0]),
                     {"paths": [str(path) for path in paths], "header_validation_only": True}, attachments)
 
@@ -280,7 +315,7 @@ def render_feedback(args: argparse.Namespace) -> tuple[dict, int]:
         status = process_status(process)
         if status != 0:
             return envelope("render", str(path), observations), status
-        if image_format(screenshot) != "image/png":
+        if attachment(screenshot, path.name)["mime_type"] != "image/png":
             raise FeedbackError("browser did not produce a valid PNG screenshot header")
         os.replace(screenshot, output)
     return envelope("render", str(path), observations,
@@ -330,6 +365,8 @@ def parser() -> argparse.ArgumentParser:
     image = commands.add_parser("image", help="request native visual feedback from existing image files")
     image.add_argument("paths", nargs="+")
     image.add_argument("--label")
+    image.add_argument("--source-url", action="append",
+                       help="original HTTP(S) or file URL; repeat in the same order as image paths")
     render = commands.add_parser("render", help="render local HTML/SVG through an installed Chrome/Chromium")
     render.add_argument("path")
     render.add_argument("--output", required=True)

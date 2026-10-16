@@ -201,11 +201,12 @@ class MessageQueueTerminalTests(unittest.TestCase):
         self.assertEqual(len(requests), 3)
         content = requests[1]["input"][-1]["content"]
         self.assertEqual([block["type"] for block in content],
-                         ["input_text", "input_image", "input_file"])
-        self.assertEqual(content[1]["image_url"],
+                         ["input_text", "input_text", "input_image", "input_file"])
+        self.assertIn("file://", content[1]["text"])
+        self.assertEqual(content[2]["image_url"],
                          "data:image/png;base64," + base64.b64encode(PNG).decode())
-        self.assertEqual(content[2]["filename"], "notes.pdf")
-        self.assertEqual(base64.b64decode(content[2]["file_data"].split(",", 1)[-1]),
+        self.assertEqual(content[3]["filename"], "notes.pdf")
+        self.assertEqual(base64.b64decode(content[3]["file_data"].split(",", 1)[-1]),
                          document_bytes)
         self.assertEqual(requests[2]["input"][-1]["content"],
                          [{"type": "input_text", "text": "no attachments here"}])

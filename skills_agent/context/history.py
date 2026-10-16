@@ -60,7 +60,12 @@ def _message_text(message: dict) -> str:
             elif block.get("type") == "thinking":
                 parts.append("Thinking:\n" + block.get("thinking", ""))
             elif block.get("type") in {"image", "file"}:
-                parts.append(f"Attachment: {block.get('name', '')}\nPath: {block.get('path', '')}")
+                label = f"Attachment: {block.get('name', '')}\nPath: {block.get('path', '')}"
+                if block.get("url"):
+                    label += f"\nURL: {block['url']}"
+                if block.get("source_url"):
+                    label += f"\nSource URL: {block['source_url']}"
+                parts.append(label)
     for call in message.get("tool_calls", []):
         arguments = call.get("arguments", "")
         if isinstance(arguments, str):

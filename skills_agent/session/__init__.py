@@ -10,6 +10,8 @@ from pathlib import Path
 from uuid import uuid4
 from datetime import datetime, timezone
 
+from ..images import MAX_REQUEST_IMAGES, image_bytes
+
 
 class Session:
     def __init__(self, root: Path, session_id: str):
@@ -65,16 +67,33 @@ class Session:
         else:
             destination.write_bytes(data)
         mime_type = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
-        return {"path": str(destination), "name": source.name, "mime_type": mime_type}
+        return {"path": str(destination), "name": source.name, "mime_type": mime_type,
+                "url": destination.as_uri()}
 
     def make_user_message(self, text: str, paths: list[Path]) -> dict:
         content = [{"type": "text", "text": text}] if text else []
+        images = 0
+        # Validate before copying anything, so rejected input leaves no partial message.
+        prepared = []
         for supplied_path in paths:
-            metadata = self.save_attachment(supplied_path)
+            source = Path(supplied_path).expanduser().resolve(strict=True)
+            if not source.is_file():
+                raise ValueError(f"Attachment is not a file: {source}")
+            mime = mimetypes.guess_type(source.name)[0]
+            data = None
+            if mime in {"image/png", "image/jpeg", "image/gif", "image/webp"}:
+                images += 1
+                if images > MAX_REQUEST_IMAGES:
+                    raise ValueError(f"A request can contain at most {MAX_REQUEST_IMAGES} images")
+                data = image_bytes({"path": str(source)})
+            prepared.append((source, data))
+        for supplied_path, data in prepared:
+            metadata = self.save_attachment(supplied_path, data=data)
             destination = Path(metadata["path"])
             mime_type = metadata["mime_type"]
             if mime_type in {"image/png", "image/jpeg", "image/gif", "image/webp"}:
-                content.append({"type": "image", **metadata})
+                content.append({"type": "image", **metadata,
+                                "source_url": supplied_path.as_uri()})
             elif mime_type == "application/pdf":
                 content.append({"type": "file", **metadata})
             else:

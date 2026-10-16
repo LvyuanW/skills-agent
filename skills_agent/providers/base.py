@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Protocol
 from urllib import error, request
 
+from ..images import ImageRequestError, image_bytes, project_images
 from .diagnostics import DiagnosticStream, Redactor, RequestDiagnostics
 
 
@@ -192,6 +193,10 @@ class ProviderConnectionError(ProviderError):
 
 class ProviderOutputLimitError(ProviderError):
     """The provider stopped generation at an output or context limit."""
+
+
+class ProviderImageError(ProviderError, ImageRequestError):
+    """A local image cannot be included in a provider request."""
 
 
 class Provider(Protocol):
@@ -379,7 +384,14 @@ def received_text(content) -> list[dict]:
 
 
 def encoded_file(block: dict) -> str:
-    return base64.b64encode(Path(block["path"]).read_bytes()).decode("ascii")
+    if block.get("type") == "image":
+        try:
+            data = image_bytes(block)
+        except (ImageRequestError, OSError) as exc:
+            raise ProviderImageError(str(exc), diagnostics={"kind": "image_request", "phase": "prepare_image"}) from None
+    else:
+        data = Path(block["path"]).read_bytes()
+    return base64.b64encode(data).decode("ascii")
 
 
 def parse_arguments(arguments: str) -> dict:
@@ -462,6 +474,15 @@ def tool_feedback_messages(messages: list[dict]) -> list[dict]:
             ]})
             observations = []
     return result
+
+
+def request_messages(messages: list[dict]) -> list[dict]:
+    """Share the same image projection across counting and generation."""
+    try:
+        projected = project_images(messages)
+    except ImageRequestError as exc:
+        raise ProviderImageError(str(exc), diagnostics={"kind": "image_request", "phase": "prepare_image"}) from None
+    return tool_feedback_messages(projected)
 
 
 class HTTPProvider:

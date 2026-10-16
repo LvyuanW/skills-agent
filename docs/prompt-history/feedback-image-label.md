@@ -17,3 +17,21 @@ Image feedback: {label}
 Source: {source_path}
 Snapshot: {snapshot_path}
 ````
+
+## v2 · 2026-10-16 · 附图保留可回查 URL
+
+来源：当前工作区（未提交）。
+
+- 发现的问题：原始图片持续进入后续请求，清除原图后仍须保留可重新读取的确切地址。
+- 本版本目标：每次附图同时提供发送快照的 URL 和原始来源 URL；快照地址可用于之后重新附图。
+- 本版本效果：运行时保存不可变快照并在同一请求中提供地址；历史工作上下文仅保留引用，原始会话仍完整留存。真实模型表现待观察。
+
+### 完整提示词快照
+
+```text
+Image feedback: {label}
+Source: {source_path}
+Snapshot: {snapshot_path}
+Image URL: {snapshot_url}
+Source URL: {source_url}
+```

@@ -281,15 +281,19 @@ class ProviderTests(unittest.TestCase):
                     blocks = send.call_args.args[1]["messages"][0]["content"]
                     self.assertEqual(blocks[0], {"type": "text", "text": "input"})
                     self.assertEqual(blocks[-1], {"type": "text", "text": "File: /archive.zip"})
+                    self.assertTrue(any(image.as_uri() in block.get("text", "") for block in blocks))
                     if kind == "openai":
-                        self.assertEqual(blocks[1]["image_url"]["url"],
+                        native = next(block for block in blocks if block["type"] == "image_url")
+                        document = next(block for block in blocks if block["type"] == "file")
+                        self.assertEqual(native["image_url"]["url"],
                                          "data:image/png;base64," + base64.b64encode(b"image bytes").decode())
-                        self.assertEqual(blocks[2]["file"]["filename"], "doc.pdf")
-                        self.assertTrue(blocks[2]["file"]["file_data"].startswith("data:application/pdf;base64,"))
+                        self.assertEqual(document["file"]["filename"], "doc.pdf")
+                        self.assertTrue(document["file"]["file_data"].startswith("data:application/pdf;base64,"))
                     else:
-                        self.assertEqual(blocks[1]["type"], "image")
-                        self.assertEqual(blocks[2]["type"], "document")
-                        self.assertEqual(base64.b64decode(blocks[2]["source"]["data"]), b"%PDF bytes")
+                        native = next(block for block in blocks if block["type"] == "image")
+                        document = next(block for block in blocks if block["type"] == "document")
+                        self.assertEqual(base64.b64decode(native["source"]["data"]), b"image bytes")
+                        self.assertEqual(base64.b64decode(document["source"]["data"]), b"%PDF bytes")
 
     def test_refusal_content_is_preserved(self):
         raw = openai_response(None)

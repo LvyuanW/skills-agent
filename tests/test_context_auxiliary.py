@@ -483,7 +483,7 @@ class AuxiliaryTests(unittest.TestCase):
             content = call["messages"][0]["content"]
             self.assertEqual([block for block in content if block["type"] in {"image", "file"}], [image, pdf])
             self.assertIn("event-1", content[1]["text"])
-            self.assertIn("current_user_task", content[3]["text"])
+            self.assertTrue(any("current_user_task" in block.get("text", "") for block in content[1:]))
             self.assertIn(call["messages"], model.counted)
 
     def test_required_user_background_that_is_itself_too_large_is_not_dropped(self):

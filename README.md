@@ -258,11 +258,15 @@ API 错误的脱敏诊断保存在对应会话 `events.jsonl` 的 `error.diagnos
 
 内置 [file-editing skill](skills_agent/builtin_skills/file-editing/SKILL.md) 提供新建、精确替换、锚点前后插入、删除内容和删除文件的 Python 脚本，通过现有 shell 调用，不新增 tools。替换和插入要求原文或锚点唯一匹配，失败不写入；成功返回改动位置与有限行号片段。它还提供[跨回合渐进编辑示例](skills_agent/builtin_skills/file-editing/references/incremental-editing.md)：先保存有用产物，读取操作结果，再选择下一段扩展。
 
-内置 [feedback skill](skills_agent/builtin_skills/feedback/SKILL.md) 提供获取实际工作结果的基础能力，同样通过现有 shell 调用：`file` 读取文件或目录元数据，`text` 按行列读取实际 UTF-8 文本，`run` 执行检查并保存完整、分离的 stdout／stderr 日志，`image` 获取已有图片，`render` 使用已安装的 Chrome／Chromium 截取本地 HTML 或 SVG。长文本返回续读行列；命令失败和超时保留真实状态。[跨回合反馈示例](skills_agent/builtin_skills/feedback/references/feedback-loop.md) 展示保存、获取、观察和修改之间的衔接。
+内置 [feedback skill](skills_agent/builtin_skills/feedback/SKILL.md) 提供获取实际工作结果的基础能力，同样通过现有 shell 调用：`file` 读取文件或目录元数据，`text` 按行列读取实际 UTF-8 文本，`run` 执行检查并保存完整、分离的 stdout／stderr 日志，`render` 使用已安装的 Chrome／Chromium 截取本地 HTML 或 SVG。附图统一使用下面的 images 技能和现有 `image/render` 通道。长文本返回续读行列；命令失败和超时保留真实状态。[跨回合反馈示例](skills_agent/builtin_skills/feedback/references/feedback-loop.md) 展示保存、获取、观察和修改之间的衔接。
+
+内置 [images skill](skills_agent/builtin_skills/images/SKILL.md) 要求每次附图时使用，覆盖已有图片、下载图片、生成图片、截图和渲染结果。每个模型请求最多5张图，每张编码图片文件最多1,000,000字节（1 MB，base64前）；多次工具调用不能叠加该额度。禁止制作超过1 MB的新图片；[images.py](skills_agent/builtin_skills/images/scripts/images.py) 的 `save_bounded` 支持内存生成后合限才写盘，`prepare SOURCE --output PATH` 将已有大图压缩为副本并直接附图，保留原件。确需同时检查超过5张时，`compose SOURCE... --output PATH [--columns N]` 生成一张合限的编号拼图，返回原图URL、尺寸及最终图片中的区域坐标，便于回查与坐标换算；`attach PATH...` 附加已有合限图片，HTML/SVG 仍通过 `feedback.py render` 获取。图片处理使用项目依赖 Pillow，压缩次数有界，不保存超限中间图。helper可从任意工作目录运行，无需导入 skills-agent 包。
+
+图片来源支持本地路径和 `file://` URL；远程图片先用现有 fetch helper 下载，可用 `--source-url URL` 保留原始地址，多个来源按路径顺序重复该参数。脚本不会上传图片，也不会自动安装依赖。技能给出压缩、合图、生成、下载、附图与渲染的可执行示例；输出的拼图用于概览，必要时读取原图并裁剪局部再次附图。
 
 反馈技能的 `scripts/check.py` 检查明确的文件、文本和 JSON 验收条件，保留实际观察与源位置，区分条件失败和获取错误；[验收检查参考](skills_agent/builtin_skills/feedback/references/acceptance-checks.md) 说明如何检查需求，以及失败后选择下一步。通过指定条件只证明该检查范围，行为要求仍需真实运行。
 
-图片获取返回一个明确标记的反馈 JSON；该次 shell 的 stdout 应只包含这一个对象。运行时在文本筛选前读取所声明的绝对宿主机路径，识别 PNG／JPEG／GIF／WebP 图片头并保存独立会话快照，将图片字节作为原生输入送入下一次模型请求。原文件后续修改或删除不会改变已保存的观察。图片保留在所属工具结果中，辅助报告、上下文压缩和历史检索也能获取它；供应商请求中的只读媒体投影不改变当前真实用户任务。没有反馈标记的普通输出保持原有行为，获取失败明确返回诊断。
+图片获取返回一个明确标记的反馈 JSON；该次 shell 的 stdout 应只包含这一个对象。运行时在文本筛选前读取所声明的绝对宿主机路径，识别 PNG／JPEG／GIF／WebP 图片头并保存独立会话快照，在同一次模型请求中附上图片与发送快照的 `file://` URL，并保留可选原始 `source_url`。原文件后续修改或删除不会改变已保存的观察。历史图片保留可回查引用，不在后续请求中永久重复携带原图；需要再次查看时按记录的URL或路径读取、裁剪，并通过 images 技能重新附图。辅助报告、上下文压缩和历史检索遵循相同的图片限制；供应商请求中的只读媒体投影不改变当前真实用户任务。没有反馈标记的普通输出保持原有行为，获取失败明确返回诊断。
 
 文件元数据、文本检查、截图和视觉判断各有适用范围：保存或渲染成功不能证明画面正确，单张截图不能证明动画流畅。视觉判断要求所用模型支持图片输入；`render` 需要现有浏览器，不自动安装依赖。PDF、办公文件等需用适当的已安装读取器提取文字或渲染页面，再获取相应文本或图片。
 

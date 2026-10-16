@@ -115,10 +115,11 @@ class ClipboardInputTests(unittest.TestCase):
         self.assertEqual(Path(attachments[0]["path"]).read_bytes(), PNG)
         self.assertTrue(Path(attachments[1]["path"]).read_bytes().startswith(b"%PDF-1.7"))
         native = requests[-1]["input"][-1]["content"]
-        self.assertEqual([block["type"] for block in native], ["input_text", "input_image", "input_file"])
-        self.assertEqual(native[1]["image_url"],
+        self.assertEqual([block["type"] for block in native], ["input_text", "input_text", "input_image", "input_file"])
+        self.assertIn(attachments[0]["url"], native[1]["text"])
+        self.assertEqual(native[2]["image_url"],
                          "data:image/png;base64," + base64.b64encode(PNG).decode())
-        self.assertEqual(native[2]["filename"], "报告.pdf")
+        self.assertEqual(native[3]["filename"], "报告.pdf")
         visible = terminal_text(live)
         self.assertEqual(visible.count("[图片1]"), 1)
         self.assertEqual(visible.count("报告.pdf"), 1)
@@ -141,11 +142,13 @@ class ClipboardInputTests(unittest.TestCase):
         terminal.send("\x16\n")
         terminal.prompt("REPLIED_1")
         self.assertEqual([block["type"] for block in requests[-1]["input"][-1]["content"]],
-                         ["input_text", "input_image"])
+                         ["input_text", "input_text", "input_image"])
         terminal.send("接着聊\n")
         terminal.prompt("REPLIED_2")
         self.assertEqual(requests[-1]["input"][-1]["content"],
                          [{"type": "input_text", "text": "接着聊"}])
+        self.assertFalse(any(block.get("type") == "input_image" for item in requests[-1]["input"]
+                             for block in item.get("content", []) if isinstance(block, dict)))
         self.assertEqual(len(self.users()), 2)
 
     def test_cancelled_paste_draft_does_not_attach_to_next_message(self):
@@ -194,11 +197,15 @@ class ClipboardInputTests(unittest.TestCase):
         terminal.prompt("REPLIED_2")
         self.assertEqual(len(requests), 2)
         first, second = [request["input"][-1]["content"] for request in requests]
-        self.assertEqual(first, second)
-        self.assertEqual([block["type"] for block in second], ["input_text", "input_image"])
+        self.assertEqual(first[0], second[0])
+        self.assertEqual([block for block in first if block["type"] == "input_image"],
+                         [block for block in second if block["type"] == "input_image"])
+        self.assertEqual([block["type"] for block in second], ["input_text", "input_text", "input_image"])
         saved = [Path(block["path"]) for user in self.users() for block in user["content"]
                  if block["type"] == "image"]
         self.assertEqual(len(saved), 2)
+        self.assertIn(saved[0].as_uri(), first[1]["text"])
+        self.assertIn(saved[1].as_uri(), second[1]["text"])
         temporary_image = Path(record.read_text())
         self.assertTrue(temporary_image.is_file())
         terminal.send("/exit\n")
