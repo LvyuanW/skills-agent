@@ -1,4 +1,5 @@
 """Local counting with DeepSeek's request encoder and matching tokenizer."""
+import json
 from pathlib import Path
 
 from .base import ProviderError
@@ -29,6 +30,8 @@ class DeepSeekCounter:
 
     def count_request(self, payload: dict) -> int:
         try:
+            # Approximate reserved text only for counting; keep the sent request intact.
+            payload = json.loads(json.dumps(payload, ensure_ascii=False).replace('<｜image｜>', '<|image|>'))
             converted = self.recipe.ChatCompletionRequest(payload).convert(self.recipe.ConversionOptions())
             count = len(self.encoding.encode(converted.conversation))
             images = self.encoding.render_conversation(converted.conversation).image_sources

@@ -236,6 +236,10 @@ python3 analyze.py
 
 shell 和 sandbox 必填 `name`，用简短自然语言说明脚本用途，供终端显示。参数尚未收全时显示“接收调用”，完整后显示名称和“调用”，不据此显示“执行中”；收到工具结果后显示完成或失败。断流或中断时保留已经显示的正文，并记录错误，不执行不完整的工具调用。
 
+shell/sandbox 支持可选 `timeout_seconds`：默认120秒，须为正有限数值，最多600秒。达到时限后终止本次进程组，必要时从 TERM 升级 KILL；Docker sandbox 还须确认容器已移除。执行与清理均有时间边界，正常超时返回 `timed_out: true`、`exit_code: 124`、真实 `process_returncode`、已取得的 stdout/stderr 和完整日志路径，让模型继续调整方法；不自动重跑命令。超时结果中每个输出流至多返回末尾1 MiB，以 `stdout_truncated`／`stderr_truncated` 标记截断，完整字节日志仍保留。清理无法确认时终止当前 Agent 并明确报错。命令输出保存在会话 `tool-runs/` 中，用户取消仍在清理后传播；进程组清理需要宿主提供 POSIX `waitid/WNOWAIT` 和 `ps`。长任务使用进程管理技能后台运行，其 `wait --timeout` 只结束等待，不结束任务执行。递归搜索应先定位相关目录，在遍历端排除无关路径；下游过滤和 `head` 不构成执行时限。
+
+DeepSeek 本地完整请求计数会在副本中把保留字面量 `<｜image｜>` 替换为 `<|image|>`，避免编码库因普通工具文本包含该串而拒绝转换。实际发送请求及原始记录保留原文；计数量允许存在少量近似误差。
+
 模型 HTTP 请求统一携带 `User-Agent`，格式如 `skills-agent/0.1.0 (Linux; x86_64) Python/3.12.0`。产品版本从安装包 `skills-cli-agent` 的元数据读取，操作系统、架构和 Python 版本根据运行环境生成；直接运行未安装的源码时，产品版本显示为 `dev`。共享请求层覆盖主 Agent、子 Agent、辅助生成、远程 token 计量及重试请求。
 
 API 错误的脱敏诊断保存在对应会话 `events.jsonl` 的 `error.diagnostics` 或 `retry.diagnostics` 中：HTTP 状态、错误正文、请求 ID 等少量响应头，以及底层异常类型、原因、`errno`、请求阶段、耗时、请求大小和已收到的流数据量。阶段 `open_request` 包含 DNS、TLS、发送请求和等待响应头；`read_response`／`read_stream` 表示读取响应。错误正文最多读取 64 KiB 加一个截断检测字节，保存上限为 65536 字符，超限标记 `body_truncated`；读取错误正文失败时仍保留原 HTTP 状态和 `body_read_error`。主模型、子 Agent、远程 token 计量和辅助任务均保存诊断；辅助任务每次失败还记录 `operation` 和 `attempt`。

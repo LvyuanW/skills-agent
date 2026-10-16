@@ -9,6 +9,8 @@ description: >-
 
 Select the part of an input needed for the current decision. Preserve its path and meaningful location; follow a continuation cursor when omitted content matters. Simple text reads and searches can use ordinary shell commands. Learn from, reuse or adapt the reference scripts below, or write a parser suited to the task.
 
+Locate the relevant workspace, repository or dependency directory before recursively searching file contents. Start from those explicit directories rather than `/`. Prune unrelated directories before reading their files; downstream `grep -v` filters and `head` only filter output and do not bound traversal time. Preserve useful error diagnostics. Foreground shell calls have a default 120-second execution limit, adjustable with `timeout_seconds` up to 600 seconds; use managed background processes for longer work. On timeout, inspect the partial results and narrow or revise the search instead of automatically repeating it.
+
 Resolve scripts relative to this SKILL.md and run them through `shell` with an available Python interpreter. Each shell call has its own variables.
 
 | Reference | Capability |

@@ -44,7 +44,7 @@ class Agent:
         self.allow_persistent_processes = allow_persistent_processes
         self.tools = ToolRegistry(workspace=self.workspace, sandbox=sandbox,
                                   subagent=self._subagent if allow_subagent else None,
-                                  on_activity=self._activity)
+                                  on_activity=self._activity, log_dir=session.path / "tool-runs")
 
     def _activity(self, activity):
         self.on_event({"type": "activity", "activity": activity})
@@ -119,7 +119,13 @@ class Agent:
             "Run arbitrary task-specific scripts; no registered entry point is required. "
             "Name every shell/sandbox call by its purpose. Inspect exit status, stdout, stderr "
             "and generated files; revise as needed. Preserve failure signals when composing commands "
-            "or filtering results.\n\n"
+            "or filtering results. Foreground shell/sandbox calls default to 120 seconds; "
+            "set timeout_seconds explicitly when needed, up to 600 seconds. A timed_out result "
+            "contains partial output and log paths; inspect it and adapt instead of blindly repeating "
+            "the command. Use managed background processes for longer work. "
+            "Locate the relevant workspace or dependency directory before recursive content searches. "
+            "Prune excluded directories during traversal; downstream filters and head do not limit "
+            "the search duration.\n\n"
             "Filter large data in scripts, print "
             "relevant findings and evidence, and save full data to files. Choose result_mode: "
             "auto keeps results up to 8192 tokens and reports longer ones; direct preserves exact "
@@ -150,6 +156,12 @@ class Agent:
         ) > 8192):
             media = [block for block in blocks(message["content"])
                      if block.get("type") in {"image", "file"}]
+            text = next((block["text"] for block in blocks(message["content"])
+                         if block.get("type") == "text"), "")
+            try:
+                execution = json.loads(text)
+            except (ValueError, TypeError):
+                execution = None
             try:
                 report = self.auxiliary.tool_report(source_text, call, source,
                                                     self.report_background or {"current_user_task": self.context.latest_user()},
@@ -158,12 +170,6 @@ class Agent:
             except ProviderError as exc:
                 # Execution already finished and its full result is in the raw log.
                 # A failed derived report must not abort the remaining tool group.
-                text = next((block["text"] for block in blocks(message["content"])
-                             if block.get("type") == "text"), "")
-                try:
-                    execution = json.loads(text)
-                except (ValueError, TypeError):
-                    execution = None
                 selected = {
                     "report_error": {"operation": "tool_report", "message": str(exc),
                                      "category": exc.category, "finish_reason": exc.finish_reason},
@@ -174,6 +180,11 @@ class Agent:
                 if isinstance(execution, dict):
                     selected.update({key: execution[key] for key in ("exit_code", "error", "feedback_errors")
                                      if key in execution})
+            if isinstance(execution, dict) and execution.get("timed_out"):
+                selected.update({key: execution[key] for key in (
+                    "exit_code", "process_returncode", "timed_out", "timeout_seconds", "duration_seconds",
+                    "stdout_path", "stderr_path", "stdout_truncated", "stderr_truncated",
+                ) if key in execution})
             replace_result_text(message, json.dumps(selected, ensure_ascii=False))
         elif mode == "direct":
             record["pending_direct"] = True

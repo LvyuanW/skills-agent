@@ -70,7 +70,7 @@ class AgentTests(unittest.TestCase):
 
                     agent = Agent(Model(), session, SkillRegistry([]), path,
                                   on_event=ConsoleRenderer(output))
-                    with patch("skills_agent.tools.subprocess.Popen") as process:
+                    with patch("skills_agent.tools.run_command") as process:
                         self.assertEqual(agent.run(session.make_user_message("task", [])), "done")
                         process.assert_not_called()
                     live = output.getvalue()

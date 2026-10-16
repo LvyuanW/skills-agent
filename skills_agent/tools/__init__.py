@@ -2,22 +2,26 @@
 
 import json
 import os
-import signal
-import subprocess
 from pathlib import Path
 
+from ..execution import DEFAULT_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS, ToolCleanupError, run_command, validate_timeout
 from ..processes import SCOPE_ENV
 
 
 class ToolRegistry:
-    def __init__(self, workspace: Path, sandbox=None, subagent=None, *, on_activity=None):
+    def __init__(self, workspace: Path, sandbox=None, subagent=None, *, on_activity=None, log_dir=None):
         self.workspace = Path(workspace).expanduser().resolve()
         self.sandbox, self.subagent = sandbox, subagent
         self.process_scope = None
+        self.log_dir = log_dir
         self.on_activity = on_activity or (lambda activity: None)
         script = {
             "name": {"type": "string", "description": "Short action and purpose, shown to the user."},
             "command": {"type": "string", "description": "Arbitrary shell command or multiline script."},
+            "timeout_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": MAX_TIMEOUT_SECONDS,
+                                "description": f"Wall-clock limit; default {DEFAULT_TIMEOUT_SECONDS} seconds, "
+                                               f"maximum {MAX_TIMEOUT_SECONDS}. Timeout stops this command. "
+                                               "Use managed background processes for longer work."},
             "result_mode": {"type": "string", "enum": ["auto", "direct", "report"],
                             "description": "auto: original up to 8192 tokens, otherwise report. "
                             "direct: exact source (skills/code/data), or a source reference if it cannot fit. "
@@ -67,6 +71,9 @@ class ToolRegistry:
                 raise ValueError(f"Expected arguments: {', '.join(expected)}")
             for key, value in values.items():
                 field = allowed[key]
+                if key == "timeout_seconds":
+                    validate_timeout(value)
+                    continue
                 expected_type = bool if field["type"] == "boolean" else str
                 if not isinstance(value, expected_type):
                     raise ValueError(f"Argument {key} must be a {field['type']}")
@@ -77,27 +84,24 @@ class ToolRegistry:
             try:
                 self.on_activity({"kind": "tool", "name": name, "task_name": values["name"]})
                 if name == "shell":
-                    with subprocess.Popen(values["command"], shell=True, cwd=self.workspace,
-                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                          env={**os.environ, SCOPE_ENV: str(self.process_scope.path)}
-                                          if self.process_scope is not None else None,
-                                          text=True, errors="replace", start_new_session=True) as process:
-                        try:
-                            stdout, stderr = process.communicate()
-                        except BaseException:
-                            try:
-                                os.killpg(process.pid, signal.SIGKILL)
-                            except ProcessLookupError:
-                                pass
-                            process.wait()
-                            raise
-                    result = {"exit_code": process.returncode, "stdout": stdout, "stderr": stderr}
+                    result = run_command(
+                        values["command"], shell=True, cwd=self.workspace,
+                        env={**os.environ, SCOPE_ENV: str(self.process_scope.path)}
+                        if self.process_scope is not None else None,
+                        timeout_seconds=values.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS),
+                        log_dir=self.log_dir,
+                    )
                 elif name == "sandbox":
-                    result = self.sandbox.run(values["command"])
+                    result = self.sandbox.run(
+                        values["command"], timeout_seconds=values.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS),
+                        log_dir=self.log_dir,
+                    )
                 else:
                     result = {"result": self.subagent(values["name"], values["task"], history=values.get("history", False))}
             finally:
                 self.on_activity(None)
+        except ToolCleanupError:
+            raise
         except Exception as exc:
             result = {"error": str(exc)}
         return json.dumps(result, ensure_ascii=False)
