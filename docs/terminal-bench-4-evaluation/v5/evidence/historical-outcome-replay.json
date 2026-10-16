@@ -1,0 +1,97 @@
+{
+  "time": "2026-10-16T04:35:45.735889+00:00",
+  "mode": "read_only_reclassification_audit",
+  "servers": [
+    {
+      "server": "serverA",
+      "results": [
+        {
+          "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__codex__ctr-optimization__r01/attempt-1__94dc29cfe3/controller-result.json",
+          "exception_type": null,
+          "raw_reward": 0.0,
+          "v5_assessment": {
+            "status": "complete",
+            "reason": "verified_binary_reward",
+            "pause_admission": false
+          }
+        }
+      ]
+    },
+    {
+      "server": "serverB",
+      "results": [
+        {
+          "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__claude-code__ctr-optimization__r01/attempt-1__9693fc8768/controller-result.json",
+          "exception_type": null,
+          "raw_reward": 0.0,
+          "v5_assessment": {
+            "status": "complete",
+            "reason": "verified_binary_reward",
+            "pause_admission": false
+          }
+        },
+        {
+          "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__claude-code__ctr-optimization__r02/attempt-1__7dc6f575cb/controller-result.json",
+          "exception_type": "UnknownApiError",
+          "raw_reward": 0.0,
+          "v5_assessment": {
+            "status": "needs_review",
+            "reason": "provider_or_setup_failure",
+            "pause_admission": true
+          }
+        }
+      ]
+    },
+    {
+      "server": "serverC",
+      "results": [
+        {
+          "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__ctr-optimization__r01/attempt-1__09e38eef3a/controller-result.json",
+          "exception_type": "NonZeroAgentExitCodeError",
+          "raw_reward": 0.0,
+          "v5_assessment": {
+            "status": "needs_review",
+            "reason": "unclassified_execution_failure",
+            "pause_admission": true
+          }
+        },
+        {
+          "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__ctr-optimization__r02/attempt-1__2823b79709/controller-result.json",
+          "exception_type": "NonZeroAgentExitCodeError",
+          "raw_reward": 0.0,
+          "v5_assessment": {
+            "status": "needs_review",
+            "reason": "unclassified_execution_failure",
+            "pause_admission": true
+          }
+        },
+        {
+          "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__ctr-optimization__r03/attempt-1__9652ba17cf/controller-result.json",
+          "exception_type": "NonZeroAgentExitCodeError",
+          "raw_reward": 0.0,
+          "v5_assessment": {
+            "status": "needs_review",
+            "reason": "unclassified_execution_failure",
+            "pause_admission": true
+          }
+        },
+        {
+          "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__cumulative-layout-shift__r01/attempt-1__9d69310e1d/controller-result.json",
+          "exception_type": "NonZeroAgentExitCodeError",
+          "raw_reward": 0.0,
+          "v5_assessment": {
+            "status": "needs_review",
+            "reason": "unclassified_execution_failure",
+            "pause_admission": true
+          }
+        }
+      ]
+    }
+  ],
+  "finalized_results": 7,
+  "normal_scored_results": 2,
+  "review_results": 5,
+  "historical_database_or_raw_results_modified": false,
+  "model_calls": 0,
+  "interrupted_attempts": "The three user-stopped in-flight attempts have no finalized result and are excluded here."
+}

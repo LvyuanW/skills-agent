@@ -1,13 +1,12 @@
 {
   "schema_version": "1.0",
   "date": "2026-10-16",
-  "experiment_id": "tb4-56-flash-max-v2",
+  "experiment_id": "tb4-56-flash-max-v4",
   "site_url": "https://rehdasu.cn/",
-  "site_binding_status": "not_verified",
-  "model": "deepseek-flash",
+  "site_binding_status": "user_confirmed_api_gateway",
+  "model": "deepseek-v4-1-flash-260910",
   "reasoning_effort": "max",
-  "credential_values_stored": false,
-  "model_credentials_provisioned": false,
+  "model_credentials_provisioned": true,
   "operating_system": "Ubuntu 22.04.5 LTS",
   "architecture": "x86_64",
   "visible_memory_gib_approx": 123.66,
@@ -24,8 +23,47 @@
   "benchmark_user": "tbench",
   "controller_launcher": "/usr/local/sbin/tb4-exec",
   "servers": [
-    {"server": "serverA", "name": "tbench-1", "address": "47.91.21.152", "agent": "codex", "api_key_ref": "tbench-1"},
-    {"server": "serverB", "name": "tbench-2", "address": "8.216.13.123", "agent": "claude-code", "api_key_ref": "tbench-2"},
-    {"server": "serverC", "name": "tbench-3", "address": "8.216.11.161", "agent": "skills-agent", "api_key_ref": "tbench-3"}
-  ]
+    {
+      "server": "serverA",
+      "name": "tbench-1",
+      "address": "47.91.21.152",
+      "agent": "codex",
+      "api_key_ref": "tbench-1"
+    },
+    {
+      "server": "serverB",
+      "name": "tbench-2",
+      "address": "8.216.13.123",
+      "agent": "claude-code",
+      "api_key_ref": "tbench-2"
+    },
+    {
+      "server": "serverC",
+      "name": "tbench-3",
+      "address": "8.216.11.161",
+      "agent": "skills-agent",
+      "api_key_ref": "tbench-3"
+    }
+  ],
+  "api_gateway": "https://rehdasu.cn",
+  "credential_remote_path": "/data/tb4/secrets/deepseek.env",
+  "credential_file_mode": "0600",
+  "sidecar_admission": "exclusive_28cpu_107gib",
+  "formal_evaluation_started": true,
+  "credential_values_in_repository": false,
+  "skills_agent_source_commit": "41a6bf87f3eca29c73a876c43af8dfd2a2c50d63",
+  "skills_agent_includes_uncommitted_updates": true,
+  "skills_agent_wheel_sha256": "31829dde914bd50997ca5d7d72304ce176ca70dfaba5f60c0a152e28bd4820ae",
+  "skills_agent_source_tree_sha256": "2591210afb868d20506a912d28e4034ed0991ec8a550aa5ae7632d989c417fd8",
+  "prewarm_complete": true,
+  "prewarm_phases_per_server": 112,
+  "preparation_status_ref": "preparation-status.json",
+  "formal_started_at": "2026-10-16T03:48:14+08:00",
+  "formal_service": "tb4-formal.service",
+  "formal_output": "/data/tb4/runs/formal",
+  "formal_launch_status_ref": "formal-launch-status.json",
+  "formal_evaluation_state": "stopped_by_user",
+  "formal_evaluation_running": false,
+  "formal_stopped_at": "2026-10-16T11:49:08+08:00",
+  "formal_stop_status_ref": "formal-stop-status.json"
 }

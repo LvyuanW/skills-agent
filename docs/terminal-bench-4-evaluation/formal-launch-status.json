@@ -1,0 +1,286 @@
+{
+  "experiment": "tb4-56-flash-max-v4",
+  "snapshot_only": true,
+  "servers": [
+    {
+      "address": "47.91.21.152",
+      "checked_at_utc": "2026-10-15T19:51:52.452114+00:00",
+      "service": {
+        "MainPID": "370548",
+        "ExecMainStartTimestamp": "Fri 2026-10-16 03:48:14 CST",
+        "ExecMainStatus": "0",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "database_exists": true,
+      "slots": {
+        "pending": 167,
+        "running": 1
+      },
+      "attempts": {
+        "running": 1
+      },
+      "planned_slots": 168,
+      "active_reservations": {
+        "slots": 1,
+        "cpus": 28.0,
+        "memory_mb": 109568
+      },
+      "active_attempts": [
+        {
+          "slot_id": "tb4-56-flash-max-v4__codex__ctr-optimization__r01",
+          "attempt": 1,
+          "pid": 372272,
+          "started": 1792093698.1627722,
+          "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__codex__ctr-optimization__r01/attempt-1__94dc29cfe3/controller-result.json",
+          "result_exists": false,
+          "worker_alive": true,
+          "worker_log_bytes": 0
+        }
+      ],
+      "terminal_results": [],
+      "frozen_inputs": {
+        "experiment": "tb4-56-flash-max-v4",
+        "allow_formal": true,
+        "manifest_sha256": "7b4988053c57f56fc37f5bd32f3b598690624c1999a7c3939af0d4101db5a777",
+        "agent_config_sha256": "577f841ed333eefa93f68e75f23f8adc3490d8619f0addc33c8528feced2ca81",
+        "sidecar_budgets_sha256": "78a8661da990dccdfaeefe670f2934b35366ba884229395ad2f0fa772efef37f",
+        "trial_plan_sha256": "0b986f17f90a350a80c20632acae1c8673c87d3335912a9f81eb3bb4d7582c5a",
+        "agent": "codex",
+        "server": "serverA",
+        "dataset_path": "/data/tb4/src/terminal-bench",
+        "dataset_commit": "452bf305c6daa62fc59061d22133a7cbc7c1572e",
+        "prewarm_summary_sha256": "6d3307a321c094578435cbb919b2ad8b06dcca259cdf81800ac990a176e0e7dc",
+        "controller_sha256": "7f5d20eac2188bba7408fedc410504e9725154c5ad155c950f6ef406465063ac",
+        "agent_adapter_sha256": "d1d20a6ea317f75f4f2ef5c26ab7ea960cc6cd2ea5481559f404acac2e9c3840",
+        "adapter_assets_sha256": "a8d1e1781e9fbd9f3fc36e1088aece1b1bdd45fe18c15b8f8629ab27187c4a7c",
+        "release_assets_sha256": "b94c16fcec0a98d927c75a8a96836ea319c544b0c49c64cebc3b6807babd05a4",
+        "cpu_budget": 28.0,
+        "memory_mb_budget": 109568,
+        "max_concurrent": 14
+      },
+      "disk_free_gib": 229.46,
+      "memory_events": {
+        "low": "0",
+        "high": "0",
+        "max": "70497",
+        "oom": "0",
+        "oom_kill": "0"
+      },
+      "memory_current_gib": 114.98,
+      "allowed_cpus": "2-31",
+      "memory_max_bytes": 123480309760,
+      "cpu_max": "3000000 100000",
+      "pause_admission_exists": false,
+      "container_names": [
+        "attempt-1__94dc29cfe3__env-main-1",
+        "attempt-1__94dc29cfe3__env-api-1"
+      ]
+    },
+    {
+      "address": "8.216.13.123",
+      "checked_at_utc": "2026-10-15T19:51:52.454392+00:00",
+      "service": {
+        "MainPID": "377588",
+        "ExecMainStartTimestamp": "Fri 2026-10-16 03:48:14 CST",
+        "ExecMainStatus": "0",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "database_exists": true,
+      "slots": {
+        "pending": 167,
+        "running": 1
+      },
+      "attempts": {
+        "running": 1
+      },
+      "planned_slots": 168,
+      "active_reservations": {
+        "slots": 1,
+        "cpus": 28.0,
+        "memory_mb": 109568
+      },
+      "active_attempts": [
+        {
+          "slot_id": "tb4-56-flash-max-v4__claude-code__ctr-optimization__r01",
+          "attempt": 1,
+          "pid": 379320,
+          "started": 1792093700.6031797,
+          "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__claude-code__ctr-optimization__r01/attempt-1__9693fc8768/controller-result.json",
+          "result_exists": false,
+          "worker_alive": true,
+          "worker_log_bytes": 0
+        }
+      ],
+      "terminal_results": [],
+      "frozen_inputs": {
+        "experiment": "tb4-56-flash-max-v4",
+        "allow_formal": true,
+        "manifest_sha256": "7b4988053c57f56fc37f5bd32f3b598690624c1999a7c3939af0d4101db5a777",
+        "agent_config_sha256": "3485c23434b866d239bb12f35164ebfbe4d7f6a2e451a23751e203139d508746",
+        "sidecar_budgets_sha256": "78a8661da990dccdfaeefe670f2934b35366ba884229395ad2f0fa772efef37f",
+        "trial_plan_sha256": "0b986f17f90a350a80c20632acae1c8673c87d3335912a9f81eb3bb4d7582c5a",
+        "agent": "claude-code",
+        "server": "serverB",
+        "dataset_path": "/data/tb4/src/terminal-bench",
+        "dataset_commit": "452bf305c6daa62fc59061d22133a7cbc7c1572e",
+        "prewarm_summary_sha256": "dfc065f13c3a627b5cf13f418795d8201781bf597bd30c89e931e7b3441ccc02",
+        "controller_sha256": "7f5d20eac2188bba7408fedc410504e9725154c5ad155c950f6ef406465063ac",
+        "agent_adapter_sha256": "472495c0967fe2b0f646b53bf7a4d83894cac29ec628559ea12f1772df6037a2",
+        "adapter_assets_sha256": "5b81971560cb775cc2bc5cd034910aa900a4af9d337679d816c34a9b8ee4f3c8",
+        "release_assets_sha256": "1ef18a6c8f54cc89ff694f668ae6c718861d08ac50bb373b1ec0dbf02afecc17",
+        "cpu_budget": 28.0,
+        "memory_mb_budget": 109568,
+        "max_concurrent": 14
+      },
+      "disk_free_gib": 228.68,
+      "memory_events": {
+        "low": "0",
+        "high": "0",
+        "max": "69034",
+        "oom": "0",
+        "oom_kill": "0"
+      },
+      "memory_current_gib": 114.96,
+      "allowed_cpus": "2-31",
+      "memory_max_bytes": 123480309760,
+      "cpu_max": "3000000 100000",
+      "pause_admission_exists": false,
+      "container_names": [
+        "attempt-1__9693fc8768__env-main-1",
+        "attempt-1__9693fc8768__env-api-1"
+      ]
+    },
+    {
+      "address": "8.216.11.161",
+      "checked_at_utc": "2026-10-15T19:51:52.451295+00:00",
+      "service": {
+        "MainPID": "383773",
+        "ExecMainStartTimestamp": "Fri 2026-10-16 03:48:14 CST",
+        "ExecMainStatus": "0",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "database_exists": true,
+      "slots": {
+        "pending": 167,
+        "running": 1
+      },
+      "attempts": {
+        "running": 1
+      },
+      "planned_slots": 168,
+      "active_reservations": {
+        "slots": 1,
+        "cpus": 28.0,
+        "memory_mb": 109568
+      },
+      "active_attempts": [
+        {
+          "slot_id": "tb4-56-flash-max-v4__skills-agent__ctr-optimization__r01",
+          "attempt": 1,
+          "pid": 385488,
+          "started": 1792093698.7955453,
+          "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__ctr-optimization__r01/attempt-1__09e38eef3a/controller-result.json",
+          "result_exists": false,
+          "worker_alive": true,
+          "worker_log_bytes": 0
+        }
+      ],
+      "terminal_results": [],
+      "frozen_inputs": {
+        "experiment": "tb4-56-flash-max-v4",
+        "allow_formal": true,
+        "manifest_sha256": "7b4988053c57f56fc37f5bd32f3b598690624c1999a7c3939af0d4101db5a777",
+        "agent_config_sha256": "4cad7832d385033e905caa3559cfd34c12352228ebd516af26486e05eefee8b1",
+        "sidecar_budgets_sha256": "78a8661da990dccdfaeefe670f2934b35366ba884229395ad2f0fa772efef37f",
+        "trial_plan_sha256": "0b986f17f90a350a80c20632acae1c8673c87d3335912a9f81eb3bb4d7582c5a",
+        "agent": "skills-agent",
+        "server": "serverC",
+        "dataset_path": "/data/tb4/src/terminal-bench",
+        "dataset_commit": "452bf305c6daa62fc59061d22133a7cbc7c1572e",
+        "prewarm_summary_sha256": "cf25db6821143ca78d4502d0b525e7943f2e5ba852f1532092c0f4d8133f77a6",
+        "controller_sha256": "7f5d20eac2188bba7408fedc410504e9725154c5ad155c950f6ef406465063ac",
+        "agent_adapter_sha256": "96b87a601472f2c492f3bc1fe250fc937f48d3bd475c0e3d20de716ea8a05704",
+        "adapter_assets_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "release_assets_sha256": "9524768af1700948a431cb9c75e33aaf706e10bb4092f25ad63e4268b19149a8",
+        "cpu_budget": 28.0,
+        "memory_mb_budget": 109568,
+        "max_concurrent": 14
+      },
+      "disk_free_gib": 229.34,
+      "memory_events": {
+        "low": "0",
+        "high": "0",
+        "max": "67076",
+        "oom": "0",
+        "oom_kill": "0"
+      },
+      "memory_current_gib": 114.95,
+      "allowed_cpus": "2-31",
+      "memory_max_bytes": 123480309760,
+      "cpu_max": "3000000 100000",
+      "pause_admission_exists": false,
+      "container_names": [
+        "attempt-1__09e38eef3a__env-main-1",
+        "attempt-1__09e38eef3a__env-api-1"
+      ]
+    }
+  ],
+  "started_at_china": "2026-10-16T03:48:14+08:00",
+  "formally_authorized": true,
+  "model": "deepseek-v4-1-flash-260910",
+  "main_and_child_effort": "max",
+  "work": {
+    "tasks": 56,
+    "repeats_per_agent": 3,
+    "slots_per_agent": 168,
+    "all_agents_slots": 504
+  },
+  "native_execution_verification": {
+    "codex": {
+      "model": "deepseek-v4-1-flash-260910",
+      "effort": "max",
+      "tools_observed": {
+        "exec_command": 16,
+        "apply_patch": 1
+      },
+      "native_error_events": 0,
+      "observation_at_china": "2026-10-16T03:49:40+08:00",
+      "completed_task": false
+    },
+    "claude-code": {
+      "model": "deepseek-v4-1-flash-260910",
+      "effort": "max",
+      "assistant_events": 34,
+      "tools_observed": {
+        "Bash": 16
+      },
+      "tool_result_messages": 16,
+      "native_error_events": 0,
+      "final_usage_available": false,
+      "interim_zero_usage_is_placeholder": true,
+      "observation_at_china": "2026-10-16T03:50:35+08:00",
+      "completed_task": false
+    },
+    "skills-agent": {
+      "model": "deepseek-v4-1-flash-260910",
+      "effort": "max",
+      "requests_observed": 5,
+      "requests_with_usage": 4,
+      "tools_observed": {
+        "shell": 8
+      },
+      "transport_errors": 0,
+      "wheel_sha256": "31829dde914bd50997ca5d7d72304ce176ca70dfaba5f60c0a152e28bd4820ae",
+      "completed_task": false
+    }
+  },
+  "known_limits": [
+    "Gateway billing rates and account concurrency quota are unknown; monetary costs remain null.",
+    "skills-agent visual semantic synthetic preflight reward 0 is preserved, cause undetermined.",
+    "Nine sidecar tasks use exclusive admission; initial one active slot per host is expected."
+  ],
+  "observation_added_model_requests": 0
+}

@@ -1,0 +1,191 @@
+{
+  "experiment": "tb4-56-flash-max-v4",
+  "model": "deepseek-v4-1-flash-260910",
+  "main_and_child_reasoning_effort": "max",
+  "prewarm_complete": true,
+  "formal_trials_started": 0,
+  "servers": [
+    {
+      "verified_at_utc": "2026-10-15T19:40:04.157285+00:00",
+      "prewarm": {
+        "passed": 112,
+        "failed": 0,
+        "retained_image_phases": 112,
+        "no_model_calls": true,
+        "manifest_sha256": "7b4988053c57f56fc37f5bd32f3b598690624c1999a7c3939af0d4101db5a777"
+      },
+      "all_phase_reports_cleaned_up": true,
+      "fresh_image_aliases_verified": true,
+      "freecad_dependency_runtime_verified": true,
+      "benchmark_source_commit": "452bf305c6daa62fc59061d22133a7cbc7c1572e",
+      "task_sources_clean": true,
+      "boundary": {
+        "cgroup": "0::/tb4.slice/run-u6982.service",
+        "memory_max": 123480309760,
+        "cpu_max": [
+          3000000,
+          100000
+        ],
+        "cpuset": "2-31"
+      },
+      "memory_events": {
+        "low": "0",
+        "high": "0",
+        "max": "69574",
+        "oom": "0",
+        "oom_kill": "0"
+      },
+      "disk_used_gib": 261.25,
+      "disk_free_gib": 229.81,
+      "active_container_names": [],
+      "services": {
+        "tb4-prewarm": "inactive",
+        "tb4-prewarm-finalize": "inactive"
+      },
+      "formal_approval_exists": false,
+      "formal_directory_exists": false,
+      "formal_trials_started": 0,
+      "planned_slots": 504,
+      "slot_statuses": [
+        "pending"
+      ],
+      "trial_plan_sha256": "0b986f17f90a350a80c20632acae1c8673c87d3335912a9f81eb3bb4d7582c5a",
+      "secret_directory_mode": "0o700",
+      "secret_file_mode": "0o600",
+      "server": "serverA",
+      "address": "47.91.21.152",
+      "agent": "codex"
+    },
+    {
+      "verified_at_utc": "2026-10-15T19:40:04.399676+00:00",
+      "prewarm": {
+        "passed": 112,
+        "failed": 0,
+        "retained_image_phases": 112,
+        "no_model_calls": true,
+        "manifest_sha256": "7b4988053c57f56fc37f5bd32f3b598690624c1999a7c3939af0d4101db5a777"
+      },
+      "all_phase_reports_cleaned_up": true,
+      "fresh_image_aliases_verified": true,
+      "freecad_dependency_runtime_verified": true,
+      "benchmark_source_commit": "452bf305c6daa62fc59061d22133a7cbc7c1572e",
+      "task_sources_clean": true,
+      "boundary": {
+        "cgroup": "0::/tb4.slice/run-u6559.service",
+        "memory_max": 123480309760,
+        "cpu_max": [
+          3000000,
+          100000
+        ],
+        "cpuset": "2-31"
+      },
+      "memory_events": {
+        "low": "0",
+        "high": "0",
+        "max": "67763",
+        "oom": "0",
+        "oom_kill": "0"
+      },
+      "disk_used_gib": 261.85,
+      "disk_free_gib": 229.22,
+      "active_container_names": [],
+      "services": {
+        "tb4-prewarm": "inactive",
+        "tb4-prewarm-finalize": "inactive"
+      },
+      "formal_approval_exists": false,
+      "formal_directory_exists": false,
+      "formal_trials_started": 0,
+      "planned_slots": 504,
+      "slot_statuses": [
+        "pending"
+      ],
+      "trial_plan_sha256": "0b986f17f90a350a80c20632acae1c8673c87d3335912a9f81eb3bb4d7582c5a",
+      "secret_directory_mode": "0o700",
+      "secret_file_mode": "0o600",
+      "server": "serverB",
+      "address": "8.216.13.123",
+      "agent": "claude-code"
+    },
+    {
+      "verified_at_utc": "2026-10-15T19:40:04.261227+00:00",
+      "prewarm": {
+        "passed": 112,
+        "failed": 0,
+        "retained_image_phases": 112,
+        "no_model_calls": true,
+        "manifest_sha256": "7b4988053c57f56fc37f5bd32f3b598690624c1999a7c3939af0d4101db5a777"
+      },
+      "all_phase_reports_cleaned_up": true,
+      "fresh_image_aliases_verified": true,
+      "freecad_dependency_runtime_verified": true,
+      "benchmark_source_commit": "452bf305c6daa62fc59061d22133a7cbc7c1572e",
+      "task_sources_clean": true,
+      "boundary": {
+        "cgroup": "0::/tb4.slice/run-u6907.service",
+        "memory_max": 123480309760,
+        "cpu_max": [
+          3000000,
+          100000
+        ],
+        "cpuset": "2-31"
+      },
+      "memory_events": {
+        "low": "0",
+        "high": "0",
+        "max": "66319",
+        "oom": "0",
+        "oom_kill": "0"
+      },
+      "disk_used_gib": 261.47,
+      "disk_free_gib": 229.6,
+      "active_container_names": [],
+      "services": {
+        "tb4-prewarm": "inactive",
+        "tb4-prewarm-finalize": "inactive"
+      },
+      "formal_approval_exists": false,
+      "formal_directory_exists": false,
+      "formal_trials_started": 0,
+      "planned_slots": 504,
+      "slot_statuses": [
+        "pending"
+      ],
+      "trial_plan_sha256": "0b986f17f90a350a80c20632acae1c8673c87d3335912a9f81eb3bb4d7582c5a",
+      "secret_directory_mode": "0o700",
+      "secret_file_mode": "0o600",
+      "server": "serverC",
+      "address": "8.216.11.161",
+      "agent": "skills-agent"
+    }
+  ],
+  "skills_agent": {
+    "source_commit": "41a6bf87f3eca29c73a876c43af8dfd2a2c50d63",
+    "includes_uncommitted_cli_terminal_updates": true,
+    "wheel_sha256": "31829dde914bd50997ca5d7d72304ce176ca70dfaba5f60c0a152e28bd4820ae",
+    "source_tree_sha256": "2591210afb868d20506a912d28e4034ed0991ec8a550aa5ae7632d989c417fd8",
+    "current_evidence_directory": "skills-updated-31829dde914b",
+    "canonical_reward": 1,
+    "visual_semantic_reward": 0,
+    "visual_failure_cause": "undetermined; byte chain and standard protocol controls verified, native observation context misidentified color"
+  },
+  "known_limits": [
+    "Gateway billing rate and account concurrency quota remain unverified; monetary cost is null.",
+    "Nine sidecar tasks use exclusive admission; historical schedule replay is not a Flash/max prediction.",
+    "Official medical task still rebuilds its no-cache service in future trials."
+  ],
+  "evidence": {
+    "codex": "codex/live-exact-model-validation.json",
+    "claude": "claude/live-exact-model-validation.json",
+    "skills": "skills-updated-31829dde914b/preflight-summary.json",
+    "independent_audit": "independent-delta-audit-v4.json",
+    "environment_final": "environment-final-summary.json"
+  },
+  "controller": {
+    "tree_sha256": "7f5d20eac2188bba7408fedc410504e9725154c5ad155c950f6ef406465063ac",
+    "archive_sha256": "6d73aeee0db8960c1a34fb3a7844c2ba3f56bd0adb8e22cd47b9e3a4ca71f2e2",
+    "offline_test_cases": 16,
+    "all_model_free_tests_passed": true,
+    "prewarm_summary_in_resume_freeze": true
+  }
+}

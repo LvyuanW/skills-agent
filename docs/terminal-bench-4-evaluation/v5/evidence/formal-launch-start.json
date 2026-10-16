@@ -1,0 +1,68 @@
+{
+  "phase": "start",
+  "time_utc": "2026-10-16T05:46:43.685993+00:00",
+  "user_authorization": "\u542f\u52a8\u6b63\u5f0f\u8bc4\u6d4b",
+  "experiment": "tb4-56-flash-max-v5",
+  "servers": [
+    {
+      "server": "serverA",
+      "agent": "codex",
+      "address": "47.91.21.152",
+      "started_at_unix": 1792129603.5546908,
+      "formal_unit": {
+        "MainPID": "945269",
+        "ExecMainStatus": "0",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Fri 2026-10-16 13:46:43 CST"
+      },
+      "old_formal_unit": {
+        "MainPID": "0",
+        "ExecMainStatus": "0",
+        "ActiveState": "inactive",
+        "SubState": "dead",
+        "ActiveEnterTimestamp": "n/a"
+      }
+    },
+    {
+      "server": "serverB",
+      "agent": "claude-code",
+      "address": "8.216.13.123",
+      "started_at_unix": 1792129603.7448344,
+      "formal_unit": {
+        "MainPID": "926256",
+        "ExecMainStatus": "0",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Fri 2026-10-16 13:46:43 CST"
+      },
+      "old_formal_unit": {
+        "MainPID": "0",
+        "ExecMainStatus": "0",
+        "ActiveState": "inactive",
+        "SubState": "dead",
+        "ActiveEnterTimestamp": "n/a"
+      }
+    },
+    {
+      "server": "serverC",
+      "agent": "skills-agent",
+      "address": "8.216.11.161",
+      "started_at_unix": 1792129603.5542724,
+      "formal_unit": {
+        "MainPID": "979358",
+        "ExecMainStatus": "0",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Fri 2026-10-16 13:46:43 CST"
+      },
+      "old_formal_unit": {
+        "MainPID": "0",
+        "ExecMainStatus": "0",
+        "ActiveState": "inactive",
+        "SubState": "dead",
+        "ActiveEnterTimestamp": "n/a"
+      }
+    }
+  ]
+}

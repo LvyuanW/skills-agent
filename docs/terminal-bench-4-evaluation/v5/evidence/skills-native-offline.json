@@ -1,0 +1,18 @@
+{
+  "model": "deepseek-v4-1-flash-260910",
+  "tested_provider_file": "/data/tb4/venvs/skills-remediation-v5-d7e45e4ccd7d/lib/python3.12/site-packages/skills_agent/providers/openai.py",
+  "system_python_native_context": true,
+  "tls_verify_mode": "CERT_REQUIRED",
+  "tls_check_hostname": true,
+  "tls_root_ca_count": 121,
+  "explicit_context_preserved": true,
+  "network_requests": 0,
+  "audit_request_records": 3,
+  "audit_usage_records": 3,
+  "wrong_effort_rejected": true,
+  "auxiliary_disabled_thinking_allowed": true,
+  "gateway_max_payload": true,
+  "gateway_local_v41_counter": true,
+  "image_feedback_to_deepseek_payload": true,
+  "image_token_count": 406
+}

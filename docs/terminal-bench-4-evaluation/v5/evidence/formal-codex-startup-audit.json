@@ -1,0 +1,396 @@
+{
+  "schema_version": "1.0",
+  "audit": "formal_v5_codex_startup_metadata_audit",
+  "server": "serverA",
+  "address": "47.91.21.152",
+  "observed_at_utc": "2026-10-16T05:49:46.185481+00:00",
+  "running_attempts": 5,
+  "all_five_model_and_tool_activity_observed": true,
+  "all_five_model_effort_confirmed": true,
+  "reports": [
+    {
+      "slot_id": "tb4-56-flash-max-v5__codex__atrx-vep-crispr__r01",
+      "attempt": 1,
+      "worker_pid": 946980,
+      "trial_directory": "/data/tb4/runs/formal-v5/tb4-56-flash-max-v5__codex__atrx-vep-crispr__r01/attempt-1__073f56e3fe",
+      "host_codex_log": {
+        "exists": true,
+        "bytes": 26611,
+        "mtime_utc": "2026-10-16T05:49:43.751478+00:00",
+        "event_type_counts": {
+          "thread.started": 1,
+          "turn.started": 1,
+          "item.completed": 14,
+          "item.started": 9
+        },
+        "item_type_counts_including_started_and_completed": {
+          "agent_message": 2,
+          "command_execution": 18,
+          "reasoning": 3
+        },
+        "completed_command_events": 9
+      },
+      "native_rollout": {
+        "main_container_count": 1,
+        "files": [
+          {
+            "relative_native_path": "sessions/2026/10/16/rollout-2026-10-16T05-47-02-01a1433f-e310-77c3-a35c-8b096711526d.jsonl",
+            "bytes": 122676,
+            "mtime_utc": "2026-10-16T05:49:43+00:00",
+            "last_event_timestamp": "2026-10-16T05:49:43.758Z",
+            "event_type_counts": {
+              "session_meta": 1,
+              "event_msg": 20,
+              "response_item": 28,
+              "world_state": 1,
+              "turn_context": 1
+            },
+            "payload_type_counts": {
+              "task_started": 1,
+              "message": 7,
+              "item_completed": 15,
+              "function_call": 9,
+              "function_call_output": 9,
+              "token_count": 4,
+              "reasoning": 3
+            },
+            "function_call_name_counts": {
+              "exec_command": 9
+            },
+            "models": [
+              "deepseek-v4-1-flash-260910"
+            ],
+            "efforts": [
+              "max"
+            ],
+            "model_providers": [
+              "deepseek"
+            ],
+            "last_cumulative_token_usage": {
+              "input_tokens": 47307,
+              "cached_input_tokens": 41728,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 3362,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 50669
+            }
+          }
+        ],
+        "copy_exit_code": 0,
+        "model_effort_confirmed": true
+      },
+      "model_and_tool_activity_observed": true
+    },
+    {
+      "slot_id": "tb4-56-flash-max-v5__codex__atrx-vep-crispr__r02",
+      "attempt": 1,
+      "worker_pid": 946981,
+      "trial_directory": "/data/tb4/runs/formal-v5/tb4-56-flash-max-v5__codex__atrx-vep-crispr__r02/attempt-1__889219334e",
+      "host_codex_log": {
+        "exists": true,
+        "bytes": 30732,
+        "mtime_utc": "2026-10-16T05:49:28.775187+00:00",
+        "event_type_counts": {
+          "thread.started": 1,
+          "turn.started": 1,
+          "item.completed": 10,
+          "item.started": 6
+        },
+        "item_type_counts_including_started_and_completed": {
+          "reasoning": 3,
+          "agent_message": 1,
+          "command_execution": 12
+        },
+        "completed_command_events": 6
+      },
+      "native_rollout": {
+        "main_container_count": 1,
+        "files": [
+          {
+            "relative_native_path": "sessions/2026/10/16/rollout-2026-10-16T05-47-02-01a1433f-e317-7aa3-bff1-ccb4e00cd412.jsonl",
+            "bytes": 136274,
+            "mtime_utc": "2026-10-16T05:49:28+00:00",
+            "last_event_timestamp": "2026-10-16T05:49:28.777Z",
+            "event_type_counts": {
+              "session_meta": 1,
+              "event_msg": 15,
+              "response_item": 21,
+              "world_state": 1,
+              "turn_context": 1
+            },
+            "payload_type_counts": {
+              "task_started": 1,
+              "message": 6,
+              "item_completed": 11,
+              "reasoning": 3,
+              "function_call": 6,
+              "function_call_output": 6,
+              "token_count": 3
+            },
+            "function_call_name_counts": {
+              "exec_command": 6
+            },
+            "models": [
+              "deepseek-v4-1-flash-260910"
+            ],
+            "efforts": [
+              "max"
+            ],
+            "model_providers": [
+              "deepseek"
+            ],
+            "last_cumulative_token_usage": {
+              "input_tokens": 32816,
+              "cached_input_tokens": 28928,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 3736,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 36552
+            }
+          }
+        ],
+        "copy_exit_code": 0,
+        "model_effort_confirmed": true
+      },
+      "model_and_tool_activity_observed": true
+    },
+    {
+      "slot_id": "tb4-56-flash-max-v5__codex__atrx-vep-crispr__r03",
+      "attempt": 1,
+      "worker_pid": 946982,
+      "trial_directory": "/data/tb4/runs/formal-v5/tb4-56-flash-max-v5__codex__atrx-vep-crispr__r03/attempt-1__539f2e9803",
+      "host_codex_log": {
+        "exists": true,
+        "bytes": 12331,
+        "mtime_utc": "2026-10-16T05:49:28.771187+00:00",
+        "event_type_counts": {
+          "thread.started": 1,
+          "turn.started": 1,
+          "item.completed": 12,
+          "item.started": 8
+        },
+        "item_type_counts_including_started_and_completed": {
+          "reasoning": 4,
+          "command_execution": 16
+        },
+        "completed_command_events": 8
+      },
+      "native_rollout": {
+        "main_container_count": 1,
+        "files": [
+          {
+            "relative_native_path": "sessions/2026/10/16/rollout-2026-10-16T05-47-02-01a1433f-e2d7-7680-b086-19332c8266de.jsonl",
+            "bytes": 84560,
+            "mtime_utc": "2026-10-16T05:49:28+00:00",
+            "last_event_timestamp": "2026-10-16T05:49:28.774Z",
+            "event_type_counts": {
+              "session_meta": 1,
+              "event_msg": 18,
+              "response_item": 25,
+              "world_state": 1,
+              "turn_context": 1
+            },
+            "payload_type_counts": {
+              "task_started": 1,
+              "message": 5,
+              "item_completed": 13,
+              "reasoning": 4,
+              "function_call": 8,
+              "function_call_output": 8,
+              "token_count": 4
+            },
+            "function_call_name_counts": {
+              "exec_command": 8
+            },
+            "models": [
+              "deepseek-v4-1-flash-260910"
+            ],
+            "efforts": [
+              "max"
+            ],
+            "model_providers": [
+              "deepseek"
+            ],
+            "last_cumulative_token_usage": {
+              "input_tokens": 43129,
+              "cached_input_tokens": 40192,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 1026,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 44155
+            }
+          }
+        ],
+        "copy_exit_code": 0,
+        "model_effort_confirmed": true
+      },
+      "model_and_tool_activity_observed": true
+    },
+    {
+      "slot_id": "tb4-56-flash-max-v5__codex__batched-eval-parity__r01",
+      "attempt": 1,
+      "worker_pid": 946983,
+      "trial_directory": "/data/tb4/runs/formal-v5/tb4-56-flash-max-v5__codex__batched-eval-parity__r01/attempt-1__508f295954",
+      "host_codex_log": {
+        "exists": true,
+        "bytes": 55476,
+        "mtime_utc": "2026-10-16T05:49:31.823246+00:00",
+        "event_type_counts": {
+          "thread.started": 1,
+          "turn.started": 1,
+          "item.completed": 11,
+          "item.started": 8
+        },
+        "item_type_counts_including_started_and_completed": {
+          "reasoning": 2,
+          "agent_message": 1,
+          "command_execution": 16
+        },
+        "completed_command_events": 8
+      },
+      "native_rollout": {
+        "main_container_count": 1,
+        "files": [
+          {
+            "relative_native_path": "sessions/2026/10/16/rollout-2026-10-16T05-47-02-01a1433f-e2d3-7713-b555-9c31e34d9f1f.jsonl",
+            "bytes": 262378,
+            "mtime_utc": "2026-10-16T05:49:31+00:00",
+            "last_event_timestamp": "2026-10-16T05:49:31.828Z",
+            "event_type_counts": {
+              "session_meta": 1,
+              "event_msg": 17,
+              "response_item": 24,
+              "world_state": 1,
+              "turn_context": 1
+            },
+            "payload_type_counts": {
+              "task_started": 1,
+              "message": 6,
+              "item_completed": 12,
+              "reasoning": 2,
+              "function_call": 8,
+              "function_call_output": 8,
+              "token_count": 4
+            },
+            "function_call_name_counts": {
+              "exec_command": 8
+            },
+            "models": [
+              "deepseek-v4-1-flash-260910"
+            ],
+            "efforts": [
+              "max"
+            ],
+            "model_providers": [
+              "deepseek"
+            ],
+            "last_cumulative_token_usage": {
+              "input_tokens": 53709,
+              "cached_input_tokens": 42240,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 456,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 54165
+            }
+          }
+        ],
+        "copy_exit_code": 0,
+        "model_effort_confirmed": true
+      },
+      "model_and_tool_activity_observed": true
+    },
+    {
+      "slot_id": "tb4-56-flash-max-v5__codex__batched-eval-parity__r02",
+      "attempt": 1,
+      "worker_pid": 946984,
+      "trial_directory": "/data/tb4/runs/formal-v5/tb4-56-flash-max-v5__codex__batched-eval-parity__r02/attempt-1__7a78870904",
+      "host_codex_log": {
+        "exists": true,
+        "bytes": 45585,
+        "mtime_utc": "2026-10-16T05:49:43.699477+00:00",
+        "event_type_counts": {
+          "thread.started": 1,
+          "turn.started": 1,
+          "item.completed": 11,
+          "item.started": 6
+        },
+        "item_type_counts_including_started_and_completed": {
+          "agent_message": 2,
+          "command_execution": 12,
+          "reasoning": 3
+        },
+        "completed_command_events": 6
+      },
+      "native_rollout": {
+        "main_container_count": 1,
+        "files": [
+          {
+            "relative_native_path": "sessions/2026/10/16/rollout-2026-10-16T05-47-02-01a1433f-e306-7412-a1e8-9b891e50adc0.jsonl",
+            "bytes": 222085,
+            "mtime_utc": "2026-10-16T05:49:43+00:00",
+            "last_event_timestamp": "2026-10-16T05:49:43.706Z",
+            "event_type_counts": {
+              "session_meta": 1,
+              "event_msg": 16,
+              "response_item": 22,
+              "world_state": 1,
+              "turn_context": 1
+            },
+            "payload_type_counts": {
+              "task_started": 1,
+              "message": 7,
+              "item_completed": 12,
+              "function_call": 6,
+              "function_call_output": 6,
+              "token_count": 3,
+              "reasoning": 3
+            },
+            "function_call_name_counts": {
+              "exec_command": 6
+            },
+            "models": [
+              "deepseek-v4-1-flash-260910"
+            ],
+            "efforts": [
+              "max"
+            ],
+            "model_providers": [
+              "deepseek"
+            ],
+            "last_cumulative_token_usage": {
+              "input_tokens": 33717,
+              "cached_input_tokens": 29952,
+              "cache_write_input_tokens": 0,
+              "output_tokens": 481,
+              "reasoning_output_tokens": 0,
+              "total_tokens": 34198
+            }
+          }
+        ],
+        "copy_exit_code": 0,
+        "model_effort_confirmed": true
+      },
+      "model_and_tool_activity_observed": true
+    }
+  ],
+  "conclusion": "All five active Codex trials have native model and completed tool activity; each observed native rollout records the exact Flash model and max effort, with positive cumulative token usage.",
+  "observed_error_or_retry_event_types": [],
+  "method": {
+    "remote_operations": [
+      "SQLite read-only query for active attempt paths",
+      "Read host codex.txt and emit only typed event counts and file metadata",
+      "Docker label query and docker cp of live native sessions streamed into memory; emit only event/model/effort/usage metadata"
+    ],
+    "live_model_api_requests_added": 0,
+    "agent_tool_commands_added": 0,
+    "remote_files_written": 0,
+    "remote_releases_written": 0,
+    "service_or_task_state_modified": false,
+    "prompts_model_text_tool_bodies_credentials_recorded": false
+  },
+  "limits": [
+    "This is a startup observation, not a completed-trial result or prediction of eventual success.",
+    "Native token_count events and CLI item events are not counted as HTTP requests.",
+    "Host CLI command item counts include separate started/completed events; completed_command_events is reported separately."
+  ]
+}

@@ -1,0 +1,144 @@
+{
+  "schema_version": "1.0",
+  "agent": "claude-code",
+  "server": "serverB",
+  "host": "8.216.13.123",
+  "scope": "read_only_post_user_stop_diagnosis",
+  "collected_at_utc": "2026-10-16T03:51:08.061Z",
+  "observer_model_requests": 0,
+  "observer_remote_mutations": false,
+  "confirmed_natural_runtime_anomalies": [
+    {
+      "slot_id": "tb4-56-flash-max-v4__claude-code__ctr-optimization__r02",
+      "task": "ctr-optimization",
+      "repeat": 2,
+      "attempt": 1,
+      "controller_status": "needs_review",
+      "exception_type": "UnknownApiError",
+      "failure_phase": "agent_execution",
+      "api_error_status": 524,
+      "terminal_reason": "api_error",
+      "error_category": "origin",
+      "cloudflare_error": true,
+      "retryable_advisory": true,
+      "retry_after_seconds_advisory": 120,
+      "owner_action_required_advisory": true,
+      "occurred_at_utc": "2026-10-16T03:05:18.452016Z",
+      "confirmed_cause": "Native Claude Code returned a terminal API error from the Cloudflare/inference-gateway origin layer (HTTP 524), and its command exited with status 1. Harbor classified the failure as UnknownApiError.",
+      "deeper_cause_not_proven": [
+        "Origin overload",
+        "Upstream inference taking too long",
+        "Network or relay wait behind the gateway"
+      ],
+      "native_retry_evidence": {
+        "terminal_api_error_recorded": true,
+        "native_command_exit_code": 1,
+        "explicit_api_retry_events_observed": 0,
+        "sdk_internal_retry_count": "unknown; native stream did not expose its internal attempt count",
+        "retryable_response_is_not_a_guarantee_of_client_retry": true
+      },
+      "why_no_controller_replacement": "The frozen classifier gives UnknownApiError precedence over verifier reward and returns needs_review. Only the explicit environment/transport infra_failure allowlist can receive up to two replacement attempts; provider API errors are not automatically resampled. SQLite records exactly one attempt for this slot.",
+      "verifier": {
+        "started_at_utc": "2026-10-16T03:05:32.865230Z",
+        "finished_at_utc": "2026-10-16T03:05:48.561344Z",
+        "completed": true,
+        "tests": 4,
+        "passed": 3,
+        "failed": 1,
+        "raw_reward": 0,
+        "reward_changed_by_observer": false
+      },
+      "usage": {
+        "total_input_tokens": 12401527,
+        "cached_input_tokens": 12151936,
+        "uncached_input_tokens": 249591,
+        "output_tokens": 204730,
+        "cost_usd": null,
+        "gateway_billing_verified": false
+      },
+      "not_supported_as_cause": [
+        "Bad model or authentication configuration: actual terminal status is 524 after 104 turns.",
+        "The native unrecognized_model notice alone: the same configuration completed r01 and generated 104 turns in r02.",
+        "Local OOM: slice oom/oom_kill were zero at diagnosis."
+      ]
+    }
+  ],
+  "completed_normal_outcomes": [
+    {
+      "task": "ctr-optimization",
+      "repeat": 1,
+      "attempt": 1,
+      "status": "complete",
+      "reward": 0,
+      "exception_type": null,
+      "native_terminal_reason": "completed",
+      "native_is_error": false,
+      "interpretation": "An ordinary unsuccessful benchmark outcome, not an additional infrastructure exception."
+    }
+  ],
+  "user_stop_interruption": {
+    "task": "ctr-optimization",
+    "repeat": 3,
+    "attempt": 1,
+    "database_status_preserved": "running",
+    "controller_result_present": false,
+    "harbor_result_present": false,
+    "natural_exception_file_present": false,
+    "native_terminal_result_present": false,
+    "native_events_before_stop": {
+      "assistant": 111,
+      "system": 22875,
+      "tool_progress": 7,
+      "user": 52
+    },
+    "last_native_log_update_epoch": 1792122513.8667042,
+    "interpretation": "This slot was in progress when the user requested stopping all tasks. It has no finalized outcome. The stale running DB status is preserved for later explicit reconciliation, and must not be scored as a natural failure.",
+    "containers": [
+      {
+        "service": "main",
+        "status": "exited",
+        "running": false,
+        "exit_code": 137,
+        "oom_killed": false,
+        "finished_at_utc": "2026-10-16T03:49:06.067680479Z"
+      },
+      {
+        "service": "api",
+        "status": "exited",
+        "running": false,
+        "exit_code": 0,
+        "oom_killed": false,
+        "finished_at_utc": "2026-10-16T03:49:01.369889675Z"
+      }
+    ],
+    "exit_137_is_not_evidence_of_natural_oom": "The main container was stopped during the parent agent's user-authorized shutdown; Docker reports OOMKilled=false."
+  },
+  "latest_state": {
+    "controller_active": false,
+    "controller_substate": "dead",
+    "running_containers": 0,
+    "retained_exited_containers": 2,
+    "slot_counts": {
+      "complete": 1,
+      "needs_review": 1,
+      "pending": 165,
+      "running": 1
+    },
+    "new_natural_runtime_anomalies_since_previous_diagnosis": 0
+  },
+  "safety": {
+    "keys_read": false,
+    "keys_emitted": false,
+    "prompt_or_answer_full_text_emitted": false,
+    "source_or_frozen_inputs_modified": false,
+    "database_modified": false,
+    "service_or_containers_modified_by_observer": false,
+    "reruns_started": false
+  },
+  "evidence_paths": {
+    "result": "/data/tb4/runs/formal/tb4-56-flash-max-v4__claude-code__ctr-optimization__r02/attempt-1__7dc6f575cb/controller-result.json",
+    "native_log": "/data/tb4/runs/formal/tb4-56-flash-max-v4__claude-code__ctr-optimization__r02/attempt-1__7dc6f575cb/agent/claude-code.txt",
+    "db": "/data/tb4/runs/formal/state.sqlite3",
+    "prior_safe_diagnosis": "/tmp/tb4-b-needs-review-safe-diagnosis.json"
+  }
+}

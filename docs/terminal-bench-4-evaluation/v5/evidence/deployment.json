@@ -1,0 +1,77 @@
+{
+  "control": "/data/tb4/releases/remediation-v5/control-29df70a57b96",
+  "archive_sha256": "29df70a57b96688e75ffde1e9e6413eeebeb3b14b2f43bdae871c3fa9c58cce3",
+  "servers": [
+    {
+      "server": "serverA",
+      "agent": "codex",
+      "control": "/data/tb4/releases/remediation-v5/control-29df70a57b96",
+      "agent_config": "/data/tb4/config/v5/codex.json",
+      "agent_config_sha256": "577f841ed333eefa93f68e75f23f8adc3490d8619f0addc33c8528feced2ca81",
+      "resource_profile": "/data/tb4/releases/remediation-v5/control-29df70a57b96/adapters/harbor/tb4_control/resource-profile.json",
+      "resource_profile_sha256": "941220efd426c162265f95d2f1ec0cba4e4d40764fb80bfc656341c9d6763ce9",
+      "units": {
+        "tb4-prewarm-v5.service": "f46d3826b224370c78f8d52aa65e17c59e12ced3917e6ef292a3672d95b51cc7",
+        "tb4-resource-probe-v5.service": "1f520e4739cf66903c5f3ce27bf17a213c4ab02c8b1ae401ea55cba4b760434c",
+        "tb4-formal-v5.service": "2ddd21cd8a8b02fe9e017694a098ffce675b984c50c8d0b58dafdd51acc91db7"
+      },
+      "prewarm_started_by_script": false,
+      "formal_started": false,
+      "formal_approval_created": false,
+      "old_formal_unit_modified": false,
+      "old_result_database_modified": false,
+      "deployment": {
+        "files_verified": 85,
+        "target": "/data/tb4/releases/remediation-v5/control-29df70a57b96"
+      }
+    },
+    {
+      "server": "serverB",
+      "agent": "claude-code",
+      "control": "/data/tb4/releases/remediation-v5/control-29df70a57b96",
+      "agent_config": "/data/tb4/config/v5/claude-code.json",
+      "agent_config_sha256": "3485c23434b866d239bb12f35164ebfbe4d7f6a2e451a23751e203139d508746",
+      "resource_profile": "/data/tb4/releases/remediation-v5/control-29df70a57b96/adapters/harbor/tb4_control/resource-profile.json",
+      "resource_profile_sha256": "941220efd426c162265f95d2f1ec0cba4e4d40764fb80bfc656341c9d6763ce9",
+      "units": {
+        "tb4-prewarm-v5.service": "ba732254158bb2e8716e8c5295d3dd16d941371b71ee7eccf8148f4563f66463",
+        "tb4-resource-probe-v5.service": "ed3b2efe20cb3d2f41aa4bf4bfb558bff21dd23cc89846d92036ec5655b584c6",
+        "tb4-formal-v5.service": "e29f2014fe843b4f50849675cb4c6a618cf77419d68b48701333c82f2c8aedcf"
+      },
+      "prewarm_started_by_script": false,
+      "formal_started": false,
+      "formal_approval_created": false,
+      "old_formal_unit_modified": false,
+      "old_result_database_modified": false,
+      "deployment": {
+        "files_verified": 85,
+        "target": "/data/tb4/releases/remediation-v5/control-29df70a57b96"
+      }
+    },
+    {
+      "server": "serverC",
+      "agent": "skills-agent",
+      "control": "/data/tb4/releases/remediation-v5/control-29df70a57b96",
+      "agent_config": "/data/tb4/config/v5/skills-agent.json",
+      "agent_config_sha256": "e196cb423b8e5dd482c2aeee17374d26e76929f776bac1c0823356ed17ba5980",
+      "resource_profile": "/data/tb4/releases/remediation-v5/control-29df70a57b96/adapters/harbor/tb4_control/resource-profile.json",
+      "resource_profile_sha256": "941220efd426c162265f95d2f1ec0cba4e4d40764fb80bfc656341c9d6763ce9",
+      "units": {
+        "tb4-prewarm-v5.service": "3835e0e213696ad128b1f6e3cbdd9f89beffa52a20b3c4592d05950f020ac41b",
+        "tb4-resource-probe-v5.service": "d8149d643609c82c3c7d396d3a99c41e637e58fcb9c35700293997fc0c236ff2",
+        "tb4-formal-v5.service": "7327fa55eec4a0129c0897074d6f03a55e0ea8029ef41bce101541f833041596"
+      },
+      "prewarm_started_by_script": false,
+      "formal_started": false,
+      "formal_approval_created": false,
+      "old_formal_unit_modified": false,
+      "old_result_database_modified": false,
+      "deployment": {
+        "files_verified": 85,
+        "target": "/data/tb4/releases/remediation-v5/control-29df70a57b96"
+      }
+    }
+  ],
+  "formal_started": false,
+  "prewarm_started": false
+}

@@ -1,0 +1,36 @@
+{
+  "checked_at": "2026-10-16T04:45:52.511756+00:00",
+  "servers": [
+    {
+      "server": "serverA",
+      "tests": 54,
+      "passed": 54,
+      "failed": 0,
+      "seconds": 1.73
+    },
+    {
+      "server": "serverB",
+      "tests": 54,
+      "passed": 54,
+      "failed": 0,
+      "seconds": 1.709
+    },
+    {
+      "server": "serverC",
+      "tests": 54,
+      "passed": 54,
+      "failed": 0,
+      "seconds": 1.75
+    }
+  ],
+  "modules": [
+    "test_control",
+    "test_fake_scheduler",
+    "test_resources",
+    "test_outcomes",
+    "test_skills_adapter"
+  ],
+  "model_calls": 0,
+  "interpreter": "pinned Harbor Python3.12.15",
+  "control": "/data/tb4/releases/remediation-v5/control-29df70a57b96"
+}

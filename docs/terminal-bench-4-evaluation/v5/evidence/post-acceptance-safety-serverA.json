@@ -1,0 +1,37 @@
+{
+  "controller_lock_available": true,
+  "all_container_ids": [
+    "38586a305aa9",
+    "b3a3b2844501"
+  ],
+  "all_volume_names": [],
+  "custom_network_names": [
+    "attempt-1__dbcff396cc__env_default"
+  ],
+  "running_container_ids": [],
+  "preserved_existing_v4_container_metadata": [
+    {
+      "id": "38586a305aa99b25fe42fbd23cae8ab6aa0d563da1a72d4a339de8f3021bc5df",
+      "name": "/attempt-1__dbcff396cc__env-main-1",
+      "status": "exited",
+      "running": false,
+      "oom_killed": false,
+      "exit_code": 137,
+      "project": "attempt-1__dbcff396cc__env",
+      "service": "main",
+      "created": "2026-10-16T00:42:21.660681373Z"
+    },
+    {
+      "id": "b3a3b2844501c2046f275b350168cd2f0a798c6002465de563bfa6bc1e4e255e",
+      "name": "/attempt-1__dbcff396cc__env-api-1",
+      "status": "exited",
+      "running": false,
+      "oom_killed": false,
+      "exit_code": 0,
+      "project": "attempt-1__dbcff396cc__env",
+      "service": "api",
+      "created": "2026-10-16T00:42:21.585051834Z"
+    }
+  ],
+  "old_v4_resources_modified": false
+}

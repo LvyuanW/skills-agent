@@ -1,0 +1,59 @@
+{
+  "phase": "approve",
+  "time_utc": "2026-10-16T05:46:42.761623+00:00",
+  "user_authorization": "\u542f\u52a8\u6b63\u5f0f\u8bc4\u6d4b",
+  "experiment": "tb4-56-flash-max-v5",
+  "servers": [
+    {
+      "server": "serverA",
+      "agent": "codex",
+      "address": "47.91.21.152",
+      "approval": {
+        "experiment": "tb4-56-flash-max-v5",
+        "allow_formal": true,
+        "manifest_sha256": "7b4988053c57f56fc37f5bd32f3b598690624c1999a7c3939af0d4101db5a777",
+        "agent_config_sha256": "577f841ed333eefa93f68e75f23f8adc3490d8619f0addc33c8528feced2ca81",
+        "resource_profile_sha256": "941220efd426c162265f95d2f1ec0cba4e4d40764fb80bfc656341c9d6763ce9",
+        "trial_plan_sha256": "57cfe5481df19537945016e7e2698594c624eec579ea762c5ad2a8b32e63c9c0",
+        "agent": "codex",
+        "server": "serverA"
+      },
+      "approval_sha256": "8630587cf3447665a9ded220f206839c589a4e11ae2f1e844f2c3d6c054d1dcd",
+      "service_started": false
+    },
+    {
+      "server": "serverB",
+      "agent": "claude-code",
+      "address": "8.216.13.123",
+      "approval": {
+        "experiment": "tb4-56-flash-max-v5",
+        "allow_formal": true,
+        "manifest_sha256": "7b4988053c57f56fc37f5bd32f3b598690624c1999a7c3939af0d4101db5a777",
+        "agent_config_sha256": "3485c23434b866d239bb12f35164ebfbe4d7f6a2e451a23751e203139d508746",
+        "resource_profile_sha256": "941220efd426c162265f95d2f1ec0cba4e4d40764fb80bfc656341c9d6763ce9",
+        "trial_plan_sha256": "57cfe5481df19537945016e7e2698594c624eec579ea762c5ad2a8b32e63c9c0",
+        "agent": "claude-code",
+        "server": "serverB"
+      },
+      "approval_sha256": "61fabd6967b36521d7e4b6a0e57a624175579d931a2958b83933e9332e0c1536",
+      "service_started": false
+    },
+    {
+      "server": "serverC",
+      "agent": "skills-agent",
+      "address": "8.216.11.161",
+      "approval": {
+        "experiment": "tb4-56-flash-max-v5",
+        "allow_formal": true,
+        "manifest_sha256": "7b4988053c57f56fc37f5bd32f3b598690624c1999a7c3939af0d4101db5a777",
+        "agent_config_sha256": "e196cb423b8e5dd482c2aeee17374d26e76929f776bac1c0823356ed17ba5980",
+        "resource_profile_sha256": "941220efd426c162265f95d2f1ec0cba4e4d40764fb80bfc656341c9d6763ce9",
+        "trial_plan_sha256": "57cfe5481df19537945016e7e2698594c624eec579ea762c5ad2a8b32e63c9c0",
+        "agent": "skills-agent",
+        "server": "serverC"
+      },
+      "approval_sha256": "d5cd36096ea7c532c0eca62112fcc3802216a7bd94cc2b84188be09a3d145b93",
+      "service_started": false
+    }
+  ]
+}

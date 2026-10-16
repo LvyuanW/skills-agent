@@ -1,0 +1,206 @@
+{
+  "assets_path": "/data/tb4/releases/remediation-v5/skills-assets-d7e45e4ccd7d",
+  "wheel_sha256": "d7e45e4ccd7d4627f679c745fa05672042d95b92d90c11629e0b57308d038d3c",
+  "source_tree_sha256": "3dadfed7250964cd786faab9c838bde982d576929de175c489dcd5714c57a14b",
+  "source_commit": "641e879bfd726991fc71d60439c7f7550aaf1419",
+  "bundle_sha256": "6605801958eb4dc290b1eca7779eca607b568fb40a273a50c897fd8ae3af1b58",
+  "files": {
+    "runtime-bundle.tar.gz": {
+      "path": "/data/tb4/releases/remediation-v5/skills-assets-d7e45e4ccd7d/runtime-bundle.tar.gz",
+      "sha256": "6605801958eb4dc290b1eca7779eca607b568fb40a273a50c897fd8ae3af1b58",
+      "bytes": 61741508
+    },
+    "runtime-bundle.sha256": {
+      "path": "/data/tb4/releases/remediation-v5/skills-assets-d7e45e4ccd7d/runtime-bundle.sha256",
+      "sha256": "63c8f4bb53a21a40368f1a02220174dcc7dbaac89956044c86f1b23e1dd5ee41",
+      "bytes": 88
+    },
+    "runtime-manifest.json": {
+      "path": "/data/tb4/releases/remediation-v5/skills-assets-d7e45e4ccd7d/runtime-manifest.json",
+      "sha256": "9fb76f8c070c8d4c23fa193bef0a077e0113f243d4726dd11f4a14ddd4cc4508",
+      "bytes": 1872
+    },
+    "skills_cli_agent-0.1.0-py3-none-any.whl": {
+      "path": "/data/tb4/releases/remediation-v5/skills-assets-d7e45e4ccd7d/skills_cli_agent-0.1.0-py3-none-any.whl",
+      "sha256": "d7e45e4ccd7d4627f679c745fa05672042d95b92d90c11629e0b57308d038d3c",
+      "bytes": 138453
+    },
+    "requirements.lock": {
+      "path": "/data/tb4/releases/remediation-v5/skills-assets-d7e45e4ccd7d/requirements.lock",
+      "sha256": "1ff23007a9ae59bef975c83126e161b618cbb01032b7d57a1b0054451b4bbc63",
+      "bytes": 677
+    },
+    "uv.lock": {
+      "path": "/data/tb4/releases/remediation-v5/skills-assets-d7e45e4ccd7d/uv.lock",
+      "sha256": "206ab4c6c79f186726eed05298e8f6fe4a4317ed636f7c4163f4dc568875cad9",
+      "bytes": 31500
+    },
+    "tokenizer-v41.json": {
+      "path": "/data/tb4/releases/remediation-v5/skills-assets-d7e45e4ccd7d/tokenizer-v41.json",
+      "sha256": "81f64d1248a68ce3663e07ab3ee48b851e5df0e32d27cb98e4c9a268151e8d99",
+      "bytes": 6367247
+    },
+    "source-snapshot.json": {
+      "path": "/data/tb4/releases/remediation-v5/skills-assets-d7e45e4ccd7d/source-snapshot.json",
+      "sha256": "b860ea9ac5e8e3a83ba1ac6d2577d5c5ac07e394cf283c13a296e0e7485b3364",
+      "bytes": 7260
+    },
+    "release-metadata.json": {
+      "path": "/data/tb4/releases/remediation-v5/skills-assets-d7e45e4ccd7d/release-metadata.json",
+      "sha256": "c2be71f2d5b305ecc69d2896f44ce9225d25a93106810f4217ee9a9f8a15ce70",
+      "bytes": 7767
+    }
+  },
+  "wheelhouse_sha256": {
+    "h11-0.16.0-py3-none-any.whl": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86",
+    "annotated_types-0.8.0-py3-none-any.whl": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0",
+    "httpx_sse-0.4.3-py3-none-any.whl": "0ac1c9fe3c0afad2e0ebb25a934a59f4c7823b60792691f779fad2c5568830fc",
+    "pydantic_core-2.50.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl": "93ba4e9d8210d941c200431a56b2c0400b131865947903937ed3ec5404307d2e",
+    "python_dotenv-1.2.4-py3-none-any.whl": "42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc",
+    "markdown_it_py-4.2.0-py3-none-any.whl": "9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a",
+    "cffi-2.1.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": "c1453022f490d2459a11819d83ad1d586e9ff65a12ac3e705ffebd46d3685dcf",
+    "sse_starlette-3.5.0-py3-none-any.whl": "3e6e1070df3f0f5d9cea81496de92dbb72f6721871d99748ece67441dd8b7997",
+    "prompt_toolkit-3.0.53-py3-none-any.whl": "01c0891d7f9237d5e339f7d3e42cdae80b7534abb1c7c0e3352efba6231492f2",
+    "typing_inspection-0.4.4-py3-none-any.whl": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147",
+    "httpx-0.28.1-py3-none-any.whl": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad",
+    "rpds_py-2026.9.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl": "addeda51556dac7c1a2f14cda62db8b621cd12afba3091d03a96c72932387eab",
+    "typing_extensions-4.16.0-py3-none-any.whl": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+    "jsonschema_specifications-2025.9.1-py3-none-any.whl": "98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe",
+    "mdurl-0.1.2-py3-none-any.whl": "84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8",
+    "pycparser-3.11-py3-none-any.whl": "51d5a8ba2be0bbe440b99d2112604c95bbbc3c2748a64260186c541e1729cd80",
+    "wcwidth-0.9.2-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl": "751bef0ab404b6a1dc028b56b4b85d46486be1c55833f80da533e42dc691f389",
+    "uvicorn-0.54.0-py3-none-any.whl": "505bdb0f318731d45f1f712071fc781a8981f6847a31c902c9f5e652d4f67faf",
+    "referencing-0.37.0-py3-none-any.whl": "381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231",
+    "click-8.5.0-py3-none-any.whl": "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360",
+    "cryptography-50.0.2-cp311-abi3-manylinux_2_34_x86_64.whl": "9dab55f57c74c3cad24c323bacbbd04be4705ba6eb0d92e920b1fc4837ed5079",
+    "python_multipart-0.0.32-py3-none-any.whl": "ff6d3f776f16878c894e52e107296ffc890e913c611b1a4ec6c44e2821fe2e23",
+    "starlette-1.8.0-py3-none-any.whl": "dfdd6b29c26483288088d990eee59631dedadd66ce20d203402a7ca8e3c4656f",
+    "pydantic-2.14.1-py3-none-any.whl": "9195d967ec791692a04438115466764fb8b9a27b31f14a760437694f40d6b454",
+    "attrs-26.1.0-py3-none-any.whl": "c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309",
+    "mcp-1.30.0-py3-none-any.whl": "666edb5009503e1047c9d60346a756f94b261f05cc2625f23d41c728ffc484d0",
+    "pyyaml-6.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl": "ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc",
+    "rich-14.3.4-py3-none-any.whl": "07e7adb4690f68864777b1450859253bed81a99a31ac321ac1817b2313558952",
+    "jsonschema-4.26.0-py3-none-any.whl": "d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce",
+    "certifi-2026.7.22-py3-none-any.whl": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775",
+    "pydantic_settings-2.16.0-py3-none-any.whl": "7e73acf7f61936a15e5a3b6eedaea29f133357faf7272f2607ba479b049dd7f2",
+    "pygments-2.21.0-py3-none-any.whl": "2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9",
+    "anyio-4.15.1-py3-none-any.whl": "6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101",
+    "deepseek_recipe-0.1.1-cp310-abi3-manylinux_2_28_x86_64.whl": "7818802935becc76ac9b81af6b4a1e5390ec65355cecefd1fd4790f51845c1c5",
+    "idna-3.20-py3-none-any.whl": "ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c",
+    "httpcore-1.0.9-py3-none-any.whl": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55",
+    "pyjwt-2.15.1-py3-none-any.whl": "42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193"
+  },
+  "third_party_wheel_count": 37,
+  "managed_python_files_unchanged": 3695,
+  "python": "3.12.15",
+  "dependency_metadata_unchanged": true,
+  "uv_lock_sha256": "206ab4c6c79f186726eed05298e8f6fe4a4317ed636f7c4163f4dc568875cad9",
+  "native_offline_result": {
+    "model": "deepseek-v4-1-flash-260910",
+    "tested_provider_file": "/data/tb4/venvs/skills-remediation-v5-d7e45e4ccd7d/lib/python3.12/site-packages/skills_agent/providers/openai.py",
+    "system_python_native_context": true,
+    "tls_verify_mode": "CERT_REQUIRED",
+    "tls_check_hostname": true,
+    "tls_root_ca_count": 121,
+    "explicit_context_preserved": true,
+    "network_requests": 0,
+    "audit_request_records": 3,
+    "audit_usage_records": 3,
+    "wrong_effort_rejected": true,
+    "auxiliary_disabled_thinking_allowed": true,
+    "gateway_max_payload": true,
+    "gateway_local_v41_counter": true,
+    "image_feedback_to_deepseek_payload": true,
+    "image_token_count": 406
+  },
+  "full_bundle_install_result": {
+    "image": "tb4-prewarm/ctr-optimization-agent-main:f6ef20686089",
+    "temporary_container": "tb4-skillsfix-fullinstall-863c5fb654",
+    "model_calls": 0,
+    "credentials_injected": false,
+    "assets_path": "/data/tb4/releases/remediation-v5/skills-assets-d7e45e4ccd7d",
+    "full_adapter_install_passed": true,
+    "post_install_network": "disconnected",
+    "installed_agent_version": "0.1.0",
+    "installed_wheel_verification": {
+      "installed_package_files_matched": 53,
+      "wheel_sha256": "d7e45e4ccd7d4627f679c745fa05672042d95b92d90c11629e0b57308d038d3c",
+      "provider_file": "/opt/tb4-skills/venv/lib/python3.12/site-packages/skills_agent/providers/base.py"
+    },
+    "installed_native_lifecycle": {
+      "missing_ps_failed_before_registration": true,
+      "cases": [
+        {
+          "case": "explicit-stop",
+          "start": "running",
+          "status": "running",
+          "final_state": "stopped",
+          "live_child_or_supervisor_after_close": false
+        },
+        {
+          "case": "native-close",
+          "start": "running",
+          "status": "running",
+          "final_state": "stopped",
+          "live_child_or_supervisor_after_close": false
+        }
+      ],
+      "network": "none",
+      "model_calls": 0,
+      "credentials_injected": false
+    },
+    "status": "passed",
+    "temporary_container_removed": true
+  },
+  "release": "remediation-v5",
+  "recorded_at_utc": "2026-10-16T04:39:54.493861+00:00",
+  "local_source_release": "/Users/apple/dev/learn-ai-agent/output/terminal-bench4-preparation-20261016/releases/skills-agent-remediation-v5-20261016T043421Z",
+  "source_package_still_matches_freeze": true,
+  "native_unit_tests": {
+    "passed": 224,
+    "failed": 0
+  },
+  "harbor_adapter_tests": {
+    "passed": 7,
+    "failed": 0
+  },
+  "model_calls": 0,
+  "formal_evaluation_started": false,
+  "formal_config_switched": false,
+  "old_releases_or_raw_results_modified": false,
+  "readiness_complete": true,
+  "retry_policy": {
+    "interactive_default": "unlimited",
+    "evaluation_max_attempts": 5,
+    "evaluation_retry_budget_seconds": 300,
+    "budget_scope": "start_next_request",
+    "single_transport_timeout_seconds": 120,
+    "retry_after_respected": true,
+    "strict_300_second_wall_clock_cap": false
+  },
+  "adapter": {
+    "local_path": "/Users/apple/dev/learn-ai-agent/skills-agent/adapters/harbor/tb4_agents/skills.py",
+    "sha256": "ab674e171db6213884b6a243301232c3467d08060613077e87630a033f2d3410"
+  },
+  "native_failure_contract": {
+    "kinds": [
+      "provider",
+      "lifecycle",
+      "agent_limit",
+      "agent_exit"
+    ],
+    "provider_exception": "SkillsAgentProviderError",
+    "lifecycle_exception": "SkillsAgentLifecycleError",
+    "exact_output_limit_exception": "OutputTokenExceededError (is NonZeroAgentExitCodeError)",
+    "exact_context_limit_exception": "ContextWindowExceededError (is NonZeroAgentExitCodeError)",
+    "cleanup_overrides_agent_limit": true
+  },
+  "evidence_paths": {
+    "native_tests": "/Users/apple/dev/learn-ai-agent/output/terminal-bench4-preparation-20261016/remediation-v5/skills-tests.json",
+    "actual_dependency_lifecycle": "/Users/apple/dev/learn-ai-agent/output/terminal-bench4-preparation-20261016/skills-repair-actual-dependency-lifecycle.json",
+    "full_bundle_install": "/Users/apple/dev/learn-ai-agent/output/terminal-bench4-preparation-20261016/remediation-v5/skills-full-bundle-install.json",
+    "native_offline": "/Users/apple/dev/learn-ai-agent/output/terminal-bench4-preparation-20261016/remediation-v5/skills-native-offline.json",
+    "package_manager_matrix": "/Users/apple/dev/learn-ai-agent/output/terminal-bench4-preparation-20261016/skills-repair-package-manager-matrix.json",
+    "source_metadata": "/Users/apple/dev/learn-ai-agent/output/terminal-bench4-preparation-20261016/releases/skills-agent-remediation-v5-20261016T043421Z/release-metadata.json"
+  }
+}

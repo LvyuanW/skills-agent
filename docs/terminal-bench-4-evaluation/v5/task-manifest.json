@@ -1,0 +1,1648 @@
+{
+  "schema_version": "1.0",
+  "date": "2026-10-16",
+  "benchmark": {
+    "name": "Terminal-Bench",
+    "version": "4.0.0",
+    "commit": "452bf305c6daa62fc59061d22133a7cbc7c1572e",
+    "source": "https://github.com/harbor-framework/terminal-bench",
+    "source_audit_sha256": "2ccceed1c1d25e78aaf3981576ec17e9904fed4e4dbf6bd105cb9a9e0afba4a3"
+  },
+  "selection": {
+    "name": "tb4-custom-56-main-verifier-cpu4-no-gpu",
+    "official_subset": false,
+    "main_cpus_allowed": [
+      2,
+      4
+    ],
+    "main_gpus": 0,
+    "verifier_effective_cpus_max": 4,
+    "verifier_effective_gpus": 0,
+    "missing_gpus_default": 0,
+    "verifier_resource_inheritance": "Start with main environment resources and apply verifier.environment overrides.",
+    "sidecar_resource_scope": "Selection caps apply to main and verifier environments, not the sum of all Compose services. Sidecar budgets must be calibrated separately.",
+    "ordering": "task name ascending"
+  },
+  "counts": {
+    "source_tasks": 66,
+    "selected_tasks": 56,
+    "excluded_tasks": 10,
+    "main_cpu_distribution": {
+      "2": 44,
+      "4": 12
+    },
+    "category_distribution": {
+      "Hardware": 5,
+      "ML": 8,
+      "Media": 4,
+      "Operations": 9,
+      "Science": 12,
+      "Security": 3,
+      "Software": 15
+    },
+    "sidecar_tasks": 9,
+    "agents": 3,
+    "repeats_per_task_per_agent": 3,
+    "planned_trials_per_agent": 168,
+    "planned_trials_total": 504
+  },
+  "tasks": [
+    {
+      "task": "atrx-vep-crispr",
+      "category": "Science",
+      "subcategory": "Biology",
+      "source_path": "tasks/atrx-vep-crispr/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/atrx-vep-crispr/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "batched-eval-parity",
+      "category": "ML",
+      "subcategory": "Evaluation",
+      "source_path": "tasks/batched-eval-parity/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/batched-eval-parity/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 1,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "main_resources_with_verifier_overrides",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 900,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "biped-contact-dynamics",
+      "category": "Science",
+      "subcategory": "Robotics",
+      "source_path": "tasks/biped-contact-dynamics/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/biped-contact-dynamics/task.toml",
+      "main_resources": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 2640,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "bun-sourcemap-leak",
+      "category": "Software",
+      "subcategory": "Systems",
+      "source_path": "tasks/bun-sourcemap-leak/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/bun-sourcemap-leak/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "cad-model",
+      "category": "Hardware",
+      "subcategory": "CAD",
+      "source_path": "tasks/cad-model/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/cad-model/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 240,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "cargo-flight-dispatch",
+      "category": "Operations",
+      "subcategory": "Logistics",
+      "source_path": "tasks/cargo-flight-dispatch/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/cargo-flight-dispatch/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "coq-block-bound",
+      "category": "Science",
+      "subcategory": "Math",
+      "source_path": "tasks/coq-block-bound/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/coq-block-bound/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 1200,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "ctr-optimization",
+      "category": "Operations",
+      "subcategory": "Marketing",
+      "source_path": "tasks/ctr-optimization/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/ctr-optimization/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 180,
+      "has_sidecars": true,
+      "sidecar_budget": null,
+      "sidecar_budget_status": "requires_calibration"
+    },
+    {
+      "task": "cumulative-layout-shift",
+      "category": "Software",
+      "subcategory": "Frontend",
+      "source_path": "tasks/cumulative-layout-shift/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/cumulative-layout-shift/task.toml",
+      "main_resources": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 900,
+      "has_sidecars": true,
+      "sidecar_budget": null,
+      "sidecar_budget_status": "requires_calibration"
+    },
+    {
+      "task": "data-anonymization",
+      "category": "Software",
+      "subcategory": "Data engineering",
+      "source_path": "tasks/data-anonymization/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/data-anonymization/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 7200,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "embedding-drift-monitor",
+      "category": "ML",
+      "subcategory": "Inference",
+      "source_path": "tasks/embedding-drift-monitor/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/embedding-drift-monitor/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "fin-saccr-rwa",
+      "category": "Operations",
+      "subcategory": "Finance",
+      "source_path": "tasks/fin-saccr-rwa/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/fin-saccr-rwa/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "foodstuff-beta-activity",
+      "category": "Science",
+      "subcategory": "Chemistry",
+      "source_path": "tasks/foodstuff-beta-activity/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/foodstuff-beta-activity/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 120,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "freecad-impeller",
+      "category": "Hardware",
+      "subcategory": "CAD",
+      "source_path": "tasks/freecad-impeller/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/freecad-impeller/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "freecad-platform-drawing",
+      "category": "Hardware",
+      "subcategory": "CAD",
+      "source_path": "tasks/freecad-platform-drawing/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/freecad-platform-drawing/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "freecad-spring-clip",
+      "category": "Hardware",
+      "subcategory": "CAD",
+      "source_path": "tasks/freecad-spring-clip/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/freecad-spring-clip/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "freight-dispatch-shift",
+      "category": "Operations",
+      "subcategory": "Logistics",
+      "source_path": "tasks/freight-dispatch-shift/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/freight-dispatch-shift/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "has_sidecars": true,
+      "sidecar_budget": null,
+      "sidecar_budget_status": "requires_calibration"
+    },
+    {
+      "task": "glycan-ms2-elucidation",
+      "category": "Science",
+      "subcategory": "Chemistry",
+      "source_path": "tasks/glycan-ms2-elucidation/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/glycan-ms2-elucidation/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "gsea-proteomics",
+      "category": "Science",
+      "subcategory": "Biology",
+      "source_path": "tasks/gsea-proteomics/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/gsea-proteomics/task.toml",
+      "main_resources": {
+        "cpus": 4,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 4,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "heat-pump-warranty",
+      "category": "Operations",
+      "subcategory": "Claims",
+      "source_path": "tasks/heat-pump-warranty/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/heat-pump-warranty/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "has_sidecars": true,
+      "sidecar_budget": null,
+      "sidecar_budget_status": "requires_calibration"
+    },
+    {
+      "task": "hof-topology-interpenetration",
+      "category": "Science",
+      "subcategory": "Chemistry",
+      "source_path": "tasks/hof-topology-interpenetration/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/hof-topology-interpenetration/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "html-js-filter",
+      "category": "Security",
+      "subcategory": "AppSec",
+      "source_path": "tasks/html-js-filter/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/html-js-filter/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 1800,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "interleaved-vigenere",
+      "category": "Security",
+      "subcategory": "Cryptography",
+      "source_path": "tasks/interleaved-vigenere/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/interleaved-vigenere/task.toml",
+      "main_resources": {
+        "cpus": 4,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 4,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 900,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "intrastat-meldung",
+      "category": "Operations",
+      "subcategory": "Compliance",
+      "source_path": "tasks/intrastat-meldung/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/intrastat-meldung/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 180,
+      "has_sidecars": true,
+      "sidecar_budget": null,
+      "sidecar_budget_status": "requires_calibration"
+    },
+    {
+      "task": "ks-solver-cpp",
+      "category": "Science",
+      "subcategory": "Physics",
+      "source_path": "tasks/ks-solver-cpp/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/ks-solver-cpp/task.toml",
+      "main_resources": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 180,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "kv-live-surgery",
+      "category": "Software",
+      "subcategory": "Systems",
+      "source_path": "tasks/kv-live-surgery/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/kv-live-surgery/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "has_sidecars": true,
+      "sidecar_budget": null,
+      "sidecar_budget_status": "requires_calibration"
+    },
+    {
+      "task": "layout-config-recreation",
+      "category": "Media",
+      "subcategory": "Design",
+      "source_path": "tasks/layout-config-recreation/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/layout-config-recreation/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 180,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "layout-config-recreation2",
+      "category": "Media",
+      "subcategory": "Design",
+      "source_path": "tasks/layout-config-recreation2/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/layout-config-recreation2/task.toml",
+      "main_resources": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "main_resources_with_verifier_overrides",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 180,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "legacy-utility-triage",
+      "category": "Operations",
+      "subcategory": "Claims",
+      "source_path": "tasks/legacy-utility-triage/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/legacy-utility-triage/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "has_sidecars": true,
+      "sidecar_budget": null,
+      "sidecar_budget_status": "requires_calibration"
+    },
+    {
+      "task": "medical-claims-processing",
+      "category": "Operations",
+      "subcategory": "Claims",
+      "source_path": "tasks/medical-claims-processing/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/medical-claims-processing/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 16384,
+        "storage_mb": 20480,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 16384,
+        "storage_mb": 20480,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 120,
+      "has_sidecars": true,
+      "sidecar_budget": null,
+      "sidecar_budget_status": "requires_calibration"
+    },
+    {
+      "task": "mp-checkpoint-consolidation",
+      "category": "ML",
+      "subcategory": "Inference",
+      "source_path": "tasks/mp-checkpoint-consolidation/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/mp-checkpoint-consolidation/task.toml",
+      "main_resources": {
+        "cpus": 4,
+        "memory_mb": 4096,
+        "storage_mb": 5120,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 4,
+        "memory_mb": 4096,
+        "storage_mb": 5120,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "music-harmony",
+      "category": "Media",
+      "subcategory": "Music",
+      "source_path": "tasks/music-harmony/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/music-harmony/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 60,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "mvcc-lsm-compaction",
+      "category": "Software",
+      "subcategory": "Databases",
+      "source_path": "tasks/mvcc-lsm-compaction/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/mvcc-lsm-compaction/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 900,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "nextjs-performance",
+      "category": "Software",
+      "subcategory": "Frontend",
+      "source_path": "tasks/nextjs-performance/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/nextjs-performance/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 15360,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 15360,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "has_sidecars": true,
+      "sidecar_budget": null,
+      "sidecar_budget_status": "requires_calibration"
+    },
+    {
+      "task": "ontology-kg-querying",
+      "category": "Software",
+      "subcategory": "Data engineering",
+      "source_path": "tasks/ontology-kg-querying/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/ontology-kg-querying/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 1500,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "photonic-waveguide-routing",
+      "category": "Software",
+      "subcategory": "Algorithms",
+      "source_path": "tasks/photonic-waveguide-routing/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/photonic-waveguide-routing/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "pretrain-shard-corruption",
+      "category": "ML",
+      "subcategory": "Training",
+      "source_path": "tasks/pretrain-shard-corruption/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/pretrain-shard-corruption/task.toml",
+      "main_resources": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 4096,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 4096,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 600,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "production-planning",
+      "category": "Operations",
+      "subcategory": "Supply chain",
+      "source_path": "tasks/production-planning/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/production-planning/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 120,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "protein-autointerp-disulfide",
+      "category": "Science",
+      "subcategory": "Biology",
+      "source_path": "tasks/protein-autointerp-disulfide/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/protein-autointerp-disulfide/task.toml",
+      "main_resources": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 180,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "react-lead-form",
+      "category": "Software",
+      "subcategory": "Frontend",
+      "source_path": "tasks/react-lead-form/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/react-lead-form/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 900,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "retro-console-soc",
+      "category": "Hardware",
+      "subcategory": "RTL",
+      "source_path": "tasks/retro-console-soc/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/retro-console-soc/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 1200,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "risk-scorer-replay",
+      "category": "ML",
+      "subcategory": "Evaluation",
+      "source_path": "tasks/risk-scorer-replay/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/risk-scorer-replay/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "roy-polymorph-cn",
+      "category": "Science",
+      "subcategory": "Chemistry",
+      "source_path": "tasks/roy-polymorph-cn/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/roy-polymorph-cn/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "rs-archive-clone",
+      "category": "Software",
+      "subcategory": "Algorithms",
+      "source_path": "tasks/rs-archive-clone/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/rs-archive-clone/task.toml",
+      "main_resources": {
+        "cpus": 4,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 4,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 1200,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "satb-audio-transcription",
+      "category": "Media",
+      "subcategory": "Music",
+      "source_path": "tasks/satb-audio-transcription/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/satb-audio-transcription/task.toml",
+      "main_resources": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 4,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "session-window-debug",
+      "category": "Software",
+      "subcategory": "Systems",
+      "source_path": "tasks/session-window-debug/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/session-window-debug/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "sglang-qwen-burst",
+      "category": "ML",
+      "subcategory": "Inference",
+      "source_path": "tasks/sglang-qwen-burst/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/sglang-qwen-burst/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 18000,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 18000,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 420,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "sound-change-cascade",
+      "category": "Science",
+      "subcategory": "Linguistics",
+      "source_path": "tasks/sound-change-cascade/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/sound-change-cascade/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "takens-embedding-lean",
+      "category": "Science",
+      "subcategory": "Math",
+      "source_path": "tasks/takens-embedding-lean/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/takens-embedding-lean/task.toml",
+      "main_resources": {
+        "cpus": 4,
+        "memory_mb": 16384,
+        "storage_mb": 51200,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 4,
+        "memory_mb": 16384,
+        "storage_mb": 51200,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 1800,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "telecom-entity-resolution",
+      "category": "Software",
+      "subcategory": "Data engineering",
+      "source_path": "tasks/telecom-entity-resolution/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/telecom-entity-resolution/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 1500,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "uefi-bootkit",
+      "category": "Security",
+      "subcategory": "Forensics",
+      "source_path": "tasks/uefi-bootkit/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/uefi-bootkit/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 16384,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 16384,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 700,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "vba-userform-port",
+      "category": "Software",
+      "subcategory": "Frontend",
+      "source_path": "tasks/vba-userform-port/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/vba-userform-port/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 20480,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 900,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "vf2-speedup-networkx",
+      "category": "Software",
+      "subcategory": "Algorithms",
+      "source_path": "tasks/vf2-speedup-networkx/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/vf2-speedup-networkx/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 900,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "vllm-deepseek-streaming",
+      "category": "ML",
+      "subcategory": "Inference",
+      "source_path": "tasks/vllm-deepseek-streaming/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/vllm-deepseek-streaming/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 300,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "vpp-loss-divergence",
+      "category": "ML",
+      "subcategory": "Training",
+      "source_path": "tasks/vpp-loss-divergence/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/vpp-loss-divergence/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 15360,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 8192,
+        "storage_mb": 15360,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 900,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    },
+    {
+      "task": "wal-recovery-ordering",
+      "category": "Software",
+      "subcategory": "Databases",
+      "source_path": "tasks/wal-recovery-ordering/task.toml",
+      "source_url": "https://github.com/harbor-framework/terminal-bench/blob/452bf305c6daa62fc59061d22133a7cbc7c1572e/tasks/wal-recovery-ordering/task.toml",
+      "main_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_effective_resources": {
+        "cpus": 2,
+        "memory_mb": 4096,
+        "storage_mb": 10240,
+        "gpus": 0
+      },
+      "verifier_environment_mode": "separate",
+      "verifier_resource_resolution": "inherit_main_resources",
+      "agent_timeout_sec": 28800,
+      "verifier_timeout_sec": 1800,
+      "has_sidecars": false,
+      "sidecar_budget": {
+        "cpus": 0,
+        "memory_mb": 0
+      },
+      "sidecar_budget_status": "not_applicable"
+    }
+  ]
+}

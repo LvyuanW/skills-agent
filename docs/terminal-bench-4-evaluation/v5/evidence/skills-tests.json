@@ -1,0 +1,17 @@
+{
+  "native_tests": {
+    "command": "python -m unittest tests.test_provider_retry tests.test_provider_retry_budget tests.test_provider_classification tests.test_provider_user_agent tests.test_agent_retry tests.test_process_management tests.test_process_lifecycle tests.test_process_start_failure tests.test_provider_diagnostics tests.test_benchmark tests.test_provider_counting tests.test_feedback_providers tests.test_context_auxiliary tests.test_deepseek_effort tests.test_feedback_checks tests.test_feedback_runtime tests.test_feedback_script tests.test_providers tests.test_tool_notes -q",
+    "passed": 224,
+    "failed": 0,
+    "seconds": 27.019
+  },
+  "pinned_harbor_adapter_tests": {
+    "command": "PYTHONPATH=<temporary adapter> /data/tb4/venvs/harbor/bin/python -m unittest adapters.harbor.tb4_agents.test_skills_adapter -q",
+    "passed": 7,
+    "failed": 0,
+    "seconds": 0.015
+  },
+  "model_calls": 0,
+  "user_default_interactive_unlimited_retry_retained": true,
+  "frozen_user_agent_retained": true
+}

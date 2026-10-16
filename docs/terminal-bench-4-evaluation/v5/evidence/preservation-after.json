@@ -1,0 +1,56 @@
+{
+  "collected_at": "2026-10-16T05:30:40.729878+00:00",
+  "servers": [
+    {
+      "server": "serverA",
+      "address": "47.91.21.152",
+      "formal_service": {
+        "MainPID": "0",
+        "ActiveState": "inactive"
+      },
+      "active_v4_approval": false,
+      "v4_prewarm_summary_sha256": "6d3307a321c094578435cbb919b2ad8b06dcca259cdf81800ac990a176e0e7dc",
+      "v4_formal_unit_sha256": "a487e1726423ef9fb01bdb41a655697612495dee5775b9f4a0c408959700a5f0",
+      "v4_result_hashes": {
+        "state.sqlite3": "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+        "tb4-56-flash-max-v4__codex__ctr-optimization__r01/attempt-1__94dc29cfe3/controller-result.json": "92ee5bd9d6593187bc304d52bb477b8bf396e5d500a24e12773b1eb09bf0b357"
+      }
+    },
+    {
+      "server": "serverB",
+      "address": "8.216.13.123",
+      "formal_service": {
+        "MainPID": "0",
+        "ActiveState": "inactive"
+      },
+      "active_v4_approval": false,
+      "v4_prewarm_summary_sha256": "dfc065f13c3a627b5cf13f418795d8201781bf597bd30c89e931e7b3441ccc02",
+      "v4_formal_unit_sha256": "a21de10f9eb75cc74349a6ee7223081175d50ef8dfe106849f6a69e68dee6382",
+      "v4_result_hashes": {
+        "state.sqlite3": "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+        "tb4-56-flash-max-v4__claude-code__ctr-optimization__r01/attempt-1__9693fc8768/controller-result.json": "4d4c80cec03c9ddb2614de3257cff7895cb2d45f44fe9eb211a666d56cf2e526",
+        "tb4-56-flash-max-v4__claude-code__ctr-optimization__r02/attempt-1__7dc6f575cb/controller-result.json": "a61302d79738f97e23e0911e7aa4f8ad7bfc4637d966ec9665fb1c14ccb31e8e"
+      }
+    },
+    {
+      "server": "serverC",
+      "address": "8.216.11.161",
+      "formal_service": {
+        "MainPID": "0",
+        "ActiveState": "inactive"
+      },
+      "active_v4_approval": false,
+      "v4_prewarm_summary_sha256": "cf25db6821143ca78d4502d0b525e7943f2e5ba852f1532092c0f4d8133f77a6",
+      "v4_formal_unit_sha256": "5ca79bbae1b6618ce449a1d73a91969b7c423520a884eb011d66e7601234ae8d",
+      "v4_result_hashes": {
+        "state.sqlite3": "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+        "tb4-56-flash-max-v4__skills-agent__ctr-optimization__r01/attempt-1__09e38eef3a/controller-result.json": "6abaee8e41931074e6aaa610e7e338f50af78a707d875e9acb39721f9c7cd3ce",
+        "tb4-56-flash-max-v4__skills-agent__ctr-optimization__r02/attempt-1__2823b79709/controller-result.json": "a499a2fa7a06662c34ca0d846aa678551f67b25f7ed03faca0eecd0d6e7d87a6",
+        "tb4-56-flash-max-v4__skills-agent__ctr-optimization__r03/attempt-1__9652ba17cf/controller-result.json": "cd5b0ec6d2643e243b6a63c3dabd4609245d1b52e5a372db953981f27a61d31e",
+        "tb4-56-flash-max-v4__skills-agent__cumulative-layout-shift__r01/attempt-1__9d69310e1d/controller-result.json": "d2e85d8e217f7c5d5dd8c43d9daeb4841acd87b2f86706458ed75ec4fffb677f"
+      }
+    }
+  ],
+  "model_calls": 0,
+  "v4_preserved": true
+}

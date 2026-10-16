@@ -1,0 +1,37 @@
+{
+  "controller_lock_available": true,
+  "all_container_ids": [
+    "587d1fd71b02",
+    "381f5de323d5"
+  ],
+  "all_volume_names": [],
+  "custom_network_names": [
+    "attempt-1__7252b3678f__env_default"
+  ],
+  "running_container_ids": [],
+  "preserved_existing_v4_container_metadata": [
+    {
+      "id": "587d1fd71b02ccf1053f37e4ae67935b4a4f1646ea64c9db0d6f73d95f5b93af",
+      "name": "/attempt-1__7252b3678f__env-main-1",
+      "status": "exited",
+      "running": false,
+      "oom_killed": false,
+      "exit_code": 137,
+      "project": "attempt-1__7252b3678f__env",
+      "service": "main",
+      "created": "2026-10-16T03:24:38.493163176Z"
+    },
+    {
+      "id": "381f5de323d5b53ea4737b8fc8ab4a159a3c85046a52109961745a4f46affce9",
+      "name": "/attempt-1__7252b3678f__env-barber-shop-data-backend-1",
+      "status": "exited",
+      "running": false,
+      "oom_killed": false,
+      "exit_code": 1,
+      "project": "attempt-1__7252b3678f__env",
+      "service": "barber-shop-data-backend",
+      "created": "2026-10-16T03:24:38.460370132Z"
+    }
+  ],
+  "old_v4_resources_modified": false
+}

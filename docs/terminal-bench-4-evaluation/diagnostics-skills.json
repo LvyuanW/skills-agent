@@ -1,0 +1,595 @@
+{
+  "collected_at_utc": "2026-10-16T03:50:59.845774+00:00",
+  "server": "8.216.11.161",
+  "database_counts": {
+    "complete": 4,
+    "pending": 163,
+    "running": 1
+  },
+  "attempts": [
+    {
+      "attempt": {
+        "slot_id": "tb4-56-flash-max-v4__skills-agent__ctr-optimization__r01",
+        "attempt": 1,
+        "status": "complete",
+        "started": 1792093698.7955453,
+        "finished": 1792112768.3698223,
+        "pid": 385488,
+        "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__ctr-optimization__r01/attempt-1__09e38eef3a/controller-result.json"
+      },
+      "reward": {
+        "reward": 0.0
+      },
+      "harbor_exception": "NonZeroAgentExitCodeError",
+      "native_errors": [
+        {
+          "timestamp": "2026-10-16T01:05:37.515729+00:00",
+          "event_id": "event-73057442",
+          "type": "error",
+          "message": "Background process cleanup was not confirmed: {\"operation\": \"cleanup\", \"ok\": false, \"observations\": {\"errors\": [\"edeca94a2bf94640923de8fe6594288b.json: cleanup deadline elapsed\"]}}",
+          "diagnostic": {
+            "response_status": null,
+            "response_content_type": null,
+            "retry_after": null
+          },
+          "after_operator_stop_request": false
+        }
+      ],
+      "supervisor_evidence": [
+        {
+          "log": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__ctr-optimization__r01/attempt-1__09e38eef3a/agent/skills/session/events.jsonl",
+          "event_id": "event-2862665",
+          "timestamp": "2026-10-15T19:50:08.117876+00:00",
+          "missing_ps_direct_evidence": false,
+          "supervisor_startup_deadline": true
+        },
+        {
+          "log": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__ctr-optimization__r01/attempt-1__09e38eef3a/agent/skills/session/events.jsonl",
+          "event_id": "event-3017916",
+          "timestamp": "2026-10-15T19:50:12.712317+00:00",
+          "missing_ps_direct_evidence": true,
+          "supervisor_startup_deadline": false
+        }
+      ],
+      "process_registry": [
+        {
+          "path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__ctr-optimization__r01/attempt-1__09e38eef3a/agent/skills/session/process-scopes/7dd9c43b8fa94ebdad06a1532a898691/runs/edeca94a2bf94640923de8fe6594288b.json",
+          "state": "starting",
+          "supervisor_pid": null,
+          "child_pid": null,
+          "returncode": null,
+          "created_at": "2026-10-15T19:50:03.096519+00:00",
+          "started_at": null,
+          "ended_at": null
+        }
+      ],
+      "native_message_roles": {
+        "user": 1,
+        "assistant": 182,
+        "tool": 185
+      },
+      "nonfatal_tool_exception_type_counts": {
+        "KeyError": 1,
+        "ModuleNotFoundError": 2,
+        "NameError": 1,
+        "ZeroDivisionError": 1,
+        "urllib.error.HTTPError": 1
+      },
+      "api": {
+        "requests": 200,
+        "requests_with_usage": 200,
+        "usage_complete": true,
+        "input_tokens": 43617385,
+        "output_tokens": 434381,
+        "cached_tokens": 43010688,
+        "model_counts": {
+          "deepseek-v4-1-flash-260910": 200
+        },
+        "effort_thinking_counts": {
+          "('max', 'enabled')": 199,
+          "(None, 'disabled')": 1
+        },
+        "last_request_timestamp": 1792112719.9294417,
+        "last_usage_timestamp": 1792112732.369288,
+        "audit_transport_errors": [],
+        "cost_usd": null
+      },
+      "operator_interrupted": false,
+      "interpretation": "Native work reached a final assistant message; native close failed on stale supervisor startup registration caused by missing ps. Raw verifier reward remains zero."
+    },
+    {
+      "attempt": {
+        "slot_id": "tb4-56-flash-max-v4__skills-agent__ctr-optimization__r02",
+        "attempt": 1,
+        "status": "complete",
+        "started": 1792112768.3726602,
+        "finished": 1792117374.932959,
+        "pid": 588609,
+        "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__ctr-optimization__r02/attempt-1__2823b79709/controller-result.json"
+      },
+      "reward": {
+        "reward": 0.0
+      },
+      "harbor_exception": "NonZeroAgentExitCodeError",
+      "native_errors": [
+        {
+          "timestamp": "2026-10-16T02:22:15.715936+00:00",
+          "event_id": "event-30646831",
+          "type": "error",
+          "category": "provider_error",
+          "http_status": 200,
+          "provider_code": "upstream_stream_read_error",
+          "provider_type": "upstream_error",
+          "finish_reason": null,
+          "retryable": false,
+          "message": "API returned an error",
+          "diagnostic": {
+            "kind": "stream",
+            "endpoint": "https://rehdasu.cn/v1/chat/completions",
+            "phase": "read_stream",
+            "elapsed_seconds": 55.07124,
+            "timeout_seconds": 120,
+            "request_bytes": 727071,
+            "response_bytes": 139119,
+            "stream_frames": 461,
+            "response_status": 200,
+            "response_content_type": "text/event-stream",
+            "retry_after": null
+          },
+          "after_operator_stop_request": false
+        },
+        {
+          "timestamp": "2026-10-16T02:22:20.807108+00:00",
+          "event_id": "event-30792646",
+          "type": "error",
+          "message": "Background process cleanup was not confirmed: {\"operation\": \"cleanup\", \"ok\": false, \"observations\": {\"errors\": [\"a514c49d669a4304b7b098372f34c6b7.json: cleanup deadline elapsed\"]}}",
+          "diagnostic": {
+            "response_status": null,
+            "response_content_type": null,
+            "retry_after": null
+          },
+          "after_operator_stop_request": false
+        },
+        {
+          "timestamp": "2026-10-16T02:22:25.893383+00:00",
+          "event_id": "event-30792943",
+          "type": "error",
+          "message": "Background process cleanup was not confirmed: {\"operation\": \"cleanup\", \"ok\": false, \"observations\": {\"errors\": [\"a514c49d669a4304b7b098372f34c6b7.json: cleanup deadline elapsed\"]}}",
+          "diagnostic": {
+            "response_status": null,
+            "response_content_type": null,
+            "retry_after": null
+          },
+          "after_operator_stop_request": false
+        }
+      ],
+      "supervisor_evidence": [
+        {
+          "log": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__ctr-optimization__r02/attempt-1__2823b79709/agent/skills/session/events.jsonl",
+          "event_id": "event-12706564",
+          "timestamp": "2026-10-16T01:38:22.840464+00:00",
+          "missing_ps_direct_evidence": true,
+          "supervisor_startup_deadline": false
+        },
+        {
+          "log": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__ctr-optimization__r02/attempt-1__2823b79709/agent/skills/session/events.jsonl",
+          "event_id": "event-19985583",
+          "timestamp": "2026-10-16T01:50:45.973835+00:00",
+          "missing_ps_direct_evidence": false,
+          "supervisor_startup_deadline": true
+        },
+        {
+          "log": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__ctr-optimization__r02/attempt-1__2823b79709/agent/skills/session/events.jsonl",
+          "event_id": "event-20175745",
+          "timestamp": "2026-10-16T01:51:13.595177+00:00",
+          "missing_ps_direct_evidence": true,
+          "supervisor_startup_deadline": false
+        }
+      ],
+      "process_registry": [
+        {
+          "path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__ctr-optimization__r02/attempt-1__2823b79709/agent/skills/session/process-scopes/fe30bbb8b33e4dd483902df62dd4f99b/runs/a514c49d669a4304b7b098372f34c6b7.json",
+          "state": "starting",
+          "supervisor_pid": null,
+          "child_pid": null,
+          "returncode": null,
+          "created_at": "2026-10-16T01:50:40.951994+00:00",
+          "started_at": null,
+          "ended_at": null
+        }
+      ],
+      "native_message_roles": {
+        "user": 1,
+        "assistant": 81,
+        "tool": 81
+      },
+      "nonfatal_tool_exception_type_counts": {
+        "BrokenPipeError": 1
+      },
+      "api": {
+        "requests": 118,
+        "requests_with_usage": 117,
+        "usage_complete": false,
+        "input_tokens": 8202568,
+        "output_tokens": 170191,
+        "cached_tokens": 7934080,
+        "model_counts": {
+          "deepseek-v4-1-flash-260910": 118
+        },
+        "effort_thinking_counts": {
+          "('max', 'enabled')": 82,
+          "(None, 'disabled')": 36
+        },
+        "last_request_timestamp": 1792117280.6398833,
+        "last_usage_timestamp": 1792117279.81246,
+        "audit_transport_errors": [],
+        "cost_usd": null
+      },
+      "operator_interrupted": false,
+      "interpretation": "HTTP200 SSE reported upstream_stream_read_error/upstream_error, then native close also failed because missing ps had left a stale startup registration."
+    },
+    {
+      "attempt": {
+        "slot_id": "tb4-56-flash-max-v4__skills-agent__ctr-optimization__r03",
+        "attempt": 1,
+        "status": "complete",
+        "started": 1792117374.935821,
+        "finished": 1792120293.5319152,
+        "pid": 634026,
+        "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__ctr-optimization__r03/attempt-1__9652ba17cf/controller-result.json"
+      },
+      "reward": {
+        "reward": 0.0
+      },
+      "harbor_exception": "NonZeroAgentExitCodeError",
+      "native_errors": [
+        {
+          "timestamp": "2026-10-16T03:10:54.472501+00:00",
+          "event_id": "event-19419669",
+          "type": "error",
+          "category": "http_error",
+          "http_status": 502,
+          "provider_code": null,
+          "provider_type": null,
+          "finish_reason": null,
+          "retryable": false,
+          "message": "API HTTP error 502",
+          "diagnostic": {
+            "kind": "http",
+            "endpoint": "https://rehdasu.cn/v1/chat/completions",
+            "phase": "open_request",
+            "elapsed_seconds": 61.588219,
+            "timeout_seconds": 120,
+            "request_bytes": 484179,
+            "response_bytes": 6377,
+            "stream_frames": 0,
+            "response_status": 502,
+            "response_content_type": "text/html; charset=UTF-8",
+            "retry_after": "60",
+            "bad_gateway_page_confirmed": true
+          },
+          "after_operator_stop_request": false
+        },
+        {
+          "timestamp": "2026-10-16T03:10:59.588338+00:00",
+          "event_id": "event-19427038",
+          "type": "error",
+          "message": "Background process cleanup was not confirmed: {\"operation\": \"cleanup\", \"ok\": false, \"observations\": {\"errors\": [\"63fc6b868d27495e94b15c14cd29ddfe.json: cleanup deadline elapsed\"]}}",
+          "diagnostic": {
+            "response_status": null,
+            "response_content_type": null,
+            "retry_after": null
+          },
+          "after_operator_stop_request": false
+        },
+        {
+          "timestamp": "2026-10-16T03:11:04.708619+00:00",
+          "event_id": "event-19427335",
+          "type": "error",
+          "message": "Background process cleanup was not confirmed: {\"operation\": \"cleanup\", \"ok\": false, \"observations\": {\"errors\": [\"63fc6b868d27495e94b15c14cd29ddfe.json: cleanup deadline elapsed\"]}}",
+          "diagnostic": {
+            "response_status": null,
+            "response_content_type": null,
+            "retry_after": null
+          },
+          "after_operator_stop_request": false
+        }
+      ],
+      "supervisor_evidence": [
+        {
+          "log": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__ctr-optimization__r03/attempt-1__9652ba17cf/agent/skills/session/events.jsonl",
+          "event_id": "event-2287875",
+          "timestamp": "2026-10-16T02:27:28.182827+00:00",
+          "missing_ps_direct_evidence": false,
+          "supervisor_startup_deadline": true
+        },
+        {
+          "log": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__ctr-optimization__r03/attempt-1__9652ba17cf/agent/skills/session/events.jsonl",
+          "event_id": "event-2407271",
+          "timestamp": "2026-10-16T02:27:54.435285+00:00",
+          "missing_ps_direct_evidence": true,
+          "supervisor_startup_deadline": false
+        },
+        {
+          "log": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__ctr-optimization__r03/attempt-1__9652ba17cf/agent/skills/session/events.jsonl",
+          "event_id": "event-2661243",
+          "timestamp": "2026-10-16T02:28:29.195139+00:00",
+          "missing_ps_direct_evidence": false,
+          "supervisor_startup_deadline": true
+        }
+      ],
+      "process_registry": [
+        {
+          "path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__ctr-optimization__r03/attempt-1__9652ba17cf/agent/skills/session/process-scopes/c093a9ddf9da42f8a3253607dd56bea5/runs/63fc6b868d27495e94b15c14cd29ddfe.json",
+          "state": "starting",
+          "supervisor_pid": null,
+          "child_pid": null,
+          "returncode": null,
+          "created_at": "2026-10-16T02:27:23.159990+00:00",
+          "started_at": null,
+          "ended_at": null
+        },
+        {
+          "path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__ctr-optimization__r03/attempt-1__9652ba17cf/agent/skills/session/process-scopes/c093a9ddf9da42f8a3253607dd56bea5/runs/73f1aa3a1ef34efbbc9cb006ef4bb56f.json",
+          "state": "stopped",
+          "supervisor_pid": 255,
+          "child_pid": 257,
+          "returncode": -15,
+          "created_at": "2026-10-16T02:29:09.071216+00:00",
+          "started_at": "2026-10-16T02:29:09.150704+00:00",
+          "ended_at": "2026-10-16T03:10:54.777346+00:00"
+        }
+      ],
+      "native_message_roles": {
+        "user": 1,
+        "assistant": 63,
+        "tool": 65
+      },
+      "nonfatal_tool_exception_type_counts": {
+        "KeyError": 1,
+        "ModuleNotFoundError": 1,
+        "SyntaxError": 1,
+        "TypeError": 1,
+        "urllib.error.HTTPError": 1
+      },
+      "api": {
+        "requests": 66,
+        "requests_with_usage": 65,
+        "usage_complete": false,
+        "input_tokens": 4326121,
+        "output_tokens": 86812,
+        "cached_tokens": 4180224,
+        "model_counts": {
+          "deepseek-v4-1-flash-260910": 66
+        },
+        "effort_thinking_counts": {
+          "('max', 'enabled')": 64,
+          "(None, 'disabled')": 2
+        },
+        "last_request_timestamp": 1792120192.8812068,
+        "last_usage_timestamp": 1792120190.0740166,
+        "audit_transport_errors": [
+          {
+            "timestamp": 1792120254.4723198,
+            "exception_type": "ProviderError",
+            "http_status": 502,
+            "category": "http_error"
+          }
+        ],
+        "cost_usd": null
+      },
+      "operator_interrupted": false,
+      "interpretation": "Gateway HTTP502 terminated native model loop; missing-ps stale startup registration caused a second cleanup failure."
+    },
+    {
+      "attempt": {
+        "slot_id": "tb4-56-flash-max-v4__skills-agent__cumulative-layout-shift__r01",
+        "attempt": 1,
+        "status": "complete",
+        "started": 1792120293.534705,
+        "finished": 1792121075.9743,
+        "pid": 665333,
+        "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__cumulative-layout-shift__r01/attempt-1__9d69310e1d/controller-result.json"
+      },
+      "reward": {
+        "reward": 0.0
+      },
+      "harbor_exception": "NonZeroAgentExitCodeError",
+      "native_errors": [
+        {
+          "timestamp": "2026-10-16T03:19:15.961194+00:00",
+          "event_id": "event-5880188",
+          "type": "error",
+          "category": "http_error",
+          "http_status": 502,
+          "provider_code": null,
+          "provider_type": null,
+          "finish_reason": null,
+          "retryable": false,
+          "message": "API HTTP error 502",
+          "diagnostic": {
+            "kind": "http",
+            "endpoint": "https://rehdasu.cn/v1/chat/completions",
+            "phase": "open_request",
+            "elapsed_seconds": 61.42383,
+            "timeout_seconds": 120,
+            "request_bytes": 321654,
+            "response_bytes": 6377,
+            "stream_frames": 0,
+            "response_status": 502,
+            "response_content_type": "text/html; charset=UTF-8",
+            "retry_after": "60",
+            "bad_gateway_page_confirmed": true
+          },
+          "after_operator_stop_request": false
+        }
+      ],
+      "supervisor_evidence": [],
+      "process_registry": [],
+      "native_message_roles": {
+        "user": 1,
+        "assistant": 16,
+        "tool": 37
+      },
+      "nonfatal_tool_exception_type_counts": {},
+      "api": {
+        "requests": 17,
+        "requests_with_usage": 16,
+        "usage_complete": false,
+        "input_tokens": 620934,
+        "output_tokens": 29237,
+        "cached_tokens": 535424,
+        "model_counts": {
+          "deepseek-v4-1-flash-260910": 17
+        },
+        "effort_thinking_counts": {
+          "('max', 'enabled')": 17
+        },
+        "last_request_timestamp": 1792120694.5353682,
+        "last_usage_timestamp": 1792120694.3926208,
+        "audit_transport_errors": [
+          {
+            "timestamp": 1792120755.9610395,
+            "exception_type": "ProviderError",
+            "http_status": 502,
+            "category": "http_error"
+          }
+        ],
+        "cost_usd": null
+      },
+      "operator_interrupted": false,
+      "interpretation": "Gateway HTTP502 terminated native model loop; no native cleanup failure observed."
+    },
+    {
+      "attempt": {
+        "slot_id": "tb4-56-flash-max-v4__skills-agent__cumulative-layout-shift__r02",
+        "attempt": 1,
+        "status": "running",
+        "started": 1792121075.9776978,
+        "finished": null,
+        "pid": 675351,
+        "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__cumulative-layout-shift__r02/attempt-1__7252b3678f/controller-result.json"
+      },
+      "reward": null,
+      "harbor_exception": null,
+      "native_errors": [],
+      "supervisor_evidence": [],
+      "process_registry": [
+        {
+          "path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__cumulative-layout-shift__r02/attempt-1__7252b3678f/agent/skills/session/process-scopes/f729e813a0bc460a889d0660833bbbe8/runs/6978c042846447d48c9d883fd107a886.json",
+          "state": "running",
+          "supervisor_pid": 429,
+          "child_pid": 431,
+          "returncode": null,
+          "created_at": "2026-10-16T03:31:23.440165+00:00",
+          "started_at": "2026-10-16T03:31:23.488916+00:00",
+          "ended_at": null
+        }
+      ],
+      "native_message_roles": {
+        "user": 1,
+        "assistant": 45,
+        "tool": 45
+      },
+      "nonfatal_tool_exception_type_counts": {
+        "ReferenceError": 2,
+        "TypeError": 1,
+        "SyntaxError": 1
+      },
+      "api": {
+        "requests": 50,
+        "requests_with_usage": 49,
+        "usage_complete": false,
+        "input_tokens": 1826852,
+        "output_tokens": 33205,
+        "cached_tokens": 1729664,
+        "model_counts": {
+          "deepseek-v4-1-flash-260910": 50
+        },
+        "effort_thinking_counts": {
+          "('max', 'enabled')": 46,
+          "(None, 'disabled')": 4
+        },
+        "last_request_timestamp": 1792122543.116719,
+        "last_usage_timestamp": 1792122542.9311295,
+        "audit_transport_errors": [],
+        "cost_usd": null
+      },
+      "operator_interrupted": true,
+      "interpretation": "In-flight slot interrupted by user-requested stop; not a new completed capability failure. Natural errors, if any, are listed separately with timestamps."
+    }
+  ],
+  "operator_stop": {
+    "requested_at_utc": "2026-10-16T03:48:41.334128+00:00",
+    "source": "formal-stopped.json",
+    "interrupted_slots": [
+      "tb4-56-flash-max-v4__skills-agent__cumulative-layout-shift__r02"
+    ],
+    "service": {
+      "MainPID": "0",
+      "ExecMainStatus": "0",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    "remaining_trial_containers": [],
+    "surviving_worker_pids": [],
+    "database_outcomes_modified": false
+  },
+  "findings": {
+    "root_cause_groups": [
+      {
+        "cause": "Task OS missing ps/procps; adapter did not ensure this native process-helper dependency",
+        "affected": [
+          "ctr-optimization r01",
+          "ctr-optimization r02",
+          "ctr-optimization r03"
+        ],
+        "certainty": "direct evidence",
+        "evidence": "Each retained native tool log includes [Errno 2] No such file or directory: 'ps'; startup returned124. Registered run remains state=starting with supervisor_pid and child_pid null.",
+        "mechanism": "process.start saves registration before supervisor spawn; supervisor pid_identity calls ps and fails before saving started state. Native cleanup cannot confirm a never-started supervisor and waits5seconds before raising. r01 therefore exits1 after a final answer; r02/r03 cleanup adds to an earlier provider error.",
+        "attribution": "Environment preparation / adapter dependency gap plus native stale-registration cleanup behavior; not proof of host OOM or model inability."
+      },
+      {
+        "cause": "Gateway/upstream provider failure",
+        "affected": [
+          "ctr-optimization r02 (HTTP200 SSE upstream_stream_read_error)",
+          "ctr-optimization r03 (HTTP502)",
+          "cumulative-layout-shift r01 (HTTP502)"
+        ],
+        "certainty": "direct structured native error evidence",
+        "not_observed": [
+          "authentication401",
+          "account concurrency429",
+          "Harbor AgentTimeoutError",
+          "host OOM failure"
+        ],
+        "boundary": "Provider/gateway failures are established; origin timeout/service root cause beyond observed gateway response is not established."
+      },
+      {
+        "cause": "Native retry category excludes observed gateway errors",
+        "certainty": "frozen source plus native retryable=false",
+        "http502": "_HTTP_CATEGORIES maps500 and503 but omits502, so502 becomes http_error; not in retryable category set. Retry-After60 was present but no retry occurs for non-retryable category.",
+        "stream_error": "upstream_stream_read_error/upstream_error are absent from exact structured error mappings; HTTP200 stream error becomes provider_error; not retryable.",
+        "policy": "retry_call immediately rethrows non-retryable ProviderError; these were not exhausted retries."
+      },
+      {
+        "cause": "Controller labels reward-bearing NonZeroAgentExitCodeError as complete",
+        "certainty": "frozen source plus preserved DB",
+        "mechanism": "classify first checks a fixed systemic exception allowlist. NonZeroAgentExitCodeError is absent. It then returns complete for verifier reward0/1 before reviewing the generic exit error. Underlying native provider errors are hidden by the generic adapter process-exit wrapper.",
+        "meaning": "complete means slot consumed under frozen classifier, not clean agent completion. Four raw zero rewards are preserved; interpreting all four as clean capability failures is not justified."
+      }
+    ],
+    "scope": "Read-only log/DB/source inspection. No model requests, reruns, service/container operations, frozen-input changes, or DB writes by this diagnostic subagent.",
+    "nonfatal_tool_errors": "Tool exception type counts record observed agent-written command/dependency problems. They are nonterminal observations and must not be confused with final gateway/cleanup exits.",
+    "secret_handling": "No API keys, headers, prompts, raw model answers, tool command bodies, or response bodies included. Usage is token telemetry; no estimated billing."
+  },
+  "source_references": {
+    "native_provider_categories": "source/skills_agent/providers/base.py:_HTTP_CATEGORIES/_ERROR_CATEGORIES/ProviderError.category",
+    "native_retry": "source/skills_agent/providers/retry.py:retry_call",
+    "native_supervisor": "source/skills_agent/builtin_skills/process-management/scripts/process.py:start/pid_identity/supervise/cleanup",
+    "native_close": "source/skills_agent/processes.py:ProcessScope.close; source/skills_agent/agent.py:Agent.close",
+    "adapter": "/data/tb4/control/adapters/harbor/tb4_agents/skills.py",
+    "controller": "/data/tb4/control/adapters/harbor/tb4_control/control.py:classify/next_slot_status",
+    "frozen_wheel_sha256": "31829dde914bd50997ca5d7d72304ce176ca70dfaba5f60c0a152e28bd4820ae"
+  }
+}

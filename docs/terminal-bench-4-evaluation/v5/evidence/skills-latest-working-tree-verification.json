@@ -1,0 +1,101 @@
+{
+  "verified_at_utc": "2026-10-16T05:23:30.929796+00:00",
+  "repository_head": "641e879bfd726991fc71d60439c7f7550aaf1419",
+  "scope": "All actual runtime package files (including newly added files), pyproject.toml and uv.lock. Excludes bytecode caches. README.md is not part of this wheel/source snapshot.",
+  "runtime_files_compared": 55,
+  "added": [],
+  "deleted": [],
+  "changed": [],
+  "source_tree_sha256": "3dadfed7250964cd786faab9c838bde982d576929de175c489dcd5714c57a14b",
+  "matches_frozen_d7_source": true,
+  "README": {
+    "path": "/Users/apple/dev/learn-ai-agent/skills-agent/README.md",
+    "current_sha256": "dcf0600760fa63ac9533081d1fc182041ae427a7387de3f15a40dc9a92d9039e",
+    "included_in_runtime_snapshot": false,
+    "local_user_changes_preserved": true
+  },
+  "server": {
+    "server": "8.216.11.161",
+    "config_path": "/data/tb4/config/v5/skills-agent.json",
+    "config_sha256": "e196cb423b8e5dd482c2aeee17374d26e76929f776bac1c0823356ed17ba5980",
+    "import_path": "tb4_agents.skills:SkillsAgent",
+    "model_name": "deepseek-v4-1-flash-260910",
+    "assets_path": "/data/tb4/releases/remediation-v5/skills-assets-d7e45e4ccd7d",
+    "api_base": "https://rehdasu.cn/v1",
+    "wheel_sha256": "d7e45e4ccd7d4627f679c745fa05672042d95b92d90c11629e0b57308d038d3c",
+    "source_tree_sha256": "3dadfed7250964cd786faab9c838bde982d576929de175c489dcd5714c57a14b",
+    "bundle_declared_sha256": "6605801958eb4dc290b1eca7779eca607b568fb40a273a50c897fd8ae3af1b58",
+    "host_verification_venv": "/data/tb4/venvs/skills-remediation-v5-d7e45e4ccd7d/lib/python3.12/site-packages",
+    "installed_package_files": 53,
+    "installed_package_mismatches": [],
+    "secrets_read": false,
+    "model_calls": 0,
+    "verified_at_utc": "2026-10-16T04:56:55.969287+00:00"
+  },
+  "conclusion": "All55 runtime source/metadata files still match deployed d7. User CLI/terminal updates are included and shared/headless plus terminal tests now pass after a test-only stale fake signature repair. No immutable runtime or server configuration was changed.",
+  "new_release_created": false,
+  "source_or_config_or_units_modified": false,
+  "prior_test_evidence": {
+    "native_tests": "/Users/apple/dev/learn-ai-agent/output/terminal-bench4-preparation-20261016/remediation-v5/skills-tests.json",
+    "actual_dependency_lifecycle": "/Users/apple/dev/learn-ai-agent/output/terminal-bench4-preparation-20261016/skills-repair-actual-dependency-lifecycle.json",
+    "full_bundle_install": "/Users/apple/dev/learn-ai-agent/output/terminal-bench4-preparation-20261016/remediation-v5/skills-full-bundle-install.json",
+    "native_offline": "/Users/apple/dev/learn-ai-agent/output/terminal-bench4-preparation-20261016/remediation-v5/skills-native-offline.json",
+    "package_manager_matrix": "/Users/apple/dev/learn-ai-agent/output/terminal-bench4-preparation-20261016/skills-repair-package-manager-matrix.json",
+    "source_metadata": "/Users/apple/dev/learn-ai-agent/output/terminal-bench4-preparation-20261016/releases/skills-agent-remediation-v5-20261016T043421Z/release-metadata.json"
+  },
+  "formal_evaluation_started": false,
+  "headless_change_review": {
+    "reviewed_at_utc": "2026-10-16T05:23:30.929796+00:00",
+    "entry_point": "skills_agent.benchmark.main -> ConsoleRenderer() attached to native Agent events",
+    "shared_headless_changes": "User cli.py updates affect shared tool/subagent summary and error rendering. They do not change tool execution, model payloads, token counting or context selection.",
+    "interactive_only_changes": "TerminalView is imported/constructed only in cli.interact when stdin and stdout are TTY. benchmark.main does not call that entry point; its redirected stdout has no upsert_tool, so mutable tool rows/activity animation branches are inactive.",
+    "original_regression_coverage": "The earlier224 suite already included benchmark and renderer retry tests, but not the three named terminal suites or all shared CLI display cases.",
+    "additional_terminal_tests": {
+      "modules": [
+        "tests.test_activity_terminal",
+        "tests.test_cli_terminal",
+        "tests.test_terminal_view"
+      ],
+      "passed": 18,
+      "failed": 0,
+      "seconds": 18.442
+    },
+    "initial_shared_cli_tests": {
+      "modules": [
+        "tests.test_agent_cli",
+        "tests.test_cli_display"
+      ],
+      "run": 32,
+      "passed": 31,
+      "errors": 1,
+      "failing_test": "test_tool_output_is_saved_in_full_and_only_report_enters_context",
+      "exception_type": "TypeError",
+      "reason": "The old FakeCounter.count_tokens fixture did not accept the already-existing production disable_thinking keyword used by Auxiliary.tool_report. This was a test fixture signature mismatch, not a frozen runtime failure."
+    },
+    "authorized_test_fixture_repair": {
+      "file": "tests/test_agent_cli.py",
+      "sha256": "a9951db0d5f337bd8dce93f9640a76bd44b7d2279f4b2aee5307788312eba53d",
+      "changes": [
+        "FakeCounter.count_tokens explicitly accepts keyword-only disable_thinking=False.",
+        "The long-output report fake Model.complete accepts the same existing production option and asserts disable_thinking for report calls."
+      ],
+      "all_existing_assertions_preserved": true,
+      "production_source_changed": false
+    },
+    "post_repair_tests": {
+      "modules": [
+        "tests.test_agent_cli",
+        "tests.test_cli_display",
+        "tests.test_context_auxiliary",
+        "tests.test_agent_retry",
+        "tests.test_deepseek_effort"
+      ],
+      "passed": 72,
+      "failed": 0,
+      "seconds": 1.913
+    },
+    "external_model_api_calls": 0,
+    "test_network_scope": "Mocks and local loopback fixtures only. No external provider calls.",
+    "conclusion": "No unverified critical headless change remains from the reviewed CLI/terminal updates. The latest source still matches the deployed d7 wheel byte for byte; no runtime rebuild, prewarm, or immutable release change is required."
+  }
+}

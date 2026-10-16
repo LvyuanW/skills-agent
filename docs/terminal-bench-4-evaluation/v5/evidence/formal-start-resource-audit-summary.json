@@ -1,0 +1,172 @@
+{
+  "kind": "formal_v5_readonly_start_resource_audit_aggregate",
+  "status": "passed",
+  "servers": {
+    "serverA": {
+      "at_utc": "2026-10-16T05:47:33.480064+00:00",
+      "formal_service": {
+        "MainPID": "945269",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "slot_counts": {
+        "pending": 163,
+        "running": 5
+      },
+      "actual_running_projects": 5,
+      "actual_running_containers": 5,
+      "active_reservations": {
+        "count": 5,
+        "cpus": 25,
+        "memory_mb": 107520,
+        "disk_mb": 51200
+      },
+      "isolated_networks": [
+        [
+          "fd44db05148b9af3154ca4b0fc84631225923869023700741d5ddd6828612f14"
+        ],
+        [
+          "10bd262c95de4afc761d058ad58846c5cfa25b47c36bf6c46cdeb519eb80d5ef"
+        ],
+        [
+          "60ab379b72d44f8af2f00250e465134fcb3a8ce0487fa95f6a940eb9b1f20784"
+        ],
+        [
+          "280a0f5606a250eddf9a1f96f76682acc26d36044c55595f6a46c8bd64e3dd65"
+        ],
+        [
+          "783a56d53316b53dd7faba19f6f1cfaffa2f8296a18ec6a5cdcf6d9b58794df9"
+        ]
+      ],
+      "exact_official_service_caps": true,
+      "all_containers_in_tb4_slice": true,
+      "zero_oom_and_restarts": true,
+      "whole_phase_caps_within_fixed_slot": true,
+      "violations": [],
+      "parent_boundary": {
+        "cpu.max": "3000000 100000",
+        "cpuset.cpus.effective": "2-31",
+        "memory.max": "123480309760",
+        "memory.swap.max": "0"
+      },
+      "disk": {
+        "free_gib": 223.55184173583984,
+        "free_ratio": 0.4552227863610399
+      },
+      "pause_admission": false,
+      "no_extra_api_calls_from_audit": true
+    },
+    "serverB": {
+      "at_utc": "2026-10-16T05:47:33.437119+00:00",
+      "formal_service": {
+        "MainPID": "926256",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "slot_counts": {
+        "pending": 163,
+        "running": 5
+      },
+      "actual_running_projects": 5,
+      "actual_running_containers": 5,
+      "active_reservations": {
+        "count": 5,
+        "cpus": 25,
+        "memory_mb": 107520,
+        "disk_mb": 51200
+      },
+      "isolated_networks": [
+        [
+          "4fe326e3dcc0c4620bc0a14139731115a7366badce6d9e9ada4d78fcf60f6a94"
+        ],
+        [
+          "08d199d103f74ca4abc285891127a5b82afb0042478b20fab8ed42ec57de2703"
+        ],
+        [
+          "d2ff0cc02f3f1423026b6552ffd5a24fc321c86214942f5cfff44259a63d3015"
+        ],
+        [
+          "d618afdb6b3663688229c65450161f912445af0eb394917ba6be1f7e24b3b42c"
+        ],
+        [
+          "083b35595475efb561b86d684b35d2485426d9127f73c241836877a82c1c8b14"
+        ]
+      ],
+      "exact_official_service_caps": true,
+      "all_containers_in_tb4_slice": true,
+      "zero_oom_and_restarts": true,
+      "whole_phase_caps_within_fixed_slot": true,
+      "violations": [],
+      "parent_boundary": {
+        "cpu.max": "3000000 100000",
+        "cpuset.cpus.effective": "2-31",
+        "memory.max": "123480309760",
+        "memory.swap.max": "0"
+      },
+      "disk": {
+        "free_gib": 222.34899520874023,
+        "free_ratio": 0.4527734075351745
+      },
+      "pause_admission": false,
+      "no_extra_api_calls_from_audit": true
+    },
+    "serverC": {
+      "at_utc": "2026-10-16T05:47:33.439708+00:00",
+      "formal_service": {
+        "MainPID": "979358",
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "slot_counts": {
+        "pending": 163,
+        "running": 5
+      },
+      "actual_running_projects": 5,
+      "actual_running_containers": 5,
+      "active_reservations": {
+        "count": 5,
+        "cpus": 25,
+        "memory_mb": 107520,
+        "disk_mb": 51200
+      },
+      "isolated_networks": [
+        [
+          "4796ff916a50f6977d8222e019e062a9e9b5be46edda3d13c2197900bd25e460"
+        ],
+        [
+          "53061286a14518a0dbef746aadddf61336bf415697cb21a07d6e184c9f45226a"
+        ],
+        [
+          "871b4205e0dccf22c8e6069048d1bf922b79197e5eaa80b7e46c1bb9133649d6"
+        ],
+        [
+          "782a631f4f6a3fa4d2fcd2326af59bbc9dce73e58ab710f3d6455e8f62995053"
+        ],
+        [
+          "906ece5eaf93cb0cf350e20171230d2b132f1861c903b0277a6d85fea0622929"
+        ]
+      ],
+      "exact_official_service_caps": true,
+      "all_containers_in_tb4_slice": true,
+      "zero_oom_and_restarts": true,
+      "whole_phase_caps_within_fixed_slot": true,
+      "violations": [],
+      "parent_boundary": {
+        "cpu.max": "3000000 100000",
+        "cpuset.cpus.effective": "2-31",
+        "memory.max": "123480309760",
+        "memory.swap.max": "0"
+      },
+      "disk": {
+        "free_gib": 223.30462646484375,
+        "free_ratio": 0.4547193772921635
+      },
+      "pause_admission": false,
+      "no_extra_api_calls_from_audit": true
+    }
+  },
+  "no_remote_mutations": true,
+  "no_credentials_or_prompts_read": true,
+  "no_extra_api_calls_from_audit": true,
+  "note": "Snapshot verifies runtime container caps and isolation. Active reservations use fixed5CPU/21GiB slots; currently running official main containers each retain2CPU/4GiB limits."
+}

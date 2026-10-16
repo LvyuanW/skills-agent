@@ -1,0 +1,44 @@
+{
+  "phase": "start",
+  "user_authorization": "调整完后启动三台服务器的测评任务",
+  "servers": [
+    {
+      "server": "serverA",
+      "agent": "codex",
+      "phase": "start",
+      "time_utc": "2026-10-16T08:28:49.775626+00:00",
+      "approval": {
+        "experiment": "tb4-56-flash-max-yuzhi-20261016",
+        "allow_formal": true,
+        "manifest_sha256": "7b4988053c57f56fc37f5bd32f3b598690624c1999a7c3939af0d4101db5a777",
+        "agent_config_sha256": "0baf76951a544c4aff423cdda578d33368b44d71f82f96509e9e29e3a93df166",
+        "resource_profile_sha256": "941220efd426c162265f95d2f1ec0cba4e4d40764fb80bfc656341c9d6763ce9",
+        "trial_plan_sha256": "23f74ddc696efa3bf92747e39444c309397c67d7a35bc60a8ba96dedc3aaed19",
+        "agent": "codex",
+        "server": "serverA"
+      },
+      "native_preflight_reward": 1,
+      "formal_started": true,
+      "service": "MainPID=970453\nResult=success\nActiveState=active\nSubState=running"
+    },
+    {
+      "server": "serverB",
+      "agent": "claude-code",
+      "phase": "start",
+      "time_utc": "2026-10-16T08:28:49.887747+00:00",
+      "approval": {
+        "experiment": "tb4-56-flash-max-yuzhi-20261016",
+        "allow_formal": true,
+        "manifest_sha256": "7b4988053c57f56fc37f5bd32f3b598690624c1999a7c3939af0d4101db5a777",
+        "agent_config_sha256": "659a5b5e90aead517eb673d6320b8cf424b44cf13c544851ea579bf4ca9bdd73",
+        "resource_profile_sha256": "941220efd426c162265f95d2f1ec0cba4e4d40764fb80bfc656341c9d6763ce9",
+        "trial_plan_sha256": "23f74ddc696efa3bf92747e39444c309397c67d7a35bc60a8ba96dedc3aaed19",
+        "agent": "claude-code",
+        "server": "serverB"
+      },
+      "native_preflight_reward": 1,
+      "formal_started": true,
+      "service": "MainPID=959445\nResult=success\nActiveState=active\nSubState=running"
+    }
+  ]
+}

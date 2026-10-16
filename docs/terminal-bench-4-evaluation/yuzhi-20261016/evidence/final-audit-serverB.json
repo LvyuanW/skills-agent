@@ -1,0 +1,258 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-10-16T08:22:05.806959+00:00",
+  "read_only": true,
+  "model_api_calls": 0,
+  "secret_values_read": false,
+  "server": "serverB",
+  "old_preservation": {
+    "old_config": {
+      "path": "/data/tb4/config",
+      "expected_file_count": 1,
+      "changed": [],
+      "added": [],
+      "unchanged": true,
+      "baseline_tree_sha256": "63f8eb04c6b79a3f905cb7219e3a8890f0c95d1377b4815475fc92d7df4d723e"
+    },
+    "old_control": {
+      "path": "/data/tb4/control",
+      "expected_file_count": 60,
+      "changed": [],
+      "added": [],
+      "unchanged": true,
+      "baseline_tree_sha256": "a32bf8f0e0238d9c1fd61f073793f0ecd6af5b224589b6ea5becbd40ed72465f"
+    },
+    "old_releases": {
+      "path": "/data/tb4/releases",
+      "expected_file_count": 111,
+      "changed": [],
+      "added": [],
+      "unchanged": true,
+      "baseline_tree_sha256": "824a0c4806a2cc6e0b2e073c0e9839b954224354e6c8bd1292182aba7a6ac30a"
+    },
+    "formal": {
+      "path": "/data/tb4/runs/formal",
+      "expected_file_count": 56,
+      "changed": [],
+      "added": [],
+      "unchanged": true,
+      "baseline_tree_sha256": "6c45e96ba081dcb07f1381e996d58fce81c6cff3a066fcf28c3020371c2a0fbf"
+    },
+    "formal-v5": {
+      "path": "/data/tb4/runs/formal-v5",
+      "expected_file_count": 142,
+      "changed": [],
+      "added": [],
+      "unchanged": true,
+      "baseline_tree_sha256": "e5aacec852788bb58eace35e0758a8aeee496a66974650ad095d194117d59897"
+    }
+  },
+  "checks": {
+    "all_evaluation_services_stopped": true,
+    "no_running_docker": true,
+    "resource_lock_available": true,
+    "no_evaluation_processes_in_slice": true,
+    "old_trees_unchanged": true,
+    "old_units_unchanged": true,
+    "control_matches_local_release": true,
+    "gateway_model_configured": true,
+    "no_audit_proxy_override": true,
+    "max_effort_configured": true,
+    "trial_plan_model_effort": true,
+    "five_slots_unchanged": true,
+    "new_unit_safety": true,
+    "no_new_approval": true,
+    "no_new_formal_output": true,
+    "current_preparation_target": true
+  },
+  "old_units": {
+    "tb4-formal-v5.service": {
+      "unchanged": true,
+      "file_unchanged": true,
+      "dropins": {
+        "path": "/etc/systemd/system/tb4-formal-v5.service.d",
+        "expected_file_count": 0,
+        "changed": [],
+        "added": [],
+        "unchanged": true,
+        "baseline_tree_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      }
+    },
+    "tb4-formal.service": {
+      "unchanged": true,
+      "file_unchanged": true,
+      "dropins": {
+        "path": "/etc/systemd/system/tb4-formal.service.d",
+        "expected_file_count": 0,
+        "changed": [],
+        "added": [],
+        "unchanged": true,
+        "baseline_tree_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      }
+    },
+    "tb4-prewarm-v5.service": {
+      "unchanged": true,
+      "file_unchanged": true,
+      "dropins": {
+        "path": "/etc/systemd/system/tb4-prewarm-v5.service.d",
+        "expected_file_count": 0,
+        "changed": [],
+        "added": [],
+        "unchanged": true,
+        "baseline_tree_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      }
+    },
+    "tb4-resource-probe-v5.service": {
+      "unchanged": true,
+      "file_unchanged": true,
+      "dropins": {
+        "path": "/etc/systemd/system/tb4-resource-probe-v5.service.d",
+        "expected_file_count": 0,
+        "changed": [],
+        "added": [],
+        "unchanged": true,
+        "baseline_tree_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      }
+    }
+  },
+  "services": {
+    "tb4-formal-v5.service": {
+      "MainPID": "0",
+      "Result": "success",
+      "ControlGroup": "",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    "tb4-formal-yuzhi.service": {
+      "MainPID": "0",
+      "Result": "success",
+      "ControlGroup": "",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    "tb4-formal.service": {
+      "MainPID": "0",
+      "Result": "success",
+      "ControlGroup": "",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    "tb4-prewarm-v5.service": {
+      "MainPID": "0",
+      "Result": "success",
+      "ControlGroup": "",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    "tb4-resource-probe-v5.service": {
+      "MainPID": "0",
+      "Result": "success",
+      "ControlGroup": "",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    }
+  },
+  "docker_running_ids": [],
+  "slice_processes": [
+    {
+      "pid": 5775,
+      "comm": "containerd"
+    },
+    {
+      "pid": 5810,
+      "comm": "dockerd"
+    }
+  ],
+  "new_control": {
+    "path": "/data/tb4/experiments/gateway-yuzhi-20261016/control-4bea1ae3ad5b",
+    "archive_sha256": "4bea1ae3ad5b205f0c80b4723105c862e8d2c0ecd1a82c01f8896e0ddd54cccf",
+    "mismatched_files": [],
+    "expected_files": 87
+  },
+  "agent_config": {
+    "path": "/data/tb4/experiments/gateway-yuzhi-20261016/config/claude-code.json",
+    "sha256": "659a5b5e90aead517eb673d6320b8cf424b44cf13c544851ea579bf4ca9bdd73",
+    "import_path": "adapters.harbor.tb4_agents.claude:DeepSeekClaude",
+    "model_name": "deepseek-v4.1-flash[1m]",
+    "kwargs": {
+      "api_base": "https://yuzhiapi.xyz",
+      "reasoning_effort": "max",
+      "version": "2.1.300"
+    },
+    "field_names": [
+      "api_base",
+      "binary_path",
+      "disallowed_tools",
+      "reasoning_effort",
+      "version"
+    ]
+  },
+  "trial_plan": {
+    "rows": 504,
+    "unique_slots": 504,
+    "models": [
+      "deepseek-v4.1-flash"
+    ],
+    "efforts": [
+      "max"
+    ],
+    "statuses": [
+      "pending"
+    ]
+  },
+  "resource_profile": {
+    "profile_id": "tb4-fixed-5cpu-21g-five-slots-v5",
+    "parent": {
+      "cpus": 30,
+      "memory_mb": 117760,
+      "cpuset": "2-31",
+      "swap_mb": 0
+    },
+    "host_reserved": {
+      "cpus": 2,
+      "memory_mb_minimum": 8192
+    },
+    "admission": {
+      "cpus": 28,
+      "memory_mb": 109568,
+      "slot_cpus": 5,
+      "slot_memory_mb": 21504,
+      "max_concurrent": 5,
+      "policy": "uniform_fixed_slots"
+    },
+    "storage": {
+      "declared_maximum_mb": 51200,
+      "docker_storage_limit_supported": false,
+      "disk_free_floor_percent": 20,
+      "note": "Pinned Harbor Docker backend enforces CPU/RAM only; storage_mb is a task declaration, not a per-container writable-layer quota. Cached image storage and writable layers share /data; admission pauses below the free-space floor."
+    },
+    "sha256": "941220efd426c162265f95d2f1ec0cba4e4d40764fb80bfc656341c9d6763ce9"
+  },
+  "new_unit": {
+    "path": "/etc/systemd/system/tb4-formal-yuzhi.service",
+    "sha256": "d6628c3c53cd21a5f1732bc3fb3a9f1fc340ba5c6c5cf1c08c7bda063c0039c7",
+    "fields": {
+      "ConditionPathExists": "/data/tb4/experiments/gateway-yuzhi-20261016/FORMAL_APPROVED.json",
+      "User": "tbench",
+      "Group": "tbench",
+      "SupplementaryGroups": "docker",
+      "WorkingDirectory": "/data/tb4/experiments/gateway-yuzhi-20261016/control-4bea1ae3ad5b",
+      "Slice": "tb4.slice",
+      "EnvironmentFile": "/data/tb4/secrets/deepseek.env",
+      "Restart": "no",
+      "KillSignal": "SIGINT",
+      "KillMode": "mixed",
+      "TimeoutStopSec": "infinity",
+      "ExecStart": "/data/tb4/venvs/harbor/bin/python -u -m adapters.harbor.tb4_control formal-start --manifest /data/tb4/experiments/gateway-yuzhi-20261016/plans/task-manifest.json --dataset /data/tb4/src/terminal-bench --output /data/tb4/runs/formal-yuzhi-20261016 --unlock /data/tb4/experiments/gateway-yuzhi-20261016/FORMAL_APPROVED.json --agent-config /data/tb4/experiments/gateway-yuzhi-20261016/config/claude-code.json --resource-profile /data/tb4/experiments/gateway-yuzhi-20261016/control-4bea1ae3ad5b/adapters/harbor/tb4_control/resource-profile.json --trial-plan /data/tb4/experiments/gateway-yuzhi-20261016/plans/trial-plan.jsonl --agent claude-code --server serverB --prewarm-summary /data/tb4/runs/prewarm-v5/summary.json --resource-probe-summary /data/tb4/runs/resource-probe-v5/summary.json"
+    }
+  },
+  "current_preparation": {
+    "is_symlink": true,
+    "resolved": "/data/tb4/experiments/gateway-yuzhi-20261016"
+  },
+  "all_passed": true,
+  "preparation_status": "current_prepared",
+  "formal_readiness": "blocked_gateway",
+  "gateway_boundary": "Root's separate authenticated three-protocol preflight returned upstream errors; this read-only audit makes no API calls and does not verify connectivity or credential contents.",
+  "completed_at_utc": "2026-10-16T08:22:07.984667+00:00"
+}

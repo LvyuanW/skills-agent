@@ -1,0 +1,37 @@
+{
+  "controller_lock_available": true,
+  "all_container_ids": [
+    "0921d1700bbe",
+    "005eed2ce02a"
+  ],
+  "all_volume_names": [],
+  "custom_network_names": [
+    "attempt-1__41795eaa36__env_default"
+  ],
+  "running_container_ids": [],
+  "preserved_existing_v4_container_metadata": [
+    {
+      "id": "0921d1700bbe9b76110af4eebba0e3f8bac04a88ee069dd8f6affdbb498c8ba7",
+      "name": "/attempt-1__41795eaa36__env-main-1",
+      "status": "exited",
+      "running": false,
+      "oom_killed": false,
+      "exit_code": 137,
+      "project": "attempt-1__41795eaa36__env",
+      "service": "main",
+      "created": "2026-10-16T03:05:51.491531969Z"
+    },
+    {
+      "id": "005eed2ce02aa65fb125afc5ddef2e5f1e50dd3a7e39d90c2bcf6ec1b8ab7ca1",
+      "name": "/attempt-1__41795eaa36__env-api-1",
+      "status": "exited",
+      "running": false,
+      "oom_killed": false,
+      "exit_code": 0,
+      "project": "attempt-1__41795eaa36__env",
+      "service": "api",
+      "created": "2026-10-16T03:05:51.46071227Z"
+    }
+  ],
+  "old_v4_resources_modified": false
+}

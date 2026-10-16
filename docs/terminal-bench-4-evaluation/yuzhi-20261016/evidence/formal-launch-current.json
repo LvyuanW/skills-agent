@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-10-16T08:34:41.413265+00:00",
+  "state": "formal_running_all_three",
+  "experiment": "tb4-56-flash-max-yuzhi-20261016",
+  "formal_output": "/data/tb4/runs/formal-yuzhi-20261016",
+  "started_at_asia_shanghai": {
+    "A": "2026-10-16T16:28:49+08:00",
+    "B": "2026-10-16T16:28:49+08:00",
+    "C": "2026-10-16T16:32:06+08:00"
+  },
+  "read_only_audit": true,
+  "additional_model_api_calls": 0,
+  "secret_values_read": false,
+  "servers": {
+    "A": {
+      "captured_at_utc": "2026-10-16T08:33:33.678723+00:00",
+      "report": "formal-active-resources-serverA-all-started.json",
+      "report_sha256": "a513b42eb58cc203033d052e3967eb5c79d8ac9ce80353dd35502f8ca7395765",
+      "checks": {
+        "formal_active": true,
+        "five_running_slots": true,
+        "five_live_workers": true,
+        "five_projects_and_main": true,
+        "parent_and_official_caps": true,
+        "network_isolation": true,
+        "oom_restart_zero": true,
+        "no_admission_pause": true,
+        "resource_lock_owned": true,
+        "disk_above_floor": true,
+        "five_runtime_configs_match": true,
+        "old_db_wal_shm_unchanged": true
+      },
+      "all_passed": true,
+      "slots": {
+        "pending": 163,
+        "running": 5
+      },
+      "container_count": 5,
+      "project_count": 5,
+      "disk_free_bytes": 238362910720,
+      "disk_free_percent": 45.20479985314245,
+      "memory_anon_bytes": 587542528,
+      "memory_file_cache_bytes": 116277764096,
+      "runtime_model": "deepseek-v4.1-flash",
+      "runtime_effort": "max",
+      "runtime_api_base": "https://yuzhiapi.xyz/v1",
+      "old_db_reference": "formal-old-db-preservation-serverA.json"
+    },
+    "B": {
+      "captured_at_utc": "2026-10-16T08:33:33.676586+00:00",
+      "report": "formal-active-resources-serverB-all-started.json",
+      "report_sha256": "7448da1f2163e8fe18e5b3d8944c74ce9fe7a5ae4f0d5189620892a7a3b0d9b3",
+      "checks": {
+        "formal_active": true,
+        "five_running_slots": true,
+        "five_live_workers": true,
+        "five_projects_and_main": true,
+        "parent_and_official_caps": true,
+        "network_isolation": true,
+        "oom_restart_zero": true,
+        "no_admission_pause": true,
+        "resource_lock_owned": true,
+        "disk_above_floor": true,
+        "five_runtime_configs_match": true,
+        "old_db_wal_shm_unchanged": true
+      },
+      "all_passed": true,
+      "slots": {
+        "pending": 163,
+        "running": 5
+      },
+      "container_count": 5,
+      "project_count": 5,
+      "disk_free_bytes": 238771601408,
+      "disk_free_percent": 45.28230679705867,
+      "memory_anon_bytes": 1076203520,
+      "memory_file_cache_bytes": 115961856000,
+      "runtime_model": "deepseek-v4.1-flash",
+      "runtime_effort": "max",
+      "runtime_api_base": "https://yuzhiapi.xyz",
+      "old_db_reference": "formal-old-db-preservation-serverB.json"
+    },
+    "C": {
+      "captured_at_utc": "2026-10-16T08:33:33.669899+00:00",
+      "report": "formal-active-resources-serverC-all-started.json",
+      "report_sha256": "a9c390882f8cadf6b864b8c68a3e7569a9e8bc80934b16bf87ecc626f3a8b67f",
+      "checks": {
+        "formal_active": true,
+        "five_running_slots": true,
+        "five_live_workers": true,
+        "five_projects_and_main": true,
+        "parent_and_official_caps": true,
+        "network_isolation": true,
+        "oom_restart_zero": true,
+        "no_admission_pause": true,
+        "resource_lock_owned": true,
+        "disk_above_floor": true,
+        "five_runtime_configs_match": true,
+        "old_db_wal_shm_unchanged": true,
+        "five_c_runtime_budgets_match": true
+      },
+      "all_passed": true,
+      "slots": {
+        "pending": 163,
+        "running": 5
+      },
+      "container_count": 5,
+      "project_count": 5,
+      "disk_free_bytes": 239459459072,
+      "disk_free_percent": 45.412756907500125,
+      "memory_anon_bytes": 891559936,
+      "memory_file_cache_bytes": 116000161792,
+      "runtime_model": "deepseek-v4.1-flash",
+      "runtime_effort": "max",
+      "runtime_api_base": "https://yuzhiapi.xyz/v1",
+      "old_db_reference": "formal-old-db-preservation-serverC.json"
+    }
+  },
+  "old_full_tree_reference": "prelaunch-audit-20261016T0827Z-serverA/B/C.json (captured16:25:43 CST), not rehashed in full at launch; DB/WAL/SHM rehashed separately and unchanged.",
+  "all_startup_checks_passed": true
+}

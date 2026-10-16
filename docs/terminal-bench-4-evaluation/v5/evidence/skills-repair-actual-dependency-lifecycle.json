@@ -1,0 +1,119 @@
+{
+  "results": [
+    {
+      "task_image": "ctr-optimization",
+      "image": "tb4-prewarm/ctr-optimization-agent-main:f6ef20686089",
+      "temporary_container": "tb4-skillsfix-deps-ctr-optimization-89c75bb9",
+      "model_calls": 0,
+      "credentials_injected": false,
+      "ps_before_install": null,
+      "package_manager": "apt-get",
+      "actual_adapter_package_install_passed": true,
+      "procps_package_version": "procps\t2:4.0.4-9",
+      "lifecycle_network": "disconnected",
+      "lifecycle_exit_code": 0,
+      "lifecycle": {
+        "missing_ps_failed_before_registration": true,
+        "cases": [
+          {
+            "case": "explicit-stop",
+            "start": "running",
+            "status": "running",
+            "final_state": "stopped",
+            "live_child_or_supervisor_after_close": false
+          },
+          {
+            "case": "native-close",
+            "start": "running",
+            "status": "running",
+            "final_state": "stopped",
+            "live_child_or_supervisor_after_close": false
+          }
+        ],
+        "network": "none",
+        "model_calls": 0,
+        "credentials_injected": false
+      },
+      "status": "passed",
+      "temporary_container_removed": true
+    },
+    {
+      "task_image": "ks-solver-cpp",
+      "image": "tb4-prewarm/ks-solver-cpp-agent-main:5cd4b7fc9a34",
+      "temporary_container": "tb4-skillsfix-deps-ks-solver-cpp-97063357",
+      "model_calls": 0,
+      "credentials_injected": false,
+      "ps_before_install": "/usr/bin/ps",
+      "package_manager": "apt-get",
+      "actual_adapter_package_install_passed": true,
+      "procps_package_version": "procps\t2:4.0.4-4ubuntu3.3",
+      "lifecycle_network": "disconnected",
+      "lifecycle_exit_code": 0,
+      "lifecycle": {
+        "missing_ps_failed_before_registration": true,
+        "cases": [
+          {
+            "case": "explicit-stop",
+            "start": "running",
+            "status": "running",
+            "final_state": "stopped",
+            "live_child_or_supervisor_after_close": false
+          },
+          {
+            "case": "native-close",
+            "start": "running",
+            "status": "running",
+            "final_state": "stopped",
+            "live_child_or_supervisor_after_close": false
+          }
+        ],
+        "network": "none",
+        "model_calls": 0,
+        "credentials_injected": false
+      },
+      "status": "passed",
+      "temporary_container_removed": true
+    },
+    {
+      "task_image": "retro-console-soc",
+      "image": "tb4-prewarm/retro-console-soc-agent-main:cbd39d654502",
+      "temporary_container": "tb4-skillsfix-deps-retro-console-soc-444563d7",
+      "model_calls": 0,
+      "credentials_injected": false,
+      "ps_before_install": "/usr/sbin/ps",
+      "package_manager": "dnf",
+      "actual_adapter_package_install_passed": true,
+      "procps_package_version": "procps-ng-4.0.4-6.fc42.1.x86_64",
+      "lifecycle_network": "disconnected",
+      "lifecycle_exit_code": 0,
+      "lifecycle": {
+        "missing_ps_failed_before_registration": true,
+        "cases": [
+          {
+            "case": "explicit-stop",
+            "start": "running",
+            "status": "running",
+            "final_state": "stopped",
+            "live_child_or_supervisor_after_close": false
+          },
+          {
+            "case": "native-close",
+            "start": "running",
+            "status": "running",
+            "final_state": "stopped",
+            "live_child_or_supervisor_after_close": false
+          }
+        ],
+        "network": "none",
+        "model_calls": 0,
+        "credentials_injected": false
+      },
+      "status": "passed",
+      "temporary_container_removed": true
+    }
+  ],
+  "model_calls": 0,
+  "credentials_injected": false,
+  "network_scope": "Package-manager mirrors only during setup; disconnected for lifecycle.",
+  "old_formal_containers_or_db_or_releases_modified": false
+}

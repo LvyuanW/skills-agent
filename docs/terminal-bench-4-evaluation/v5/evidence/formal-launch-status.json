@@ -1,0 +1,483 @@
+{
+  "experiment": "tb4-56-flash-max-v5",
+  "collected_at_utc": "2026-10-16T05:49:31.781565+00:00",
+  "servers": [
+    {
+      "server": "serverA",
+      "address": "47.91.21.152",
+      "agent": "codex",
+      "collected_at_unix": 1792129771.8306835,
+      "service": {
+        "MainPID": "945269",
+        "ExecMainStatus": "0",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Fri 2026-10-16 13:46:43 CST"
+      },
+      "old_service": {
+        "MainPID": "0",
+        "ExecMainStatus": "0",
+        "ActiveState": "inactive",
+        "SubState": "dead",
+        "ActiveEnterTimestamp": "n/a"
+      },
+      "database_exists": true,
+      "pause_admission": false,
+      "slots": {
+        "pending": 163,
+        "running": 5
+      },
+      "attempts": {
+        "running": 5
+      },
+      "active_reservations": {
+        "slots": 5,
+        "cpus": 25.0,
+        "memory_mb": 107520
+      },
+      "active_trials": [
+        {
+          "task": "atrx-vep-crispr",
+          "repeat": 1,
+          "pid": 946980,
+          "worker_alive": true,
+          "native_files": [
+            "agent/codex.txt"
+          ],
+          "native_events": {
+            "thread.started": 1,
+            "turn.started": 1,
+            "item.completed": 11,
+            "item.started": 8
+          },
+          "models": [],
+          "efforts": [],
+          "transport_failures": []
+        },
+        {
+          "task": "atrx-vep-crispr",
+          "repeat": 2,
+          "pid": 946981,
+          "worker_alive": true,
+          "native_files": [
+            "agent/codex.txt"
+          ],
+          "native_events": {
+            "thread.started": 1,
+            "turn.started": 1,
+            "item.completed": 10,
+            "item.started": 6
+          },
+          "models": [],
+          "efforts": [],
+          "transport_failures": []
+        },
+        {
+          "task": "atrx-vep-crispr",
+          "repeat": 3,
+          "pid": 946982,
+          "worker_alive": true,
+          "native_files": [
+            "agent/codex.txt"
+          ],
+          "native_events": {
+            "thread.started": 1,
+            "turn.started": 1,
+            "item.completed": 12,
+            "item.started": 8
+          },
+          "models": [],
+          "efforts": [],
+          "transport_failures": []
+        },
+        {
+          "task": "batched-eval-parity",
+          "repeat": 1,
+          "pid": 946983,
+          "worker_alive": true,
+          "native_files": [
+            "agent/codex.txt"
+          ],
+          "native_events": {
+            "thread.started": 1,
+            "turn.started": 1,
+            "item.completed": 11,
+            "item.started": 8
+          },
+          "models": [],
+          "efforts": [],
+          "transport_failures": []
+        },
+        {
+          "task": "batched-eval-parity",
+          "repeat": 2,
+          "pid": 946984,
+          "worker_alive": true,
+          "native_files": [
+            "agent/codex.txt"
+          ],
+          "native_events": {
+            "thread.started": 1,
+            "turn.started": 1,
+            "item.completed": 10,
+            "item.started": 6
+          },
+          "models": [],
+          "efforts": [],
+          "transport_failures": []
+        }
+      ],
+      "memory_events": {
+        "low": 0,
+        "high": 0,
+        "max": 80553,
+        "oom": 0,
+        "oom_kill": 0
+      },
+      "disk_free_gib": 223.5439682006836
+    },
+    {
+      "server": "serverB",
+      "address": "8.216.13.123",
+      "agent": "claude-code",
+      "collected_at_unix": 1792129771.7812767,
+      "service": {
+        "MainPID": "926256",
+        "ExecMainStatus": "0",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Fri 2026-10-16 13:46:43 CST"
+      },
+      "old_service": {
+        "MainPID": "0",
+        "ExecMainStatus": "0",
+        "ActiveState": "inactive",
+        "SubState": "dead",
+        "ActiveEnterTimestamp": "n/a"
+      },
+      "database_exists": true,
+      "pause_admission": false,
+      "slots": {
+        "pending": 163,
+        "running": 5
+      },
+      "attempts": {
+        "running": 5
+      },
+      "active_reservations": {
+        "slots": 5,
+        "cpus": 25.0,
+        "memory_mb": 107520
+      },
+      "active_trials": [
+        {
+          "task": "atrx-vep-crispr",
+          "repeat": 1,
+          "pid": 927972,
+          "worker_alive": true,
+          "native_files": [
+            "agent/tb4-connection.json",
+            "agent/sessions/projects/-app/35f7069d-463e-4f60-afe3-cc0fc1795d88.jsonl"
+          ],
+          "native_events": {
+            "queue-operation": 2,
+            "user": 7,
+            "attachment": 13,
+            "atis-latch": 3,
+            "api-request-shape": 1,
+            "api-request-blob": 5,
+            "api-request": 4,
+            "last-prompt": 2,
+            "assistant": 9
+          },
+          "models": [
+            "deepseek-v4-1-flash-260910"
+          ],
+          "efforts": [],
+          "transport_failures": []
+        },
+        {
+          "task": "atrx-vep-crispr",
+          "repeat": 2,
+          "pid": 927973,
+          "worker_alive": true,
+          "native_files": [
+            "agent/tb4-connection.json",
+            "agent/sessions/projects/-app/c7550261-864e-4c10-a001-e940f97dcfb7.jsonl"
+          ],
+          "native_events": {
+            "queue-operation": 2,
+            "user": 7,
+            "attachment": 13,
+            "atis-latch": 4,
+            "api-request-shape": 1,
+            "api-request-blob": 7,
+            "api-request": 4,
+            "last-prompt": 3,
+            "assistant": 9
+          },
+          "models": [
+            "deepseek-v4-1-flash-260910"
+          ],
+          "efforts": [],
+          "transport_failures": []
+        },
+        {
+          "task": "atrx-vep-crispr",
+          "repeat": 3,
+          "pid": 927974,
+          "worker_alive": true,
+          "native_files": [
+            "agent/tb4-connection.json",
+            "agent/sessions/projects/-app/3895120f-0562-4ca8-b0f8-07d1333430c3.jsonl"
+          ],
+          "native_events": {
+            "queue-operation": 2,
+            "user": 7,
+            "attachment": 13,
+            "atis-latch": 3,
+            "api-request-shape": 1,
+            "api-request-blob": 7,
+            "api-request": 4,
+            "last-prompt": 2,
+            "assistant": 10
+          },
+          "models": [
+            "deepseek-v4-1-flash-260910"
+          ],
+          "efforts": [],
+          "transport_failures": []
+        },
+        {
+          "task": "batched-eval-parity",
+          "repeat": 1,
+          "pid": 927975,
+          "worker_alive": true,
+          "native_files": [
+            "agent/tb4-connection.json",
+            "agent/sessions/projects/-app/fcecb704-9c44-485c-bd21-543df178ef80.jsonl"
+          ],
+          "native_events": {
+            "queue-operation": 2,
+            "user": 7,
+            "attachment": 13,
+            "atis-latch": 5,
+            "api-request-shape": 1,
+            "api-request-blob": 5,
+            "api-request": 4,
+            "last-prompt": 4,
+            "assistant": 9
+          },
+          "models": [
+            "deepseek-v4-1-flash-260910"
+          ],
+          "efforts": [],
+          "transport_failures": []
+        },
+        {
+          "task": "batched-eval-parity",
+          "repeat": 2,
+          "pid": 927976,
+          "worker_alive": true,
+          "native_files": [
+            "agent/tb4-connection.json",
+            "agent/sessions/projects/-app/cb8675bc-118a-41b1-9f0c-0907ad7ccbfe.jsonl"
+          ],
+          "native_events": {
+            "queue-operation": 2,
+            "user": 5,
+            "attachment": 13,
+            "atis-latch": 4,
+            "api-request-shape": 1,
+            "api-request-blob": 7,
+            "api-request": 4,
+            "last-prompt": 3,
+            "assistant": 6
+          },
+          "models": [
+            "deepseek-v4-1-flash-260910"
+          ],
+          "efforts": [],
+          "transport_failures": []
+        }
+      ],
+      "memory_events": {
+        "low": 0,
+        "high": 0,
+        "max": 80003,
+        "oom": 0,
+        "oom_kill": 0
+      },
+      "disk_free_gib": 222.34798431396484
+    },
+    {
+      "server": "serverC",
+      "address": "8.216.11.161",
+      "agent": "skills-agent",
+      "collected_at_unix": 1792129771.8284838,
+      "service": {
+        "MainPID": "979358",
+        "ExecMainStatus": "0",
+        "ActiveState": "active",
+        "SubState": "running",
+        "ActiveEnterTimestamp": "Fri 2026-10-16 13:46:43 CST"
+      },
+      "old_service": {
+        "MainPID": "0",
+        "ExecMainStatus": "0",
+        "ActiveState": "inactive",
+        "SubState": "dead",
+        "ActiveEnterTimestamp": "n/a"
+      },
+      "database_exists": true,
+      "pause_admission": false,
+      "slots": {
+        "pending": 163,
+        "running": 5
+      },
+      "attempts": {
+        "running": 5
+      },
+      "active_reservations": {
+        "slots": 5,
+        "cpus": 25.0,
+        "memory_mb": 107520
+      },
+      "active_trials": [
+        {
+          "task": "atrx-vep-crispr",
+          "repeat": 1,
+          "pid": 981078,
+          "worker_alive": true,
+          "native_files": [
+            "agent/api-audit.jsonl",
+            "agent/skills-config.json"
+          ],
+          "native_events": {
+            "request": 3,
+            "usage": 2,
+            "message": 8,
+            "thinking_delta": 590,
+            "tool_call_delta": 334,
+            "auxiliary_task": 1,
+            "model_request": 1
+          },
+          "models": [
+            "deepseek-v4-1-flash-260910"
+          ],
+          "efforts": [
+            "max"
+          ],
+          "transport_failures": []
+        },
+        {
+          "task": "atrx-vep-crispr",
+          "repeat": 2,
+          "pid": 981079,
+          "worker_alive": true,
+          "native_files": [
+            "agent/api-audit.jsonl",
+            "agent/skills-config.json"
+          ],
+          "native_events": {
+            "request": 4,
+            "usage": 3,
+            "message": 10,
+            "thinking_delta": 823,
+            "text_delta": 7,
+            "tool_call_delta": 659
+          },
+          "models": [
+            "deepseek-v4-1-flash-260910"
+          ],
+          "efforts": [
+            "max"
+          ],
+          "transport_failures": []
+        },
+        {
+          "task": "atrx-vep-crispr",
+          "repeat": 3,
+          "pid": 981080,
+          "worker_alive": true,
+          "native_files": [
+            "agent/api-audit.jsonl",
+            "agent/skills-config.json"
+          ],
+          "native_events": {
+            "request": 3,
+            "usage": 2,
+            "message": 7,
+            "thinking_delta": 1218,
+            "text_delta": 6,
+            "tool_call_delta": 370
+          },
+          "models": [
+            "deepseek-v4-1-flash-260910"
+          ],
+          "efforts": [
+            "max"
+          ],
+          "transport_failures": []
+        },
+        {
+          "task": "batched-eval-parity",
+          "repeat": 1,
+          "pid": 981081,
+          "worker_alive": true,
+          "native_files": [
+            "agent/api-audit.jsonl",
+            "agent/skills-config.json"
+          ],
+          "native_events": {
+            "request": 4,
+            "usage": 3,
+            "message": 7,
+            "thinking_delta": 28,
+            "tool_call_delta": 160
+          },
+          "models": [
+            "deepseek-v4-1-flash-260910"
+          ],
+          "efforts": [
+            "max"
+          ],
+          "transport_failures": []
+        },
+        {
+          "task": "batched-eval-parity",
+          "repeat": 2,
+          "pid": 981082,
+          "worker_alive": true,
+          "native_files": [
+            "agent/api-audit.jsonl",
+            "agent/skills-config.json"
+          ],
+          "native_events": {
+            "request": 4,
+            "usage": 3,
+            "message": 8,
+            "thinking_delta": 27,
+            "text_delta": 5,
+            "tool_call_delta": 309
+          },
+          "models": [
+            "deepseek-v4-1-flash-260910"
+          ],
+          "efforts": [
+            "max"
+          ],
+          "transport_failures": []
+        }
+      ],
+      "memory_events": {
+        "low": 0,
+        "high": 0,
+        "max": 79214,
+        "oom": 0,
+        "oom_kill": 0
+      },
+      "disk_free_gib": 223.30087280273438
+    }
+  ]
+}

@@ -1,0 +1,242 @@
+{
+  "request": "\u5c06\u4e09\u53f0\u670d\u52a1\u5668\u6240\u6709\u8bc4\u6d4b\u5168\u90e8\u505c\u6b62",
+  "verified_at_utc": "2026-10-16T07:06:24.122982+00:00",
+  "servers": [
+    {
+      "server": "serverA",
+      "address": "47.91.21.152",
+      "requested_at_utc": "20261016T070616Z",
+      "verified_at_utc": "2026-10-16T07:06:24.131376+00:00",
+      "services_before": {
+        "tb4-formal-v5.service": {
+          "MainPID": "945269",
+          "ActiveState": "active",
+          "SubState": "running"
+        }
+      },
+      "services_after": {
+        "tb4-formal-v5.service": {
+          "MainPID": "0",
+          "ActiveState": "inactive",
+          "SubState": "dead"
+        }
+      },
+      "batches": [
+        {
+          "path": "/data/tb4/runs/formal",
+          "counts_before": {
+            "complete": 1,
+            "pending": 166,
+            "running": 1
+          },
+          "running_records_before": [
+            {
+              "slot": "tb4-56-flash-max-v4__codex__ctr-optimization__r02",
+              "pid": 561992,
+              "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__codex__ctr-optimization__r02/attempt-1__dbcff396cc/controller-result.json",
+              "worker_alive_before_stop": false
+            }
+          ]
+        },
+        {
+          "path": "/data/tb4/runs/formal-v5",
+          "counts_before": {
+            "pending": 163,
+            "running": 5
+          },
+          "running_records_before": [
+            {
+              "slot": "tb4-56-flash-max-v5__codex__atrx-vep-crispr__r01",
+              "pid": 946980,
+              "result_path": "/data/tb4/runs/formal-v5/tb4-56-flash-max-v5__codex__atrx-vep-crispr__r01/attempt-1__073f56e3fe/controller-result.json",
+              "worker_alive_before_stop": true
+            },
+            {
+              "slot": "tb4-56-flash-max-v5__codex__atrx-vep-crispr__r02",
+              "pid": 946981,
+              "result_path": "/data/tb4/runs/formal-v5/tb4-56-flash-max-v5__codex__atrx-vep-crispr__r02/attempt-1__889219334e/controller-result.json",
+              "worker_alive_before_stop": true
+            },
+            {
+              "slot": "tb4-56-flash-max-v5__codex__atrx-vep-crispr__r03",
+              "pid": 946982,
+              "result_path": "/data/tb4/runs/formal-v5/tb4-56-flash-max-v5__codex__atrx-vep-crispr__r03/attempt-1__539f2e9803/controller-result.json",
+              "worker_alive_before_stop": true
+            },
+            {
+              "slot": "tb4-56-flash-max-v5__codex__batched-eval-parity__r01",
+              "pid": 946983,
+              "result_path": "/data/tb4/runs/formal-v5/tb4-56-flash-max-v5__codex__batched-eval-parity__r01/attempt-1__508f295954/controller-result.json",
+              "worker_alive_before_stop": true
+            },
+            {
+              "slot": "tb4-56-flash-max-v5__codex__batched-eval-parity__r02",
+              "pid": 946984,
+              "result_path": "/data/tb4/runs/formal-v5/tb4-56-flash-max-v5__codex__batched-eval-parity__r02/attempt-1__7a78870904/controller-result.json",
+              "worker_alive_before_stop": true
+            }
+          ]
+        }
+      ],
+      "revoked_approvals": [
+        "/data/tb4/plans/FORMAL_APPROVED-v5.revoked-all-20261016T070616Z.json"
+      ],
+      "native_client_pids_interrupted": [
+        951486,
+        952388,
+        952840,
+        953579,
+        953767
+      ],
+      "owned_running_containers_before": [
+        {
+          "id": "9a87af35ea1a6a4e420a8b39e4ae5429295f4d3401222fe2809a796a2294d1ad",
+          "name": "/attempt-1__073f56e3fe__env-main-1",
+          "project": "attempt-1__073f56e3fe__env",
+          "running": true
+        },
+        {
+          "id": "2cc4ac5beec055bfb746d54dc8d3d7fb9237c4afa125ed017b712a99a960c1cf",
+          "name": "/attempt-1__889219334e__env-main-1",
+          "project": "attempt-1__889219334e__env",
+          "running": true
+        },
+        {
+          "id": "5432550091fbc04cc8304ed262583181d3cd9965f56a480ee73a6e3dbb7db3cd",
+          "name": "/attempt-1__539f2e9803__env-main-1",
+          "project": "attempt-1__539f2e9803__env",
+          "running": true
+        },
+        {
+          "id": "646828dfdca85e72dd4dc915088531bd4b6f9fd0aa7d849332a6342921f327eb",
+          "name": "/attempt-1__7a78870904__env-main-1",
+          "project": "attempt-1__7a78870904__env",
+          "running": true
+        },
+        {
+          "id": "8a7295c09b369808e19223fb55ba08dda99ca4d307f4839f8f58bf2b782f2daf",
+          "name": "/attempt-1__508f295954__env-main-1",
+          "project": "attempt-1__508f295954__env",
+          "running": true
+        }
+      ],
+      "owned_running_containers_after": [],
+      "all_running_docker_ids": [],
+      "remaining_recorded_worker_pids": [],
+      "new_skills_131072_batch_started": false,
+      "result_databases_preserved": true,
+      "containers_and_volumes_not_deleted": true
+    },
+    {
+      "server": "serverB",
+      "address": "8.216.13.123",
+      "requested_at_utc": "20261016T070616Z",
+      "verified_at_utc": "2026-10-16T07:06:20.220700+00:00",
+      "services_before": {
+        "tb4-formal-v5.service": {
+          "MainPID": "0",
+          "ActiveState": "failed",
+          "SubState": "failed"
+        }
+      },
+      "services_after": {
+        "tb4-formal-v5.service": {
+          "MainPID": "0",
+          "ActiveState": "inactive",
+          "SubState": "dead"
+        }
+      },
+      "batches": [
+        {
+          "path": "/data/tb4/runs/formal",
+          "counts_before": {
+            "complete": 1,
+            "needs_review": 1,
+            "pending": 165,
+            "running": 1
+          },
+          "running_records_before": [
+            {
+              "slot": "tb4-56-flash-max-v4__claude-code__ctr-optimization__r03",
+              "pid": 623847,
+              "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__claude-code__ctr-optimization__r03/attempt-1__41795eaa36/controller-result.json",
+              "worker_alive_before_stop": false
+            }
+          ]
+        },
+        {
+          "path": "/data/tb4/runs/formal-v5",
+          "counts_before": {
+            "needs_review": 5,
+            "pending": 163
+          },
+          "running_records_before": []
+        }
+      ],
+      "revoked_approvals": [
+        "/data/tb4/plans/FORMAL_APPROVED-v5.revoked-all-20261016T070616Z.json"
+      ],
+      "native_client_pids_interrupted": [],
+      "owned_running_containers_before": [],
+      "owned_running_containers_after": [],
+      "all_running_docker_ids": [],
+      "remaining_recorded_worker_pids": [],
+      "new_skills_131072_batch_started": false,
+      "result_databases_preserved": true,
+      "containers_and_volumes_not_deleted": true
+    },
+    {
+      "server": "serverC",
+      "address": "8.216.11.161",
+      "requested_at_utc": "20261016T070616Z",
+      "verified_at_utc": "2026-10-16T07:06:20.182656+00:00",
+      "services_before": {},
+      "services_after": {},
+      "batches": [
+        {
+          "path": "/data/tb4/runs/formal",
+          "counts_before": {
+            "complete": 4,
+            "pending": 163,
+            "running": 1
+          },
+          "running_records_before": [
+            {
+              "slot": "tb4-56-flash-max-v4__skills-agent__cumulative-layout-shift__r02",
+              "pid": 675351,
+              "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__cumulative-layout-shift__r02/attempt-1__7252b3678f/controller-result.json",
+              "worker_alive_before_stop": false
+            }
+          ]
+        },
+        {
+          "path": "/data/tb4/runs/formal-v5",
+          "counts_before": {
+            "complete": 1,
+            "needs_review": 3,
+            "pending": 163,
+            "running": 1
+          },
+          "running_records_before": [
+            {
+              "slot": "tb4-56-flash-max-v5__skills-agent__batched-eval-parity__r01",
+              "pid": 981081,
+              "result_path": "/data/tb4/runs/formal-v5/tb4-56-flash-max-v5__skills-agent__batched-eval-parity__r01/attempt-1__5520cfdb6e/controller-result.json",
+              "worker_alive_before_stop": false
+            }
+          ]
+        }
+      ],
+      "revoked_approvals": [],
+      "native_client_pids_interrupted": [],
+      "owned_running_containers_before": [],
+      "owned_running_containers_after": [],
+      "all_running_docker_ids": [],
+      "remaining_recorded_worker_pids": [],
+      "new_skills_131072_batch_started": false,
+      "result_databases_preserved": true,
+      "containers_and_volumes_not_deleted": true
+    }
+  ],
+  "new_skills_131072_batch_started": false
+}

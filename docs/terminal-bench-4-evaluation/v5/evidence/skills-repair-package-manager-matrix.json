@@ -1,0 +1,665 @@
+{
+  "selected": 56,
+  "checked": 56,
+  "results": [
+    {
+      "task": "atrx-vep-crispr",
+      "image": "tb4-prewarm/atrx-vep-crispr-agent-main:bcf918de2609",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/bin/ps",
+        "pgrep=/usr/bin/pgrep",
+        "manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "batched-eval-parity",
+      "image": "tb4-prewarm/batched-eval-parity-agent-main:12da934b1ba8",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "biped-contact-dynamics",
+      "image": "tb4-prewarm/biped-contact-dynamics-agent-main:0c1ee26ebd24",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/bin/ps",
+        "pgrep=/usr/bin/pgrep",
+        "manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "bun-sourcemap-leak",
+      "image": "tb4-prewarm/bun-sourcemap-leak-agent-main:ba41f888c35d",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "cad-model",
+      "image": "tb4-prewarm/cad-model-agent-main:387d359c2065",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "cargo-flight-dispatch",
+      "image": "tb4-prewarm/cargo-flight-dispatch-agent-main:189ab144ce0c",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "coq-block-bound",
+      "image": "tb4-prewarm/coq-block-bound-agent-main:a45c3850ee4a",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "ctr-optimization",
+      "image": "tb4-prewarm/ctr-optimization-agent-main:f6ef20686089",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "cumulative-layout-shift",
+      "image": "tb4-prewarm/cumulative-layout-shift-agent-main:8a8d52fb3c63",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/bin/ps",
+        "pgrep=/usr/bin/pgrep",
+        "manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "data-anonymization",
+      "image": "tb4-prewarm/data-anonymization-agent-main:2638a0ecc1b4",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/bin/ps",
+        "pgrep=/usr/bin/pgrep",
+        "manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "embedding-drift-monitor",
+      "image": "tb4-prewarm/embedding-drift-monitor-agent-main:67355f308e40",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/bin/ps",
+        "pgrep=/usr/bin/pgrep",
+        "manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "fin-saccr-rwa",
+      "image": "tb4-prewarm/fin-saccr-rwa-agent-main:c8df7657779f",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "foodstuff-beta-activity",
+      "image": "tb4-prewarm/foodstuff-beta-activity-agent-main:afbd4fdbd286",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "freecad-impeller",
+      "image": "tb4-prewarm/freecad-impeller-agent-main:01364d90e6a5",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "freecad-platform-drawing",
+      "image": "tb4-prewarm/freecad-platform-drawing-agent-main:204b73200a38",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "freecad-spring-clip",
+      "image": "tb4-prewarm/freecad-spring-clip-agent-main:2a442a170103",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "freight-dispatch-shift",
+      "image": "tb4-prewarm/freight-dispatch-shift-agent-main:63bcf2d70d54",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "glycan-ms2-elucidation",
+      "image": "tb4-prewarm/glycan-ms2-elucidation-agent-main:23ba49fd15bd",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/bin/ps",
+        "pgrep=/usr/bin/pgrep",
+        "manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "gsea-proteomics",
+      "image": "tb4-prewarm/gsea-proteomics-agent-main:f60082ab9287",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/bin/ps",
+        "pgrep=/usr/bin/pgrep",
+        "manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "heat-pump-warranty",
+      "image": "tb4-prewarm/heat-pump-warranty-agent-main:67e711e0c585",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "hof-topology-interpenetration",
+      "image": "tb4-prewarm/hof-topology-interpenetration-agent-main:97748706417e",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/bin/ps",
+        "pgrep=/usr/bin/pgrep",
+        "manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "html-js-filter",
+      "image": "tb4-prewarm/html-js-filter-agent-main:ca37b270163d",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "interleaved-vigenere",
+      "image": "tb4-prewarm/interleaved-vigenere-agent-main:d92806f85d08",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "intrastat-meldung",
+      "image": "tb4-prewarm/intrastat-meldung-agent-main:4ab6b5e1b6ca",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "ks-solver-cpp",
+      "image": "tb4-prewarm/ks-solver-cpp-agent-main:5cd4b7fc9a34",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/bin/ps",
+        "pgrep=/usr/bin/pgrep",
+        "manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "kv-live-surgery",
+      "image": "tb4-prewarm/kv-live-surgery-agent-main:6f08cd960307",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/bin/ps",
+        "pgrep=/usr/bin/pgrep",
+        "manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "layout-config-recreation",
+      "image": "tb4-prewarm/layout-config-recreation-agent-main:27a02698cdd4",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/bin/ps",
+        "pgrep=/usr/bin/pgrep",
+        "manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "layout-config-recreation2",
+      "image": "tb4-prewarm/layout-config-recreation2-agent-main:cf0ed09f29a1",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "legacy-utility-triage",
+      "image": "tb4-prewarm/legacy-utility-triage-agent-main:609bd8e02d80",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "medical-claims-processing",
+      "image": "tb4-prewarm/medical-claims-processing-agent-main:7b3c79adf0d6",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "mp-checkpoint-consolidation",
+      "image": "tb4-prewarm/mp-checkpoint-consolidation-agent-main:d63a9e69af31",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "music-harmony",
+      "image": "tb4-prewarm/music-harmony-agent-main:67556a9d679d",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "mvcc-lsm-compaction",
+      "image": "tb4-prewarm/mvcc-lsm-compaction-agent-main:2f43b48bb42e",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/bin/ps",
+        "pgrep=/usr/bin/pgrep",
+        "manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "nextjs-performance",
+      "image": "tb4-prewarm/nextjs-performance-agent-main:bc4ff6f49fbd",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "ontology-kg-querying",
+      "image": "tb4-prewarm/ontology-kg-querying-agent-main:be68a3ed2b51",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "photonic-waveguide-routing",
+      "image": "tb4-prewarm/photonic-waveguide-routing-agent-main:00b45495bd57",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "pretrain-shard-corruption",
+      "image": "tb4-prewarm/pretrain-shard-corruption-agent-main:6160f651294b",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "production-planning",
+      "image": "tb4-prewarm/production-planning-agent-main:3d9d321411f8",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "protein-autointerp-disulfide",
+      "image": "tb4-prewarm/protein-autointerp-disulfide-agent-main:81587f16751b",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "react-lead-form",
+      "image": "tb4-prewarm/react-lead-form-agent-main:7b43db201bf5",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "retro-console-soc",
+      "image": "tb4-prewarm/retro-console-soc-agent-main:cbd39d654502",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/sbin/ps",
+        "pgrep=/usr/sbin/pgrep",
+        "manager=/usr/sbin/dnf",
+        "shell=/usr/sbin/bash",
+        "tar=/usr/sbin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "risk-scorer-replay",
+      "image": "tb4-prewarm/risk-scorer-replay-agent-main:c017810258ac",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "roy-polymorph-cn",
+      "image": "tb4-prewarm/roy-polymorph-cn-agent-main:0348b381c9e5",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/bin/ps",
+        "pgrep=/usr/bin/pgrep",
+        "manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "rs-archive-clone",
+      "image": "tb4-prewarm/rs-archive-clone-agent-main:7edd129688a3",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/bin/ps",
+        "pgrep=/usr/bin/pgrep",
+        "manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "satb-audio-transcription",
+      "image": "tb4-prewarm/satb-audio-transcription-agent-main:fcce8a24def0",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/bin/ps",
+        "pgrep=/usr/bin/pgrep",
+        "manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "session-window-debug",
+      "image": "tb4-prewarm/session-window-debug-agent-main:07d73c375825",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "sglang-qwen-burst",
+      "image": "tb4-prewarm/sglang-qwen-burst-agent-main:05ff12bf469b",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "sound-change-cascade",
+      "image": "tb4-prewarm/sound-change-cascade-agent-main:7013a644b652",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "takens-embedding-lean",
+      "image": "tb4-prewarm/takens-embedding-lean-agent-main:7fa7208173ff",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/bin/ps",
+        "pgrep=/usr/bin/pgrep",
+        "manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "telecom-entity-resolution",
+      "image": "tb4-prewarm/telecom-entity-resolution-agent-main:7e2eae692f95",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/bin/ps",
+        "pgrep=/usr/bin/pgrep",
+        "manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "uefi-bootkit",
+      "image": "tb4-prewarm/uefi-bootkit-agent-main:365f5bddad2e",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "vba-userform-port",
+      "image": "tb4-prewarm/vba-userform-port-agent-main:0b725d124c84",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "vf2-speedup-networkx",
+      "image": "tb4-prewarm/vf2-speedup-networkx-agent-main:b0107f3ed432",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/bin/ps",
+        "pgrep=/usr/bin/pgrep",
+        "manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "vllm-deepseek-streaming",
+      "image": "tb4-prewarm/vllm-deepseek-streaming-agent-main:1f757b38b51e",
+      "exit": 0,
+      "checks": [
+        "ps=/usr/bin/ps",
+        "pgrep=/usr/bin/pgrep",
+        "manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "vpp-loss-divergence",
+      "image": "tb4-prewarm/vpp-loss-divergence-agent-main:df567a53e919",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    },
+    {
+      "task": "wal-recovery-ordering",
+      "image": "tb4-prewarm/wal-recovery-ordering-agent-main:0449d5c80f3b",
+      "exit": 0,
+      "checks": [
+        "ps=pgrep=manager=/usr/bin/apt-get",
+        "shell=/usr/bin/bash",
+        "tar=/usr/bin/tar"
+      ],
+      "error": null
+    }
+  ],
+  "model_calls": 0,
+  "network": "none",
+  "scope": "Checks package-manager and tool availability. Does not fetch or install packages and does not assert repository reachability."
+}

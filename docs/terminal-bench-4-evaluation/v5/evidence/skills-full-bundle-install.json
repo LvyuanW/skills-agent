@@ -1,0 +1,39 @@
+{
+  "image": "tb4-prewarm/ctr-optimization-agent-main:f6ef20686089",
+  "temporary_container": "tb4-skillsfix-fullinstall-863c5fb654",
+  "model_calls": 0,
+  "credentials_injected": false,
+  "assets_path": "/data/tb4/releases/remediation-v5/skills-assets-d7e45e4ccd7d",
+  "full_adapter_install_passed": true,
+  "post_install_network": "disconnected",
+  "installed_agent_version": "0.1.0",
+  "installed_wheel_verification": {
+    "installed_package_files_matched": 53,
+    "wheel_sha256": "d7e45e4ccd7d4627f679c745fa05672042d95b92d90c11629e0b57308d038d3c",
+    "provider_file": "/opt/tb4-skills/venv/lib/python3.12/site-packages/skills_agent/providers/base.py"
+  },
+  "installed_native_lifecycle": {
+    "missing_ps_failed_before_registration": true,
+    "cases": [
+      {
+        "case": "explicit-stop",
+        "start": "running",
+        "status": "running",
+        "final_state": "stopped",
+        "live_child_or_supervisor_after_close": false
+      },
+      {
+        "case": "native-close",
+        "start": "running",
+        "status": "running",
+        "final_state": "stopped",
+        "live_child_or_supervisor_after_close": false
+      }
+    ],
+    "network": "none",
+    "model_calls": 0,
+    "credentials_injected": false
+  },
+  "status": "passed",
+  "temporary_container_removed": true
+}

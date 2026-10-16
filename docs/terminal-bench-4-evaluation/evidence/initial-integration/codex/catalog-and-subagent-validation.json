@@ -1,0 +1,227 @@
+{
+  "checked_at_local": "2026-10-16 Asia/Shanghai",
+  "catalog_provenance": {
+    "retrieved_at": "2026-10-16",
+    "source_url": "https://api-docs.deepseek.com/quick_start/agent_integrations/codex/",
+    "note": "Official snapshot is preserved intact. Experiment catalog is an explicitly filtered derivative: only deepseek-flash; supported reasoning levels only max; default reasoning level max. Other Flash metadata and model prompt fields unchanged.",
+    "codex_version": "0.149.1",
+    "npm_linux_metadata": {
+      "shasum": "4f02df1633de47903829650c38b02ec12f99214b",
+      "tarball": "https://registry.npmjs.org/@openai/codex/-/codex-0.149.1-linux-x64.tgz",
+      "fileCount": 8,
+      "integrity": "sha512-Of5fGYgr7tAMsyj6vhXb4/RM/UoA3Zq8BLegUBDC09UNy1XTLGYP/2XD+UX8z3qh0NDwxYdCjFIWdDNijKZggQ==",
+      "signatures": [
+        {
+          "sig": "MEUCIB7DRjVxqF4knxqiPdpP24raZMQclH76oJlIlpfwma2nAiEAubo6ahPLTzSd0CBY6Ewv9C+wYGwrrW2p5PUkRfv8/qk=",
+          "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+        },
+        {
+          "sig": "MEUCIBBw8lr+uZ6A2Qm6GjqyXmjf1+bZM6UXyXCxxzs5ibcMAiEAuvpBHagT8eysD2NXRxZ6iEyqzItyhPF8s+A8JEaODHE=",
+          "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+        }
+      ],
+      "attestations": {
+        "url": "https://registry.npmjs.org/-/npm/v1/attestations/@openai%2fcodex@0.149.1-linux-x64",
+        "provenance": {
+          "predicateType": "https://slsa.dev/provenance/v1"
+        }
+      },
+      "unpackedSize": 322955698
+    },
+    "official_catalog_file": "official-models.json",
+    "official_catalog_sha256": "bce20f679495809f4fa6e48672b6dcbab84b6adff5251890b6e6a21eddb9c12f",
+    "experiment_catalog_file": "models.json",
+    "experiment_catalog_sha256": "66766841e456bfe45791a49e35cf7120b2997677db639f43217d2624ae0a25e8"
+  },
+  "offline_toolchain": {
+    "kind": "offline_mock_only",
+    "live_provider_calls": 0,
+    "passed": true,
+    "exit_code": 0,
+    "request_metadata": [
+      {
+        "model": "deepseek-flash",
+        "reasoning": {
+          "effort": "max"
+        },
+        "contains_image": false,
+        "output_types": [
+          "message"
+        ]
+      },
+      {
+        "model": "deepseek-flash",
+        "reasoning": {
+          "effort": "max"
+        },
+        "contains_image": false,
+        "output_types": [
+          "function_call",
+          "function_call_output",
+          "message"
+        ]
+      },
+      {
+        "model": "deepseek-flash",
+        "reasoning": {
+          "effort": "max"
+        },
+        "contains_image": true,
+        "output_types": [
+          "function_call",
+          "function_call_output",
+          "message"
+        ]
+      },
+      {
+        "model": "deepseek-flash",
+        "reasoning": {
+          "effort": "max"
+        },
+        "contains_image": true,
+        "output_types": [
+          "custom_tool_call",
+          "custom_tool_call_output",
+          "function_call",
+          "function_call_output",
+          "message"
+        ]
+      }
+    ],
+    "fixture_png_sha256": "becf0cf30d6978325d9ccdea315923e2dbbf7e591c2857b92b5f82e41957bb98",
+    "spawn_overrides_description": "Available model overrides (optional; inherited parent model is preferred):\n- `deepseek-flash`: Latest frontier agentic coding model with image input. Reasoning efforts: max (default)."
+  },
+  "offline_subagent": {
+    "kind": "offline_mock_only",
+    "live_provider_calls": 0,
+    "external_container_network": false,
+    "exit_code": 0,
+    "all_requests_flash_max": true,
+    "child_requests": 1,
+    "request_metadata": [
+      {
+        "model": "deepseek-flash",
+        "reasoning": {
+          "effort": "max"
+        },
+        "child": false,
+        "marker_paths": [],
+        "message_roles": [
+          "developer",
+          "developer",
+          "developer",
+          "user",
+          "user"
+        ]
+      },
+      {
+        "model": "deepseek-flash",
+        "reasoning": {
+          "effort": "max"
+        },
+        "child": false,
+        "marker_paths": [
+          ".input[5].arguments"
+        ],
+        "message_roles": [
+          "developer",
+          "developer",
+          "developer",
+          "user",
+          "user"
+        ]
+      },
+      {
+        "model": "deepseek-flash",
+        "reasoning": {
+          "effort": "max"
+        },
+        "child": false,
+        "marker_paths": [
+          ".input[5].arguments",
+          ".input[7].arguments"
+        ],
+        "message_roles": [
+          "developer",
+          "developer",
+          "developer",
+          "user",
+          "user"
+        ]
+      },
+      {
+        "model": "deepseek-flash",
+        "reasoning": {
+          "effort": "max"
+        },
+        "child": false,
+        "marker_paths": [
+          ".input[5].arguments",
+          ".input[7].arguments",
+          ".input[9].arguments"
+        ],
+        "message_roles": [
+          "developer",
+          "developer",
+          "developer",
+          "user",
+          "user"
+        ]
+      },
+      {
+        "model": "deepseek-flash",
+        "reasoning": {
+          "effort": "max"
+        },
+        "child": true,
+        "marker_paths": [
+          ".input[4].content[1].encrypted_content"
+        ],
+        "message_roles": [
+          "developer",
+          "developer",
+          "developer",
+          "user"
+        ]
+      },
+      {
+        "model": "deepseek-flash",
+        "reasoning": {
+          "effort": "max"
+        },
+        "child": false,
+        "marker_paths": [
+          ".input[5].arguments",
+          ".input[7].arguments",
+          ".input[9].arguments"
+        ],
+        "message_roles": [
+          "developer",
+          "developer",
+          "developer",
+          "user",
+          "user"
+        ]
+      }
+    ],
+    "tool_results": [
+      {
+        "call_id": "call_spawn_1",
+        "output": "Unknown model `deepseek-v4-pro` for spawn_agent. Available models: deepseek-flash"
+      },
+      {
+        "call_id": "call_spawn_2",
+        "output": "Reasoning effort `low` is not supported for model `deepseek-flash`. Supported reasoning efforts: max"
+      },
+      {
+        "call_id": "call_spawn_3",
+        "output": "{\"task_name\":\"/root/probe_3\"}"
+      },
+      {
+        "call_id": "call_wait",
+        "output": "{\"message\":\"Wait completed.\",\"timed_out\":false}"
+      }
+    ]
+  },
+  "metadata_preserved_except_filter": true
+}

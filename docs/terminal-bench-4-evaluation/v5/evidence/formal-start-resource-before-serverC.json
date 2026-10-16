@@ -1,0 +1,49 @@
+{
+  "at_utc": "2026-10-16T05:45:01.814995+00:00",
+  "parent": {
+    "cpu.max": "3000000 100000",
+    "cpuset.cpus.effective": "2-31",
+    "memory.max": "123480309760",
+    "memory.swap.max": "0"
+  },
+  "disk": {
+    "free_gib": 224.89138412475586,
+    "total_gib": 491.082275390625,
+    "free_ratio": 0.45795052152079596
+  },
+  "running_container_ids": [],
+  "units": {
+    "tb4-prewarm-v5.service": {
+      "MainPID": "0",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    "tb4-resource-probe-v5.service": {
+      "MainPID": "0",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    "tb4-formal.service": {
+      "MainPID": "0",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    "tb4-formal-v5.service": {
+      "MainPID": "0",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    }
+  },
+  "process_pids": {
+    "prewarm_worker": [],
+    "formal_worker": [],
+    "resource_probe": []
+  },
+  "memory_events": {
+    "low": 0,
+    "high": 0,
+    "max": 79214,
+    "oom": 0,
+    "oom_kill": 0
+  }
+}

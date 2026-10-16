@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "scope": "Repository organization of existing preparation and launch evidence; no new server observations or assessment changes.",
+  "historical_records": "v4/v5 evidence and frozen hashes are preserved. Absolute local/remote paths in historical records identify their original capture locations, not portable repository links.",
+  "external_artifacts": "Large runtime bundles, wheels, database copies, images, virtual environments and raw trial outputs remain outside Git. Release records retain their content hashes; these artifacts are not implied to be reconstructible from the audit summaries alone.",
+  "moved_initial_integration_records": {
+    "docs/terminal-bench-4-evaluation/evidence/initial-integration/claude/integration-validation.json": "e04a2db1454d7ac41aeb618e38c2b704fb70f3b42fc65926fae88207e0d4028e",
+    "docs/terminal-bench-4-evaluation/evidence/initial-integration/codex/catalog-and-subagent-validation.json": "e2123050747fbd34f615d7d76aafaf54917bc5ffff75903d2da0e40cc832d334",
+    "docs/terminal-bench-4-evaluation/evidence/initial-integration/codex/integration-validation.json": "06ee6a4bc52535c4516024760dfdb0d7ccc732cc4ce81b1ab1b793f007f4e6dc"
+  },
+  "copied_current_batch_evidence": {
+    "docs/terminal-bench-4-evaluation/yuzhi-20261016/evidence/final-audit-serverA.json": "ac3940dcbd6de51cc348b38571fd657f02b99714082cd67a4b11279775ed688b",
+    "docs/terminal-bench-4-evaluation/yuzhi-20261016/evidence/final-audit-serverB.json": "87060c3907f31e0ba29e8fef0e044ae6af512dad37787888c1e12069b7568c43",
+    "docs/terminal-bench-4-evaluation/yuzhi-20261016/evidence/final-audit-serverC.json": "c31c5fc46e6aeb5d8a17092c836326c0dc6b39340d0241fc4751eb1d705e7508",
+    "docs/terminal-bench-4-evaluation/yuzhi-20261016/evidence/formal-launch-start-20261016T162849.json": "5f49061939f3a86af4eac3e7e9892f788a44ca83b262617d862d2a5346602bf9",
+    "docs/terminal-bench-4-evaluation/yuzhi-20261016/evidence/formal-launch-start-20261016T163206.json": "7d0a850f96b538b1b87bac564f0e04c35670f0556fd4b687166ca6b8bd913b87",
+    "docs/terminal-bench-4-evaluation/yuzhi-20261016/evidence/formal-launch-current.json": "dd34771740cb92a5da66f5897b6aa88cb98c7684a8bc1778016614422ac7a529"
+  },
+  "current_plan": {
+    "path": "docs/terminal-bench-4-evaluation/yuzhi-20261016/trial-plan.jsonl",
+    "sha256": "23f74ddc696efa3bf92747e39444c309397c67d7a35bc60a8ba96dedc3aaed19",
+    "reconstruction": "Preserve v5 row order and fields, replace slot_id prefix with tb4-56-flash-max-yuzhi-20261016 and model with deepseek-v4.1-flash; serialize each row using json.dumps(separators=(\",\", \":\")) followed by LF.",
+    "manifest_sha256": "7b4988053c57f56fc37f5bd32f3b598690624c1999a7c3939af0d4101db5a777",
+    "slots": 504
+  },
+  "repository_reference_base": "repository root"
+}

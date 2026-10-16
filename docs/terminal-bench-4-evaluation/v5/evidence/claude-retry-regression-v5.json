@@ -1,0 +1,322 @@
+{
+  "kind": "native_claude_offline_retry_regression",
+  "version": "2.1.300",
+  "binary_sha256": "674deba0bba9aee479f4503c438b49303b6fdd304b9a471b14977aaec5215453",
+  "script_sha256": "d0ea8e2a50eef335ff7f38ed54ccc13e402e4ac0ed933e7f2a2421a05e23e02e",
+  "image_id": "sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258",
+  "live_provider_calls": 0,
+  "all_passed": false,
+  "cases": [
+    {
+      "injected_status": 502,
+      "timeout_seconds": 120,
+      "live_provider_calls": 0,
+      "external_container_network": false,
+      "dummy_key_only": true,
+      "max_retries_override": null,
+      "passed": true,
+      "exit_code": 0,
+      "timed_out": false,
+      "successful_final_result": true,
+      "result_is_error": false,
+      "result_subtype": "success",
+      "main_response_statuses": [
+        502,
+        200
+      ],
+      "same_logical_payload": true,
+      "native_version": "2.1.300",
+      "stdout_event_types": {
+        "system": 2,
+        "assistant": 1,
+        "result": 1
+      },
+      "stdout_bytes": 4539,
+      "stderr_bytes": 97,
+      "network_removed": true,
+      "container_removed": true,
+      "elapsed_seconds": 2.019622,
+      "requests": [
+        {
+          "path": "/v1/messages?beta=true",
+          "main_request": true,
+          "elapsed_seconds": 0.661411,
+          "body_sha256": "5d8cecabfa2a780dc1c3f64e4fbf03d45c7dda63faa5ba1255e95cbe41fda90c",
+          "logical_payload_sha256": "27104086813c9d74de2ba2ecffd3b8b76c6e37f3847d59545d3c252816e5a030",
+          "model": "deepseek-v4-1-flash-260910",
+          "thinking": {
+            "type": "adaptive",
+            "display": "updates"
+          },
+          "output_config": {
+            "effort": "max"
+          },
+          "response_status": 502
+        },
+        {
+          "path": "/v1/messages?beta=true",
+          "main_request": true,
+          "elapsed_seconds": 1.299461,
+          "body_sha256": "5d8cecabfa2a780dc1c3f64e4fbf03d45c7dda63faa5ba1255e95cbe41fda90c",
+          "logical_payload_sha256": "27104086813c9d74de2ba2ecffd3b8b76c6e37f3847d59545d3c252816e5a030",
+          "model": "deepseek-v4-1-flash-260910",
+          "thinking": {
+            "type": "adaptive",
+            "display": "updates"
+          },
+          "output_config": {
+            "effort": "max"
+          },
+          "response_status": 200
+        }
+      ]
+    },
+    {
+      "injected_status": 504,
+      "timeout_seconds": 120,
+      "live_provider_calls": 0,
+      "external_container_network": false,
+      "dummy_key_only": true,
+      "max_retries_override": null,
+      "passed": true,
+      "exit_code": 0,
+      "timed_out": false,
+      "successful_final_result": true,
+      "result_is_error": false,
+      "result_subtype": "success",
+      "main_response_statuses": [
+        504,
+        200
+      ],
+      "same_logical_payload": true,
+      "native_version": "2.1.300",
+      "stdout_event_types": {
+        "system": 2,
+        "assistant": 1,
+        "result": 1
+      },
+      "stdout_bytes": 4539,
+      "stderr_bytes": 97,
+      "network_removed": true,
+      "container_removed": true,
+      "elapsed_seconds": 1.795198,
+      "requests": [
+        {
+          "path": "/v1/messages?beta=true",
+          "main_request": true,
+          "elapsed_seconds": 0.528745,
+          "body_sha256": "97f430684ca3b26db2bf89cbd6b5b43feca8cb88a1773dc176eee597a8c32c31",
+          "logical_payload_sha256": "27104086813c9d74de2ba2ecffd3b8b76c6e37f3847d59545d3c252816e5a030",
+          "model": "deepseek-v4-1-flash-260910",
+          "thinking": {
+            "type": "adaptive",
+            "display": "updates"
+          },
+          "output_config": {
+            "effort": "max"
+          },
+          "response_status": 504
+        },
+        {
+          "path": "/v1/messages?beta=true",
+          "main_request": true,
+          "elapsed_seconds": 1.072112,
+          "body_sha256": "97f430684ca3b26db2bf89cbd6b5b43feca8cb88a1773dc176eee597a8c32c31",
+          "logical_payload_sha256": "27104086813c9d74de2ba2ecffd3b8b76c6e37f3847d59545d3c252816e5a030",
+          "model": "deepseek-v4-1-flash-260910",
+          "thinking": {
+            "type": "adaptive",
+            "display": "updates"
+          },
+          "output_config": {
+            "effort": "max"
+          },
+          "response_status": 200
+        }
+      ]
+    },
+    {
+      "injected_status": 524,
+      "timeout_seconds": 120,
+      "live_provider_calls": 0,
+      "external_container_network": false,
+      "dummy_key_only": true,
+      "max_retries_override": null,
+      "passed": true,
+      "exit_code": 0,
+      "timed_out": false,
+      "successful_final_result": true,
+      "result_is_error": false,
+      "result_subtype": "success",
+      "main_response_statuses": [
+        524,
+        200
+      ],
+      "same_logical_payload": true,
+      "native_version": "2.1.300",
+      "stdout_event_types": {
+        "system": 2,
+        "assistant": 1,
+        "result": 1
+      },
+      "stdout_bytes": 4539,
+      "stderr_bytes": 97,
+      "network_removed": true,
+      "container_removed": true,
+      "elapsed_seconds": 1.860119,
+      "requests": [
+        {
+          "path": "/v1/messages?beta=true",
+          "main_request": true,
+          "elapsed_seconds": 0.57936,
+          "body_sha256": "79f50c8c478c08d96a5cbdecfe052383c217782457acd5e04a05d1660e786faa",
+          "logical_payload_sha256": "27104086813c9d74de2ba2ecffd3b8b76c6e37f3847d59545d3c252816e5a030",
+          "model": "deepseek-v4-1-flash-260910",
+          "thinking": {
+            "type": "adaptive",
+            "display": "updates"
+          },
+          "output_config": {
+            "effort": "max"
+          },
+          "response_status": 524
+        },
+        {
+          "path": "/v1/messages?beta=true",
+          "main_request": true,
+          "elapsed_seconds": 1.14609,
+          "body_sha256": "79f50c8c478c08d96a5cbdecfe052383c217782457acd5e04a05d1660e786faa",
+          "logical_payload_sha256": "27104086813c9d74de2ba2ecffd3b8b76c6e37f3847d59545d3c252816e5a030",
+          "model": "deepseek-v4-1-flash-260910",
+          "thinking": {
+            "type": "adaptive",
+            "display": "updates"
+          },
+          "output_config": {
+            "effort": "max"
+          },
+          "response_status": 200
+        }
+      ]
+    },
+    {
+      "injected_status": 401,
+      "timeout_seconds": 120,
+      "live_provider_calls": 0,
+      "external_container_network": false,
+      "dummy_key_only": true,
+      "max_retries_override": null,
+      "passed": false,
+      "exit_code": 0,
+      "timed_out": false,
+      "successful_final_result": true,
+      "result_is_error": false,
+      "result_subtype": "success",
+      "main_response_statuses": [
+        401,
+        200
+      ],
+      "same_logical_payload": true,
+      "native_version": "2.1.300",
+      "stdout_event_types": {
+        "system": 2,
+        "assistant": 1,
+        "result": 1
+      },
+      "stdout_bytes": 4548,
+      "stderr_bytes": 97,
+      "network_removed": true,
+      "container_removed": true,
+      "elapsed_seconds": 1.767955,
+      "requests": [
+        {
+          "path": "/v1/messages?beta=true",
+          "main_request": true,
+          "elapsed_seconds": 0.511689,
+          "body_sha256": "c9c5294c0da88e606447620031d9a6d47a1a8698ad18c8d42aaa859b07c9cf88",
+          "logical_payload_sha256": "27104086813c9d74de2ba2ecffd3b8b76c6e37f3847d59545d3c252816e5a030",
+          "model": "deepseek-v4-1-flash-260910",
+          "thinking": {
+            "type": "adaptive",
+            "display": "updates"
+          },
+          "output_config": {
+            "effort": "max"
+          },
+          "response_status": 401
+        },
+        {
+          "path": "/v1/messages?beta=true",
+          "main_request": true,
+          "elapsed_seconds": 1.061949,
+          "body_sha256": "c9c5294c0da88e606447620031d9a6d47a1a8698ad18c8d42aaa859b07c9cf88",
+          "logical_payload_sha256": "27104086813c9d74de2ba2ecffd3b8b76c6e37f3847d59545d3c252816e5a030",
+          "model": "deepseek-v4-1-flash-260910",
+          "thinking": {
+            "type": "adaptive",
+            "display": "updates"
+          },
+          "output_config": {
+            "effort": "max"
+          },
+          "response_status": 200
+        }
+      ]
+    }
+  ],
+  "interpretation": {
+    "three_transient_5xx_cases_passed": true,
+    "initial_401_no_retry_expectation_met": false,
+    "native_401_observation": "A single injected 401 was retried with the identical logical payload and the subsequent 200 completed successfully. This is native CLI behavior, not a test harness replay or whole-trial retry.",
+    "persistent_401_observation": {
+      "main_requests": 9,
+      "response_statuses": [
+        401,
+        401,
+        401,
+        401,
+        401,
+        401,
+        401,
+        401,
+        401
+      ],
+      "request_elapsed_seconds": [
+        0.516941,
+        1.083153,
+        2.184063,
+        4.630025,
+        9.455914,
+        19.27736,
+        38.132599,
+        77.857078,
+        111.161505
+      ],
+      "same_logical_payload": true,
+      "harness_timeout_seconds": 120,
+      "harness_elapsed_seconds": 120.876584,
+      "native_retry_budget_exhaustion_observed": false,
+      "container_removed": true,
+      "network_removed": true
+    },
+    "static_confirmation": {
+      "function": "L1r",
+      "byte_offset": 227789627,
+      "ordinary_rule": "HTTP401 is retry-eligible after earlier special branches and x-should-retry handling. See pinned static audit; native ordinary outer retry base budget is 10, not the SDK default."
+    },
+    "scope": "All calls were local mock HTTP over internal Docker networks with dummy credentials. No live API calls, formal trial runs, or old container restarts.",
+    "postcheck": {
+      "matching_test_containers": 0,
+      "matching_test_networks": 0,
+      "formal_service": "inactive"
+    },
+    "raw_reports": [
+      "claude-retry-regression-v5-initial.json",
+      "claude-retry-persistent-401-v5.json"
+    ],
+    "source_snapshots": [
+      "offline-retry-smoke-initial.py",
+      "offline-retry-smoke.py"
+    ]
+  }
+}

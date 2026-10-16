@@ -1,0 +1,212 @@
+{
+  "updated_at": "2026-10-16T08:33:43.150231+00:00",
+  "state": "formal_running_all_three",
+  "formal_started": true,
+  "gateway": "https://yuzhiapi.xyz",
+  "model": "deepseek-v4.1-flash",
+  "reasoning_effort": "max",
+  "credentials": {
+    "installed_servers": [
+      "serverA",
+      "serverB",
+      "serverC"
+    ],
+    "storage": "server-local EnvironmentFile",
+    "mode": "0600",
+    "values_recorded": false
+  },
+  "skills_agent": {
+    "source_git_head": "38be40e000c6da91e6722bee76b527288c60634f",
+    "config_source": "skills-agent.toml",
+    "context_tokens": 524000,
+    "model_context_window": 524000,
+    "max_output_tokens": 131072,
+    "summary_output_tokens": 8192,
+    "effective_input_token_limit": 392928,
+    "budget_cli_overrides": false,
+    "native_config_and_installed_package_byte_validation": "passed"
+  },
+  "keyless_validation": {
+    "serverA": {
+      "server": "serverA",
+      "keyless_adapter_tests": {
+        "passed": true,
+        "output": "----------------------------------------------------------------------\nRan 20 tests in 0.042s\n\nOK"
+      },
+      "model_api_calls": 0,
+      "docker_running": 0,
+      "formal_started": false
+    },
+    "serverB": {
+      "server": "serverB",
+      "keyless_adapter_tests": {
+        "passed": true,
+        "output": "----------------------------------------------------------------------\nRan 20 tests in 0.042s\n\nOK"
+      },
+      "model_api_calls": 0,
+      "docker_running": 0,
+      "formal_started": false
+    },
+    "serverC": {
+      "server": "serverC",
+      "keyless_adapter_tests": {
+        "passed": true,
+        "output": "----------------------------------------------------------------------\nRan 20 tests in 0.042s\n\nOK"
+      },
+      "model_api_calls": 0,
+      "skills_native": {
+        "budget": {
+          "context_tokens": 524000,
+          "model_context_window": 524000,
+          "max_output_tokens": 131072,
+          "summary_output_tokens": 8192
+        },
+        "budget_cli_overrides": false,
+        "effective_input_token_limit": 392928,
+        "model": "deepseek-v4.1-flash",
+        "api_base": "https://yuzhiapi.xyz/v1",
+        "installed_package_files_byte_matched": 54,
+        "tokenizer_and_reserved_marker_counting": "passed"
+      },
+      "runtime_bundle_sha256": "c21f880cb717c066e58db343f01044db0f2eb818bbb633eafb8ee058b887b767",
+      "docker_running": 0,
+      "formal_started": false
+    }
+  },
+  "current_preparation_path": "/data/tb4/current-preparation",
+  "service": "tb4-formal-yuzhi.service",
+  "approval_created": true,
+  "notes": "The user authorized the new batch and all three formal services were started. Old formal/formal-v5 batches remain stopped and preserved. Startup verification is recorded separately.",
+  "independent_final_audit": {
+    "serverA": {
+      "all_passed": true,
+      "report": "docs/terminal-bench-4-evaluation/yuzhi-20261016/evidence/final-audit-serverA.json"
+    },
+    "serverB": {
+      "all_passed": true,
+      "report": "docs/terminal-bench-4-evaluation/yuzhi-20261016/evidence/final-audit-serverB.json"
+    },
+    "serverC": {
+      "all_passed": true,
+      "report": "docs/terminal-bench-4-evaluation/yuzhi-20261016/evidence/final-audit-serverC.json"
+    }
+  },
+  "formal_approval_created": true,
+  "experiment": "tb4-56-flash-max-yuzhi-20261016",
+  "formal_output": "/data/tb4/runs/formal-yuzhi-20261016",
+  "formal_start_times": {
+    "serverC": "2026-10-16T08:32:06.178295+00:00",
+    "serverA": "2026-10-16T08:28:49.775626+00:00",
+    "serverB": "2026-10-16T08:28:49.887747+00:00"
+  },
+  "native_synthetic_preflight": {
+    "serverA": {
+      "passed": true,
+      "reward": 1
+    },
+    "serverB": {
+      "passed": true,
+      "reward": 1
+    },
+    "serverC": {
+      "passed": true,
+      "reward": 1
+    }
+  },
+  "previous_blocker": {
+    "http_status": 502,
+    "type": "upstream_error",
+    "message": "Upstream access forbidden, please contact administrator",
+    "observed_on_minimal_chat_request": true
+  },
+  "previous_blocker_status": "Ordinary non-stream HTTP probes returned 502; all three actual native synthetic preflights passed. First skills preflight had retryable upstream502; unchanged fresh retry passed.",
+  "known_operational_observations": [
+    "First skills synthetic continuation exhausted its 300-second retry admission budget on upstream502 with Retry-After60. A fresh unchanged native run passed without retries; the upstream internal cause is unknown.",
+    "Ordinary HTTP probe failures do not predict the native clients performance; native I/O and verifier reward were validated instead."
+  ],
+  "formal_launch_records": [
+    "docs/terminal-bench-4-evaluation/yuzhi-20261016/evidence/formal-launch-start-20261016T162849.json",
+    "docs/terminal-bench-4-evaluation/yuzhi-20261016/evidence/formal-launch-start-20261016T163206.json"
+  ],
+  "ordinary_http_probe_history": {
+    "serverA": {
+      "server": "serverA",
+      "protocol": "responses",
+      "results": [
+        {
+          "endpoint": "https://yuzhiapi.xyz/v1/models",
+          "model": null,
+          "http_status": 200,
+          "requested_model_listed": true,
+          "elapsed_seconds": 0.326
+        },
+        {
+          "endpoint": "https://yuzhiapi.xyz/v1/responses",
+          "model": "deepseek-v4.1-flash",
+          "http_status": 502,
+          "elapsed_seconds": 1.903
+        }
+      ]
+    },
+    "serverB": {
+      "server": "serverB",
+      "protocol": "anthropic",
+      "results": [
+        {
+          "endpoint": "https://yuzhiapi.xyz/v1/models",
+          "model": null,
+          "http_status": 200,
+          "requested_model_listed": true,
+          "elapsed_seconds": 0.315
+        },
+        {
+          "endpoint": "https://yuzhiapi.xyz/v1/messages",
+          "model": "deepseek-v4.1-flash",
+          "http_status": 502,
+          "elapsed_seconds": 2.014
+        }
+      ]
+    },
+    "serverC": {
+      "server": "serverC",
+      "protocol": "chat",
+      "results": [
+        {
+          "endpoint": "https://yuzhiapi.xyz/v1/models",
+          "model": null,
+          "http_status": 200,
+          "requested_model_listed": true,
+          "elapsed_seconds": 0.388
+        },
+        {
+          "endpoint": "https://yuzhiapi.xyz/v1/chat/completions",
+          "model": "deepseek-v4.1-flash",
+          "http_status": 502,
+          "elapsed_seconds": 1.9
+        }
+      ]
+    }
+  },
+  "independent_startup_audit": {
+    "report": "docs/terminal-bench-4-evaluation/yuzhi-20261016/evidence/formal-launch-current.json",
+    "state": "formal_running_all_three",
+    "all_three_running": true,
+    "concurrency_per_server": 5,
+    "actual_agent_configs_verified": true,
+    "oom_events": 0,
+    "container_restarts": 0,
+    "admission_paused": false
+  },
+  "repository_reference_base": "repository root; /data/tb4 paths are historical remote locations",
+  "snapshot_scope": {
+    "state": "Startup verification at updated_at; this file is not a live status source.",
+    "keyless_validation": "Pre-launch checks. Their formal_started=false and docker_running=0 values describe that earlier phase and are preserved.",
+    "independent_final_audit": "Pre-launch readiness audit.",
+    "independent_startup_audit": "Post-launch verification; no running evaluation was queried during repository cleanup."
+  },
+  "trial_plan": "docs/terminal-bench-4-evaluation/yuzhi-20261016/trial-plan.jsonl",
+  "trial_plan_sha256": "23f74ddc696efa3bf92747e39444c309397c67d7a35bc60a8ba96dedc3aaed19",
+  "task_manifest": "docs/terminal-bench-4-evaluation/yuzhi-20261016/task-manifest.json",
+  "manifest_sha256": "7b4988053c57f56fc37f5bd32f3b598690624c1999a7c3939af0d4101db5a777",
+  "evidence_provenance": "docs/terminal-bench-4-evaluation/evidence-provenance.json"
+}

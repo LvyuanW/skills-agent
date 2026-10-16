@@ -1,0 +1,250 @@
+{
+  "kind": "formal_v5_readonly_resource_audit",
+  "at_utc": "2026-10-16T05:47:33.439708+00:00",
+  "formal_service": {
+    "MainPID": "979358",
+    "ActiveState": "active",
+    "SubState": "running"
+  },
+  "slot_counts": {
+    "pending": 163,
+    "running": 5
+  },
+  "active_reservations": {
+    "count": 5,
+    "cpus": 25,
+    "memory_mb": 107520,
+    "disk_mb": 51200
+  },
+  "running_attempts": [
+    {
+      "slot_id": "tb4-56-flash-max-v5__skills-agent__atrx-vep-crispr__r01",
+      "attempt": 1,
+      "pid": 981078,
+      "status": "running"
+    },
+    {
+      "slot_id": "tb4-56-flash-max-v5__skills-agent__atrx-vep-crispr__r02",
+      "attempt": 1,
+      "pid": 981079,
+      "status": "running"
+    },
+    {
+      "slot_id": "tb4-56-flash-max-v5__skills-agent__atrx-vep-crispr__r03",
+      "attempt": 1,
+      "pid": 981080,
+      "status": "running"
+    },
+    {
+      "slot_id": "tb4-56-flash-max-v5__skills-agent__batched-eval-parity__r01",
+      "attempt": 1,
+      "pid": 981081,
+      "status": "running"
+    },
+    {
+      "slot_id": "tb4-56-flash-max-v5__skills-agent__batched-eval-parity__r02",
+      "attempt": 1,
+      "pid": 981082,
+      "status": "running"
+    }
+  ],
+  "actual_running_projects": 5,
+  "actual_running_containers": 5,
+  "projects": [
+    {
+      "project": "attempt-1__1affcb9f95__env",
+      "slot_id": "tb4-56-flash-max-v5__skills-agent__atrx-vep-crispr__r01",
+      "task": "atrx-vep-crispr",
+      "repeat": 1,
+      "phase": "agent",
+      "containers": [
+        {
+          "id": "d3c72638fecfdfd80c9f7205480304029e1f7250b0251cce911617b852b6b1e8",
+          "project": "attempt-1__1affcb9f95__env",
+          "service": "main",
+          "running": true,
+          "pid": 983711,
+          "oom_killed": false,
+          "restart_count": 0,
+          "nano_cpus": 2000000000,
+          "memory": 4294967296,
+          "memory_swap": 4294967296,
+          "cgroup_parent": "tb4.slice",
+          "cgroup": "0::/tb4.slice/docker-d3c72638fecfdfd80c9f7205480304029e1f7250b0251cce911617b852b6b1e8.scope",
+          "network_ids": [
+            "4796ff916a50f6977d8222e019e062a9e9b5be46edda3d13c2197900bd25e460"
+          ],
+          "network_ips": [
+            "172.24.0.2"
+          ]
+        }
+      ],
+      "actual_cpu_caps_sum": 2,
+      "actual_memory_mb_caps_sum": 4096,
+      "network_ids": [
+        "4796ff916a50f6977d8222e019e062a9e9b5be46edda3d13c2197900bd25e460"
+      ],
+      "violations": []
+    },
+    {
+      "project": "attempt-1__f135a1b8aa__env",
+      "slot_id": "tb4-56-flash-max-v5__skills-agent__atrx-vep-crispr__r02",
+      "task": "atrx-vep-crispr",
+      "repeat": 2,
+      "phase": "agent",
+      "containers": [
+        {
+          "id": "170a17e7f899929f4846ed2c5e18218a990956a1f9a5895ed87a62b5ab6f2d65",
+          "project": "attempt-1__f135a1b8aa__env",
+          "service": "main",
+          "running": true,
+          "pid": 983710,
+          "oom_killed": false,
+          "restart_count": 0,
+          "nano_cpus": 2000000000,
+          "memory": 4294967296,
+          "memory_swap": 4294967296,
+          "cgroup_parent": "tb4.slice",
+          "cgroup": "0::/tb4.slice/docker-170a17e7f899929f4846ed2c5e18218a990956a1f9a5895ed87a62b5ab6f2d65.scope",
+          "network_ids": [
+            "53061286a14518a0dbef746aadddf61336bf415697cb21a07d6e184c9f45226a"
+          ],
+          "network_ips": [
+            "172.23.0.2"
+          ]
+        }
+      ],
+      "actual_cpu_caps_sum": 2,
+      "actual_memory_mb_caps_sum": 4096,
+      "network_ids": [
+        "53061286a14518a0dbef746aadddf61336bf415697cb21a07d6e184c9f45226a"
+      ],
+      "violations": []
+    },
+    {
+      "project": "attempt-1__916132e2f4__env",
+      "slot_id": "tb4-56-flash-max-v5__skills-agent__atrx-vep-crispr__r03",
+      "task": "atrx-vep-crispr",
+      "repeat": 3,
+      "phase": "agent",
+      "containers": [
+        {
+          "id": "3430c15c2cd323f87104609225ae00891ef936bc243287adac824af55eb6522a",
+          "project": "attempt-1__916132e2f4__env",
+          "service": "main",
+          "running": true,
+          "pid": 983834,
+          "oom_killed": false,
+          "restart_count": 0,
+          "nano_cpus": 2000000000,
+          "memory": 4294967296,
+          "memory_swap": 4294967296,
+          "cgroup_parent": "tb4.slice",
+          "cgroup": "0::/tb4.slice/docker-3430c15c2cd323f87104609225ae00891ef936bc243287adac824af55eb6522a.scope",
+          "network_ids": [
+            "871b4205e0dccf22c8e6069048d1bf922b79197e5eaa80b7e46c1bb9133649d6"
+          ],
+          "network_ips": [
+            "172.22.0.2"
+          ]
+        }
+      ],
+      "actual_cpu_caps_sum": 2,
+      "actual_memory_mb_caps_sum": 4096,
+      "network_ids": [
+        "871b4205e0dccf22c8e6069048d1bf922b79197e5eaa80b7e46c1bb9133649d6"
+      ],
+      "violations": []
+    },
+    {
+      "project": "attempt-1__5520cfdb6e__env",
+      "slot_id": "tb4-56-flash-max-v5__skills-agent__batched-eval-parity__r01",
+      "task": "batched-eval-parity",
+      "repeat": 1,
+      "phase": "agent",
+      "containers": [
+        {
+          "id": "cd72f9eb4050a45badced90f593088db73848c0b6cd284dbe9b47e2466ffa292",
+          "project": "attempt-1__5520cfdb6e__env",
+          "service": "main",
+          "running": true,
+          "pid": 982960,
+          "oom_killed": false,
+          "restart_count": 0,
+          "nano_cpus": 2000000000,
+          "memory": 4294967296,
+          "memory_swap": 4294967296,
+          "cgroup_parent": "tb4.slice",
+          "cgroup": "0::/tb4.slice/docker-cd72f9eb4050a45badced90f593088db73848c0b6cd284dbe9b47e2466ffa292.scope",
+          "network_ids": [
+            "782a631f4f6a3fa4d2fcd2326af59bbc9dce73e58ab710f3d6455e8f62995053"
+          ],
+          "network_ips": [
+            "172.21.0.2"
+          ]
+        }
+      ],
+      "actual_cpu_caps_sum": 2,
+      "actual_memory_mb_caps_sum": 4096,
+      "network_ids": [
+        "782a631f4f6a3fa4d2fcd2326af59bbc9dce73e58ab710f3d6455e8f62995053"
+      ],
+      "violations": []
+    },
+    {
+      "project": "attempt-1__d13f27ac37__env",
+      "slot_id": "tb4-56-flash-max-v5__skills-agent__batched-eval-parity__r02",
+      "task": "batched-eval-parity",
+      "repeat": 2,
+      "phase": "agent",
+      "containers": [
+        {
+          "id": "fb9e8fa5569c11b373c7ad90747f18c133f9bcb759998799220196aff7fdbe38",
+          "project": "attempt-1__d13f27ac37__env",
+          "service": "main",
+          "running": true,
+          "pid": 982963,
+          "oom_killed": false,
+          "restart_count": 0,
+          "nano_cpus": 2000000000,
+          "memory": 4294967296,
+          "memory_swap": 4294967296,
+          "cgroup_parent": "tb4.slice",
+          "cgroup": "0::/tb4.slice/docker-fb9e8fa5569c11b373c7ad90747f18c133f9bcb759998799220196aff7fdbe38.scope",
+          "network_ids": [
+            "906ece5eaf93cb0cf350e20171230d2b132f1861c903b0277a6d85fea0622929"
+          ],
+          "network_ips": [
+            "172.19.0.2"
+          ]
+        }
+      ],
+      "actual_cpu_caps_sum": 2,
+      "actual_memory_mb_caps_sum": 4096,
+      "network_ids": [
+        "906ece5eaf93cb0cf350e20171230d2b132f1861c903b0277a6d85fea0622929"
+      ],
+      "violations": []
+    }
+  ],
+  "violations": [],
+  "parent_boundary": {
+    "cpu.max": "3000000 100000",
+    "cpuset.cpus.effective": "2-31",
+    "memory.max": "123480309760",
+    "memory.swap.max": "0"
+  },
+  "memory_events": {
+    "low": 0,
+    "high": 0,
+    "max": 79214,
+    "oom": 0,
+    "oom_kill": 0
+  },
+  "disk": {
+    "free_gib": 223.30462646484375,
+    "free_ratio": 0.4547193772921635
+  },
+  "pause_admission": false,
+  "no_extra_api_calls_from_audit": true
+}

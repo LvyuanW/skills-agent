@@ -1,0 +1,147 @@
+{
+  "schema_version": "1.0",
+  "audit": "final_v5_code_and_systemd_unit_readonly_audit",
+  "report_generated_at_utc": "2026-10-16T05:15:59.754216+00:00",
+  "evidence_basis": "Previously completed read-only audit in this agent turn; saving this report performed no additional inspection or tests.",
+  "result": "passed_for_code_identity_and_launch_protections",
+  "remaining_substantive_findings": [],
+  "scope": {
+    "live_model_api_requests": 0,
+    "environment_starts": 0,
+    "formal_starts": 0,
+    "source_or_immutable_release_modified": false,
+    "credential_values_read_or_recorded": false,
+    "runtime_acceptance": "Separate 112-phase prewarm and nine-task five-project coexistence evidence remains required; this audit does not replace it."
+  },
+  "release": {
+    "metadata": "/Users/apple/dev/learn-ai-agent/output/terminal-bench4-preparation-20261016/remediation-v5/control-release.json",
+    "archive_sha256": "29df70a57b96688e75ffde1e9e6413eeebeb3b14b2f43bdae871c3fa9c58cce3",
+    "remote_control_path": "/data/tb4/releases/remediation-v5/control-29df70a57b96",
+    "local_source": "/Users/apple/dev/learn-ai-agent/skills-agent/adapters/harbor",
+    "local_file_count": 85,
+    "release_inventory_count": 85,
+    "local_file_mismatches": [],
+    "local_extra_source_files": [],
+    "archive_sha256_matches": true,
+    "archive_member_bytes_match_inventory": true
+  },
+  "protocol": {
+    "experiment": "tb4-56-flash-max-v5",
+    "resource_profile_sha256": "941220efd426c162265f95d2f1ec0cba4e4d40764fb80bfc656341c9d6763ce9",
+    "trial_plan_sha256": "57cfe5481df19537945016e7e2698594c624eec579ea762c5ad2a8b32e63c9c0",
+    "maximum_active_trials": 5,
+    "slot_cpus": 5,
+    "slot_memory_gib": 21,
+    "admission_cpus": 28,
+    "admission_memory_gib": 107,
+    "formal_output": "/data/tb4/runs/formal-v5",
+    "approval": "/data/tb4/plans/FORMAL_APPROVED-v5.json",
+    "manifest": "/data/tb4/plans/terminal-bench-4-evaluation-v5/task-manifest.json",
+    "trial_plan": "/data/tb4/plans/terminal-bench-4-evaluation-v5/trial-plan.jsonl",
+    "prewarm_summary": "/data/tb4/runs/prewarm-v5/summary.json",
+    "resource_probe_summary": "/data/tb4/runs/resource-probe-v5/summary.json"
+  },
+  "reviewed_protections": {
+    "matching_explicit_approval_required": true,
+    "host_resource_owner_lock": true,
+    "all_112_prewarm_phases_and_retained_image_ids_checked_before_database_creation": true,
+    "all_nine_sidecar_tasks_require_five_project_acceptance_before_database_creation": true,
+    "preparation_identity_includes_resource_profile_resources_environment_and_probe_sha": true,
+    "summary_bytes_and_replay_inputs_frozen_for_resume": true,
+    "prior_running_attempts_refuse_automatic_duplicate_resume": true,
+    "fixed_five_slot_profile_weights_and_active_count_enforced": true,
+    "disk_floor_and_reservation_failures_persist_pause": true,
+    "typed_provider_unclassified_execution_and_health_cleanup_failures_pause_and_drain": true,
+    "phase_guard_blocks_verifier_after_prior_environment_failure_or_residual_resources": true,
+    "post_harbor_cleanup_assertion_checks_project_containers_networks_and_volumes": true,
+    "systemd_sigint_mixed_infinite_stop_timeout_allows_active_workers_to_drain": true,
+    "legacy_formal_output_is_rejected_by_v5_entry": true
+  },
+  "servers": [
+    {
+      "server": "serverA",
+      "address": "47.91.21.152",
+      "agent": "codex",
+      "release_file_count": 85,
+      "verified_file_count": 85,
+      "file_mismatches": [],
+      "archive_sha256_matches": true,
+      "explicit_v5_paths_in_installed_and_loaded_unit": true,
+      "working_directory": "/data/tb4/releases/remediation-v5/control-29df70a57b96",
+      "pythonpath": [
+        "/data/tb4/releases/remediation-v5/control-29df70a57b96",
+        "/data/tb4/releases/remediation-v5/control-29df70a57b96/adapters/harbor"
+      ],
+      "formal_service": {
+        "unit": "tb4-formal-v5.service",
+        "active_state": "inactive",
+        "sub_state": "dead",
+        "main_pid": 0,
+        "kill_signal": "SIGINT",
+        "kill_mode": "mixed",
+        "timeout_stop": "infinity",
+        "restart": "no"
+      },
+      "formal_approval_exists": false,
+      "formal_database_exists": false,
+      "agent_config": "/data/tb4/config/v5/codex.json"
+    },
+    {
+      "server": "serverB",
+      "address": "8.216.13.123",
+      "agent": "claude-code",
+      "release_file_count": 85,
+      "verified_file_count": 85,
+      "file_mismatches": [],
+      "archive_sha256_matches": true,
+      "explicit_v5_paths_in_installed_and_loaded_unit": true,
+      "working_directory": "/data/tb4/releases/remediation-v5/control-29df70a57b96",
+      "pythonpath": [
+        "/data/tb4/releases/remediation-v5/control-29df70a57b96",
+        "/data/tb4/releases/remediation-v5/control-29df70a57b96/adapters/harbor"
+      ],
+      "formal_service": {
+        "unit": "tb4-formal-v5.service",
+        "active_state": "inactive",
+        "sub_state": "dead",
+        "main_pid": 0,
+        "kill_signal": "SIGINT",
+        "kill_mode": "mixed",
+        "timeout_stop": "infinity",
+        "restart": "no"
+      },
+      "formal_approval_exists": false,
+      "formal_database_exists": false,
+      "agent_config": "/data/tb4/config/v5/claude-code.json"
+    },
+    {
+      "server": "serverC",
+      "address": "8.216.11.161",
+      "agent": "skills-agent",
+      "release_file_count": 85,
+      "verified_file_count": 85,
+      "file_mismatches": [],
+      "archive_sha256_matches": true,
+      "explicit_v5_paths_in_installed_and_loaded_unit": true,
+      "working_directory": "/data/tb4/releases/remediation-v5/control-29df70a57b96",
+      "pythonpath": [
+        "/data/tb4/releases/remediation-v5/control-29df70a57b96",
+        "/data/tb4/releases/remediation-v5/control-29df70a57b96/adapters/harbor"
+      ],
+      "formal_service": {
+        "unit": "tb4-formal-v5.service",
+        "active_state": "inactive",
+        "sub_state": "dead",
+        "main_pid": 0,
+        "kill_signal": "SIGINT",
+        "kill_mode": "mixed",
+        "timeout_stop": "infinity",
+        "restart": "no"
+      },
+      "formal_approval_exists": false,
+      "formal_database_exists": false,
+      "agent_config": "/data/tb4/config/v5/skills-agent.json",
+      "skills_assets_path": "/data/tb4/releases/remediation-v5/skills-assets-d7e45e4ccd7d"
+    }
+  ]
+}

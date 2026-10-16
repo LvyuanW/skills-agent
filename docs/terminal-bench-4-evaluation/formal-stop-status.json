@@ -1,0 +1,206 @@
+{
+  "experiment": "tb4-56-flash-max-v4",
+  "state": "stopped_by_user",
+  "all_services_workers_containers_stopped": true,
+  "stop_started_china": "2026-10-16T11:48:41+08:00",
+  "stop_verified_china": "2026-10-16T11:49:08+08:00",
+  "stop": {
+    "servers": [
+      {
+        "address": "47.91.21.152",
+        "requested_at_utc": "2026-10-16T03:48:41.544109+00:00",
+        "reason": "User explicitly requested stopping evaluation",
+        "admission_paused": true,
+        "pre_stop_slot_counts": {
+          "complete": 1,
+          "pending": 166,
+          "running": 1
+        },
+        "interrupted_attempts": [
+          {
+            "slot_id": "tb4-56-flash-max-v4__codex__ctr-optimization__r02",
+            "attempt": 1,
+            "pid": 561992,
+            "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__codex__ctr-optimization__r02/attempt-1__dbcff396cc/controller-result.json",
+            "started": 1792111339.8509967
+          }
+        ],
+        "target_containers": [
+          {
+            "id": "38586a305aa99b25fe42fbd23cae8ab6aa0d563da1a72d4a339de8f3021bc5df",
+            "name": "attempt-1__dbcff396cc__env-main-1",
+            "project": "attempt-1__dbcff396cc__env"
+          },
+          {
+            "id": "b3a3b2844501c2046f275b350168cd2f0a798c6002465de563bfa6bc1e4e255e",
+            "name": "attempt-1__dbcff396cc__env-api-1",
+            "project": "attempt-1__dbcff396cc__env"
+          }
+        ],
+        "service_sigterm_returncode": 1,
+        "service": {
+          "MainPID": "0",
+          "ExecMainStatus": "0",
+          "ActiveState": "inactive",
+          "SubState": "dead"
+        },
+        "remaining_trial_containers": [],
+        "surviving_worker_pids": [],
+        "archived_approval_path": "/data/tb4/plans/FORMAL_APPROVED.stopped-20261016T034841Z.json",
+        "formal_approval_exists": false,
+        "raw_results_preserved": true,
+        "database_outcomes_modified": false,
+        "stopped_containers_preserved": true,
+        "verified_at_utc": "2026-10-16T03:49:08.164992+00:00",
+        "docker_stop_returncode": 0
+      },
+      {
+        "address": "8.216.13.123",
+        "requested_at_utc": "2026-10-16T03:48:41.554561+00:00",
+        "reason": "User explicitly requested stopping evaluation",
+        "admission_paused": true,
+        "pre_stop_slot_counts": {
+          "complete": 1,
+          "needs_review": 1,
+          "pending": 165,
+          "running": 1
+        },
+        "interrupted_attempts": [
+          {
+            "slot_id": "tb4-56-flash-max-v4__claude-code__ctr-optimization__r03",
+            "attempt": 1,
+            "pid": 623847,
+            "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__claude-code__ctr-optimization__r03/attempt-1__41795eaa36/controller-result.json",
+            "started": 1792119949.758471
+          }
+        ],
+        "target_containers": [
+          {
+            "id": "0921d1700bbe9b76110af4eebba0e3f8bac04a88ee069dd8f6affdbb498c8ba7",
+            "name": "attempt-1__41795eaa36__env-main-1",
+            "project": "attempt-1__41795eaa36__env"
+          },
+          {
+            "id": "005eed2ce02aa65fb125afc5ddef2e5f1e50dd3a7e39d90c2bcf6ec1b8ab7ca1",
+            "name": "attempt-1__41795eaa36__env-api-1",
+            "project": "attempt-1__41795eaa36__env"
+          }
+        ],
+        "service_sigterm_returncode": 1,
+        "service": {
+          "MainPID": "0",
+          "ExecMainStatus": "0",
+          "ActiveState": "inactive",
+          "SubState": "dead"
+        },
+        "remaining_trial_containers": [],
+        "surviving_worker_pids": [],
+        "archived_approval_path": "/data/tb4/plans/FORMAL_APPROVED.stopped-20261016T034841Z.json",
+        "formal_approval_exists": false,
+        "raw_results_preserved": true,
+        "database_outcomes_modified": false,
+        "stopped_containers_preserved": true,
+        "verified_at_utc": "2026-10-16T03:49:08.133743+00:00",
+        "docker_stop_returncode": 0
+      },
+      {
+        "address": "8.216.11.161",
+        "requested_at_utc": "2026-10-16T03:48:41.334128+00:00",
+        "reason": "User explicitly requested stopping evaluation",
+        "admission_paused": true,
+        "pre_stop_slot_counts": {
+          "complete": 4,
+          "pending": 163,
+          "running": 1
+        },
+        "interrupted_attempts": [
+          {
+            "slot_id": "tb4-56-flash-max-v4__skills-agent__cumulative-layout-shift__r02",
+            "attempt": 1,
+            "pid": 675351,
+            "result_path": "/data/tb4/runs/formal/tb4-56-flash-max-v4__skills-agent__cumulative-layout-shift__r02/attempt-1__7252b3678f/controller-result.json",
+            "started": 1792121075.9776978
+          }
+        ],
+        "target_containers": [
+          {
+            "id": "587d1fd71b02ccf1053f37e4ae67935b4a4f1646ea64c9db0d6f73d95f5b93af",
+            "name": "attempt-1__7252b3678f__env-main-1",
+            "project": "attempt-1__7252b3678f__env"
+          },
+          {
+            "id": "381f5de323d5b53ea4737b8fc8ab4a159a3c85046a52109961745a4f46affce9",
+            "name": "attempt-1__7252b3678f__env-barber-shop-data-backend-1",
+            "project": "attempt-1__7252b3678f__env"
+          }
+        ],
+        "service_sigterm_returncode": 1,
+        "service": {
+          "MainPID": "0",
+          "ExecMainStatus": "0",
+          "ActiveState": "inactive",
+          "SubState": "dead"
+        },
+        "remaining_trial_containers": [],
+        "surviving_worker_pids": [],
+        "archived_approval_path": "/data/tb4/plans/FORMAL_APPROVED.stopped-20261016T034841Z.json",
+        "formal_approval_exists": false,
+        "raw_results_preserved": true,
+        "database_outcomes_modified": false,
+        "stopped_containers_preserved": true,
+        "verified_at_utc": "2026-10-16T03:49:08.302584+00:00",
+        "docker_stop_returncode": 0
+      }
+    ]
+  },
+  "natural_anomalous_attempts": 5,
+  "manually_interrupted_attempts": 3,
+  "raw_results_or_database_outcomes_changed": false,
+  "api_requests_by_diagnosis": 0,
+  "codex_wait_observation": {
+    "last_update_before_stop_china": "2026-10-16T11:47:09+08:00",
+    "resumed_after_long_wait": true,
+    "stall_confirmed": false
+  },
+  "cases": [
+    {
+      "agent": "claude-code",
+      "task": "ctr-optimization",
+      "repeat": 2,
+      "cause": "Cloudflare/gateway-origin HTTP 524",
+      "classification": "needs_review",
+      "deeper_cause": "undetermined"
+    },
+    {
+      "agent": "skills-agent",
+      "task": "ctr-optimization",
+      "repeat": 1,
+      "cause": "Missing ps/procps -> supervisor startup failure -> stale starting record -> ProcessScope.close cleanup failure"
+    },
+    {
+      "agent": "skills-agent",
+      "task": "ctr-optimization",
+      "repeat": 2,
+      "cause": "HTTP 200 SSE upstream_stream_read_error/upstream_error; secondary missing-ps cleanup failure"
+    },
+    {
+      "agent": "skills-agent",
+      "task": "ctr-optimization",
+      "repeat": 3,
+      "cause": "Gateway HTTP 502; secondary missing-ps cleanup failure"
+    },
+    {
+      "agent": "skills-agent",
+      "task": "cumulative-layout-shift",
+      "repeat": 1,
+      "cause": "Gateway HTTP 502"
+    }
+  ],
+  "cross_cutting_gaps": [
+    "skills-agent runtime OS dependency setup did not provide ps/procps; Python import matrix did not cover native background helpers.",
+    "Frozen native retry taxonomy omitted HTTP 502 and upstream streaming error codes, classifying them nonretryable.",
+    "Wrapped NonZeroAgentExitCodeError hid provider errors from the controller systemic-error allowlist; verifier reward 0 then consumed the slot as complete."
+  ],
+  "source_origin_cause_not_determined": "Available evidence cannot distinguish origin load, inference duration or network fault.",
+  "interruption_note": "The three in-flight database rows remain unfinalized for explicit reconciliation; USER_STOPPED.json identifies manual cancellation, preventing capability misinterpretation."
+}

@@ -1,0 +1,65 @@
+{
+  "experiment": "tb4-56-flash-max-v5",
+  "state": "formal_running",
+  "authorized_by_user": "启动正式评测",
+  "started_at": "2026-10-16T13:46:43+08:00",
+  "snapshot_at_utc": "2026-10-16T05:49:31.781565+00:00",
+  "planned_slots": 504,
+  "active_slots_at_snapshot": 15,
+  "completed_slots_at_snapshot": 0,
+  "maximum_concurrent_per_server": 5,
+  "model": "deepseek-v4-1-flash-260910",
+  "primary_and_subagent_effort": "max",
+  "skills_runtime": "d7e45e4ccd7d4627f679c745fa05672042d95b92d90c11629e0b57308d038d3c",
+  "old_v4_results_preserved": true,
+  "launch_evidence": {
+    "formal-launch-precheck.json": "evidence/formal-launch-precheck.json",
+    "formal-launch-approve.json": "evidence/formal-launch-approve.json",
+    "formal-launch-start.json": "evidence/formal-launch-start.json",
+    "formal-launch-status.json": "evidence/formal-launch-status.json",
+    "formal-start-resource-audit-summary.json": "evidence/formal-start-resource-audit-summary.json",
+    "formal-codex-startup-audit.json": "evidence/formal-codex-startup-audit.json",
+    "preservation-post-launch.json": "evidence/preservation-post-launch.json",
+    "formal-start-resource-before-serverA.json": "evidence/formal-start-resource-before-serverA.json",
+    "formal-start-resource-after-serverA.json": "evidence/formal-start-resource-after-serverA.json",
+    "formal-start-resource-before-serverB.json": "evidence/formal-start-resource-before-serverB.json",
+    "formal-start-resource-after-serverB.json": "evidence/formal-start-resource-after-serverB.json",
+    "formal-start-resource-before-serverC.json": "evidence/formal-start-resource-before-serverC.json",
+    "formal-start-resource-after-serverC.json": "evidence/formal-start-resource-after-serverC.json"
+  },
+  "servers": [
+    {
+      "server": "serverA",
+      "agent": "codex",
+      "address": "47.91.21.152",
+      "slots_at_snapshot": {
+        "pending": 163,
+        "running": 5
+      },
+      "pause_admission": false,
+      "native_model_activity_confirmed": true
+    },
+    {
+      "server": "serverB",
+      "agent": "claude-code",
+      "address": "8.216.13.123",
+      "slots_at_snapshot": {
+        "pending": 163,
+        "running": 5
+      },
+      "pause_admission": false,
+      "native_model_activity_confirmed": true
+    },
+    {
+      "server": "serverC",
+      "agent": "skills-agent",
+      "address": "8.216.11.161",
+      "slots_at_snapshot": {
+        "pending": 163,
+        "running": 5
+      },
+      "pause_admission": false,
+      "native_model_activity_confirmed": true
+    }
+  ]
+}

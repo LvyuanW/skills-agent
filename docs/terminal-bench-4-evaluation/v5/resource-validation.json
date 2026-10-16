@@ -1,0 +1,37 @@
+{
+  "state": "passed",
+  "verified_at_utc": "2026-10-16T05:30:40.799668+00:00",
+  "groups_passed": 27,
+  "groups_failed": 0,
+  "projects_per_group": 5,
+  "project_environments_checked": 135,
+  "model_calls": 0,
+  "official_verifier_or_solutions_run": false,
+  "scope": "Bounded environment, cap, health, network/file isolation and cleanup checks; not proof of all possible task workload peaks.",
+  "servers": [
+    {
+      "server": "serverA",
+      "groups_passed": 9,
+      "groups_failed": 0,
+      "projects_per_group": 5,
+      "summary": "evidence/resource-probe-summary-serverA.json",
+      "acceptance": "evidence/resource-acceptance-serverA.json"
+    },
+    {
+      "server": "serverB",
+      "groups_passed": 9,
+      "groups_failed": 0,
+      "projects_per_group": 5,
+      "summary": "evidence/resource-probe-summary-serverB.json",
+      "acceptance": "evidence/resource-acceptance-serverB.json"
+    },
+    {
+      "server": "serverC",
+      "groups_passed": 9,
+      "groups_failed": 0,
+      "projects_per_group": 5,
+      "summary": "evidence/resource-probe-summary-serverC.json",
+      "acceptance": "evidence/resource-acceptance-serverC.json"
+    }
+  ]
+}

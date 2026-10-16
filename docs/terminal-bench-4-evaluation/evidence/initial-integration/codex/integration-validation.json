@@ -1,0 +1,212 @@
+{
+  "checked_at_local": "2026-10-16 Asia/Shanghai",
+  "current_catalog_and_subagent_validation": "catalog-and-subagent-validation.json",
+  "live_synthetic_attempt_catalog_sha256": "bce20f679495809f4fa6e48672b6dcbab84b6adff5251890b6e6a21eddb9c12f",
+  "server": "47.91.21.152",
+  "cli_version": "0.149.1",
+  "gateway_base": "https://rehdasu.cn/v1",
+  "model": "deepseek-flash",
+  "reasoning_effort": "max",
+  "web_search": "disabled",
+  "formal_trials_started": false,
+  "live_gateway_preflight_passed": false,
+  "offline_toolchain": {
+    "kind": "offline_mock_only",
+    "live_provider_calls": 0,
+    "passed": true,
+    "exit_code": 0,
+    "request_metadata": [
+      {
+        "model": "deepseek-flash",
+        "reasoning": {
+          "effort": "max"
+        },
+        "contains_image": false,
+        "output_types": [
+          "message"
+        ]
+      },
+      {
+        "model": "deepseek-flash",
+        "reasoning": {
+          "effort": "max"
+        },
+        "contains_image": false,
+        "output_types": [
+          "function_call",
+          "function_call_output",
+          "message"
+        ]
+      },
+      {
+        "model": "deepseek-flash",
+        "reasoning": {
+          "effort": "max"
+        },
+        "contains_image": true,
+        "output_types": [
+          "function_call",
+          "function_call_output",
+          "message"
+        ]
+      },
+      {
+        "model": "deepseek-flash",
+        "reasoning": {
+          "effort": "max"
+        },
+        "contains_image": true,
+        "output_types": [
+          "custom_tool_call",
+          "custom_tool_call_output",
+          "function_call",
+          "function_call_output",
+          "message"
+        ]
+      }
+    ],
+    "fixture_png_sha256": "becf0cf30d6978325d9ccdea315923e2dbbf7e591c2857b92b5f82e41957bb98"
+  },
+  "live_synthetic_attempts": [
+    {
+      "path": "/data/tb4/runs/preflight/codex/synthetic-20261015T175630/controller-result.json",
+      "label": "official_origin_before_gateway_confirmation",
+      "exception_type": "AgentAuthenticationError",
+      "verifier_result": {
+        "rewards": {
+          "reward": 0
+        }
+      },
+      "audit_summary": {
+        "server_audit_log": "/data/tb4/logs/codex-smoke-requests.jsonl",
+        "requests_count": 6,
+        "status_counts": {
+          "401": 6
+        },
+        "usage_records": 0,
+        "sample_request": {
+          "event": "request",
+          "upstream_endpoint": "https://api.deepseek.com/responses",
+          "model": "deepseek-flash",
+          "stream": true,
+          "reasoning": {
+            "effort": "max"
+          },
+          "tools": [
+            {
+              "type": "function",
+              "name": "exec_command"
+            },
+            {
+              "type": "function",
+              "name": "write_stdin"
+            },
+            {
+              "type": "function",
+              "name": "update_plan"
+            },
+            {
+              "type": "function",
+              "name": "request_user_input"
+            },
+            {
+              "type": "custom",
+              "name": "apply_patch"
+            },
+            {
+              "type": "function",
+              "name": "view_image"
+            },
+            {
+              "type": "namespace",
+              "name": "collaboration"
+            },
+            {
+              "type": "function",
+              "name": "get_goal"
+            },
+            {
+              "type": "function",
+              "name": "create_goal"
+            },
+            {
+              "type": "function",
+              "name": "update_goal"
+            }
+          ],
+          "contains_image": false
+        }
+      }
+    },
+    {
+      "path": "/data/tb4/runs/preflight/codex/synthetic-20261015T180355/controller-result.json",
+      "label": "user_confirmed_gateway",
+      "exception_type": "ApiOverloadedError",
+      "verifier_result": {
+        "rewards": {
+          "reward": 0
+        }
+      },
+      "audit_summary": {
+        "server_audit_log": "/data/tb4/logs/codex-gateway-smoke-requests.jsonl",
+        "requests_count": 30,
+        "status_counts": {
+          "503": 30
+        },
+        "usage_records": 0,
+        "sample_request": {
+          "event": "request",
+          "upstream_endpoint": "https://rehdasu.cn/v1/responses",
+          "model": "deepseek-flash",
+          "stream": true,
+          "reasoning": {
+            "effort": "max"
+          },
+          "tools": [
+            {
+              "type": "function",
+              "name": "exec_command"
+            },
+            {
+              "type": "function",
+              "name": "write_stdin"
+            },
+            {
+              "type": "function",
+              "name": "update_plan"
+            },
+            {
+              "type": "function",
+              "name": "request_user_input"
+            },
+            {
+              "type": "custom",
+              "name": "apply_patch"
+            },
+            {
+              "type": "function",
+              "name": "view_image"
+            },
+            {
+              "type": "namespace",
+              "name": "collaboration"
+            },
+            {
+              "type": "function",
+              "name": "get_goal"
+            },
+            {
+              "type": "function",
+              "name": "create_goal"
+            },
+            {
+              "type": "function",
+              "name": "update_goal"
+            }
+          ],
+          "contains_image": false
+        }
+      }
+    }
+  ]
+}

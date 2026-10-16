@@ -1,0 +1,94 @@
+{
+  "kind": "v5_environment_resource_acceptance",
+  "time_utc": "2026-10-16T05:29:29.290638+00:00",
+  "prewarm": {
+    "passed": 112,
+    "failed": 0,
+    "retained_image_phases": 112,
+    "fresh_aliases_verified": true,
+    "summary_sha256": "fc9ceca43e9144003f3e68674e8e1f3ed8a166de9ad1b643843bb5e87aacf8e2",
+    "abi_render_tasks": 3
+  },
+  "source_commit": "452bf305c6daa62fc59061d22133a7cbc7c1572e",
+  "source_tasks_clean": true,
+  "manifest_sha256": "7b4988053c57f56fc37f5bd32f3b598690624c1999a7c3939af0d4101db5a777",
+  "preparation_identity": {
+    "resource_profile_sha256": "941220efd426c162265f95d2f1ec0cba4e4d40764fb80bfc656341c9d6763ce9",
+    "resource_enforcer_sha256": "5875c3641ebcc5747ea2786c2ee2a28241237545354fb1a34d6eeffb31930a34",
+    "dependency_profile_sha256": "df8b95de0baab4edcb7a8a04fee47023e3ad8446e8e28b8f3d7bb1136c041d14",
+    "environment_adapter_sha256": "eeec0559eb2651c5a04029b112042fe1a0acabc928df5eb2d51edcb35723f3d8",
+    "runtime_probe_sha256": "fd9e7bf855fc6f3214a20e4e01ae47486f54662f071bdc4df93e69e72e98dc06",
+    "resource_probe_sha256": "43cd77abe68550c8e0a6aa14fbbfdbe79f4a9cecdec0a3728a35c8fc3e9f9abf"
+  },
+  "resource_probe": {
+    "status": "passed",
+    "summary_sha256": "7c843231b2c231b4c8cdc699ee31e6677364a9a32da4b1e893a3c301596f1d16"
+  },
+  "services": {
+    "tb4-prewarm-v5.service": {
+      "ExecMainStatus": "0",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    "tb4-resource-probe-v5.service": {
+      "ExecMainStatus": "0",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    "tb4-formal.service": {
+      "ExecMainStatus": "0",
+      "EnvironmentFiles": "/data/tb4/secrets/deepseek.env (ignore_errors=no)",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    "tb4-formal-v5.service": {
+      "ExecMainStatus": "0",
+      "EnvironmentFiles": "/data/tb4/secrets/deepseek.env (ignore_errors=no)",
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    }
+  },
+  "disk": {
+    "free_gib": 224.8926658630371,
+    "total_gib": 491.082275390625,
+    "free_ratio": 0.45795313154837275
+  },
+  "memory_events": {
+    "low": 0,
+    "high": 0,
+    "max": 79214,
+    "oom": 0,
+    "oom_kill": 0
+  },
+  "residual_preparation_project_resources": {
+    "containers": [],
+    "networks": [],
+    "volumes": []
+  },
+  "no_formal_v5_db": true,
+  "no_model_calls": true,
+  "controller_tree_sha256": "88a4c1f014c732cdc5365c3a9766a2493e8a0cc81c3882f2082459f047e6f4d7",
+  "release_control_root": "/data/tb4/releases/remediation-v5/control-29df70a57b96",
+  "release_control_tree_sha256": "e4a25c6865344092b464dfef9c99419a7b81960883437503225bd2b9c451abdb",
+  "no_formal_v5_approval": true,
+  "v5_plan_approval_files": [],
+  "formal_worker_pids": [],
+  "parent_boundary": {
+    "cpu.max": "3000000 100000",
+    "cpuset.cpus.effective": "2-31",
+    "memory.max": "123480309760",
+    "memory.swap.max": "0"
+  },
+  "parent_memory_gib": {
+    "anon": 0.17573928833007812,
+    "file": 106.41339111328125,
+    "inactive_file": 92.10125350952148,
+    "active_file": 14.3121337890625,
+    "slab": 5.814086854457855
+  },
+  "frozen_v5_plan": {
+    "sha256": "57cfe5481df19537945016e7e2698594c624eec579ea762c5ad2a8b32e63c9c0",
+    "slots": 504,
+    "pending": 504
+  }
+}
