@@ -41,29 +41,31 @@ class ProviderClassificationTests(unittest.TestCase):
         categories = {
             400: "invalid_request", 401: "authentication", 402: "insufficient_balance",
             403: "permission", 404: "not_found", 422: "invalid_request", 429: "rate_limited",
-            500: "server_error", 503: "service_unavailable",
+            500: "server_error", 502: "bad_gateway", 503: "service_unavailable",
+            504: "gateway_timeout", 524: "gateway_timeout",
         }
         for status in range(400, 600):
             with self.subTest(status=status):
                 failure = self.error(status=status)
                 self.assertEqual(failure.http_status, status)
                 self.assertEqual(failure.category, categories.get(status, "http_error"))
-                self.assertEqual(failure.retryable, status in {429, 500, 503})
+                self.assertEqual(failure.retryable, status in {429, 500, 502, 503, 504, 524})
 
     def test_http_status_precedes_body_codes_and_terminal_reason(self):
-        for status, expected in ((401, "authentication"), (502, "http_error"), (503, "service_unavailable")):
+        for status, expected in ((401, "authentication"), (501, "http_error"), (502, "bad_gateway"),
+                                 (503, "service_unavailable"), (504, "gateway_timeout"), (524, "gateway_timeout")):
             with self.subTest(status=status):
                 failure = self.error(status=status, error={"code": "429", "type": "overloaded_error"},
                                      finish_reason="length")
                 self.assertEqual(failure.category, expected)
-                self.assertEqual(failure.retryable, status == 503)
+                self.assertEqual(failure.retryable, status in {502, 503, 504, 524})
                 self.assertEqual(failure.provider_code, "429")
                 self.assertEqual(failure.provider_type, "overloaded_error")
                 self.assertEqual(failure.finish_reason, "length")
 
     def test_both_http_transports_expose_error_fields_without_retrying(self):
         for transport in (post_json, post_stream):
-            for status in (400, 401, 402, 422, 429, 500, 503):
+            for status in (400, 401, 402, 422, 429, 500, 502, 503, 504, 524):
                 with self.subTest(transport=transport.__name__, status=status):
                     body = io.BytesIO(b'{"error":{"code":"provider_code","type":"provider_type"}}')
                     failure = HTTPError("https://api.example.test/v1/messages", status, "failure", {}, body)
@@ -76,7 +78,7 @@ class ProviderClassificationTests(unittest.TestCase):
                     self.assertEqual(caught.exception.http_status, status)
                     self.assertEqual(caught.exception.provider_code, "provider_code")
                     self.assertEqual(caught.exception.provider_type, "provider_type")
-                    self.assertEqual(caught.exception.retryable, status in {429, 500, 503})
+                    self.assertEqual(caught.exception.retryable, status in {429, 500, 502, 503, 504, 524})
 
     def test_structured_error_allowlist_for_http_200_and_missing_status(self):
         cases = (
@@ -86,7 +88,10 @@ class ProviderClassificationTests(unittest.TestCase):
             ("code", "500", "server_error"), ("type", "server_error", "server_error"),
             ("type", "api_error", "server_error"),
             ("code", "internal_server_error", "server_error"),
+            ("code", 502, "bad_gateway"), ("code", "502", "bad_gateway"),
             ("code", "503", "service_unavailable"),
+            ("code", 504, "gateway_timeout"), ("code", "504", "gateway_timeout"),
+            ("code", 524, "gateway_timeout"), ("code", "524", "gateway_timeout"),
             ("type", "overloaded_error", "service_unavailable"),
             ("code", "service_unavailable", "service_unavailable"),
             ("code", "service_unavailable_error", "service_unavailable"),
@@ -109,7 +114,7 @@ class ProviderClassificationTests(unittest.TestCase):
                 self.assertFalse(failure.retryable)
 
     def test_unknown_errors_never_use_message_substrings(self):
-        prose = "HTTP 503 rate_limit_error server_error overloaded_error 服务繁忙 retry soon"
+        prose = "HTTP 502 503 504 524 rate_limit_error server_error overloaded_error 服务繁忙 retry soon"
         failures = (
             ProviderError(prose), self.error(body=prose),
             self.error(error={"code": "new_code", "type": "new_type", "message": prose}),

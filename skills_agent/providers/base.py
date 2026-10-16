@@ -15,9 +15,12 @@ DEFAULT_MAX_OUTPUT_TOKENS = 32768
 _HTTP_CATEGORIES = {
     400: "invalid_request", 401: "authentication", 402: "insufficient_balance",
     403: "permission", 404: "not_found", 422: "invalid_request",
-    429: "rate_limited", 500: "server_error", 503: "service_unavailable",
+    429: "rate_limited", 500: "server_error", 502: "bad_gateway",
+    503: "service_unavailable", 504: "gateway_timeout", 524: "gateway_timeout",
 }
-_RETRYABLE_CATEGORIES = frozenset({"connection", "rate_limited", "server_error", "service_unavailable"})
+_RETRYABLE_CATEGORIES = frozenset({
+    "connection", "rate_limited", "server_error", "bad_gateway", "service_unavailable", "gateway_timeout",
+})
 # Match structured codes/types exactly. Human-readable messages are not a
 # contract and must never turn an otherwise permanent failure into a retry.
 _ERROR_CATEGORIES = {
