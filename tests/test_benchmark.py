@@ -260,7 +260,7 @@ class BenchmarkTests(unittest.TestCase):
                                    capture_output=True, timeout=5)
 
     @unittest.skipUnless(os.name == "posix" and hasattr(os, "WNOWAIT"), "Managed POSIX processes")
-    def test_cleanup_failure_is_logged_and_cannot_report_benchmark_success(self):
+    def test_supervision_failure_blocks_final_reply_then_allows_model_to_recover(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "workspace").mkdir()
@@ -271,14 +271,29 @@ class BenchmarkTests(unittest.TestCase):
             corrupt = ("import json,os,pathlib; p=next((pathlib.Path(os.environ['SKILLS_AGENT_PROCESS_SCOPE'])/'runs').glob('*.json')); "
                        "r=json.loads(p.read_text()); r['supervisor_identity']={'started':'incorrect','command':'incorrect'}; p.write_text(json.dumps(r))")
             script = start + "\n" + shlex.join([sys.executable, "-c", corrupt])
-            endpoint, _ = self.run_server(lambda count: self.response(script) if count == 1 else self.response())
+            stop = shlex.join([sys.executable, str(HELPER), "stop", "--state-dir", str(state),
+                               "--name", "writer", "--grace", ".1", "--timeout", "3"])
+            endpoint, requests = self.run_server(lambda count: self.response(script) if count == 1 else
+                                                self.response(stop) if count == 3 else self.response())
             try:
                 result = subprocess.run(self.command(root, endpoint), capture_output=True, text=True, timeout=10)
-                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                # The second response attempts to finish, but the retained gate
+                # re-engages the model for an exact stop before final delivery.
+                self.assertEqual(len(requests), 4)
                 events = [json.loads(line) for line in (root / "logs/session/events.jsonl").read_text().splitlines()]
-                self.assertEqual(events[-1]["type"], "error")
-                self.assertIn("cleanup was not confirmed", events[-1]["message"])
-                self.assertIn("cleanup", result.stdout)
+                messages = [event["message"] for event in events if event["type"] == "message"]
+                uncertain = [message for message in messages
+                             if message.get("runtime_event") == "background_job_uncertainty"]
+                self.assertGreaterEqual(len(uncertain), 2)
+                self.assertIn("ownership", json.dumps(uncertain[0]))
+                completed = [message for message in messages
+                             if message.get("runtime_event") == "background_job_result"]
+                self.assertEqual(len(completed), 1)
+                observation = json.loads(completed[0]["content"][1]["text"])
+                self.assertEqual(observation["state"], "stopped")
+                self.assertTrue(observation["cleanup_confirmed"])
+                self.assertFalse(any(event["type"] == "error" for event in events))
             finally:
                 if (state / "writer.json").exists():
                     stopped = subprocess.run([sys.executable, str(HELPER), "stop", "--state-dir", str(state),

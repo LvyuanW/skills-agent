@@ -48,10 +48,11 @@
 | [feedback 跨回合反馈示例](skill-feedback-loop.md) | `builtin_skills/feedback/references/feedback-loop.md` | v4 |
 | [feedback 验收检查参考](skill-feedback-acceptance.md) | `builtin_skills/feedback/references/acceptance-checks.md` | v2 |
 | [workspace 定位提取参考](skill-workspace-extraction.md) | `builtin_skills/workspace/references/extraction.md` | v2 |
-| [后台任务技能](skill-background-tasks.md) | `builtin_skills/background-tasks/SKILL.md` | v4 |
-| [process-management 技能](skill-process-management.md) | `builtin_skills/process-management/SKILL.md` | v6 |
+| [后台任务技能](skill-background-tasks.md) | `builtin_skills/background-tasks/SKILL.md` | v7 |
+| [process-management 技能](skill-process-management.md) | `builtin_skills/process-management/SKILL.md` | v8 |
 | [process-management 跨回合参考](skill-process-management-across-turns.md) | `builtin_skills/process-management/references/across-turns.md` | v3 |
 | [后台作业完成观察](background-job-result.md) | `BackgroundResults.drain()` 的运行时结果包装 | v1 |
+| [后台作业监管未确认观察](background-job-uncertainty.md) | `BackgroundResults._report_uncertainty()` 的可恢复错误包装 | v1 |
 | [反馈图片来源标签](feedback-image-label.md) | `feedback_content()` 的源文件与会话快照标签 | v2 |
 | [图片引用](image-reference.md) | `images.image_reference()` 与工作上下文的图片 URL/事件引用 | v1 |
 | [工具附件观察包装](tool-feedback-observation.md) | 请求中工具产生的只读观察与附件来源标签 | v1 |

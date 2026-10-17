@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 
 from .base import (
     DEFAULT_MAX_OUTPUT_TOKENS, HTTPProvider, ProviderError, ProviderConnectionError, ProviderOutputLimitError,
-    blocks, encoded_file, parse_arguments, input_token_count, post_json,
+    blocks, encoded_file, input_token_count, post_json,
     post_stream, stream_ended, stream_error, validate_calls, request_messages,
 )
 from .responses import ResponsesMixin
@@ -285,7 +285,6 @@ class OpenAIProvider(ResponsesMixin, HTTPProvider):
                 if call["type"] != "function":
                     raise ProviderError("Unsupported OpenAI tool call type")
                 function = call["function"]
-                parse_arguments(function["arguments"])
                 calls.append({"id": call["id"], "name": function["name"],
                               "arguments": function["arguments"]})
             if bool(calls) != (reason == "tool_calls"):

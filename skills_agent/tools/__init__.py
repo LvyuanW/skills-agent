@@ -103,13 +103,19 @@ class ToolRegistry:
         }}
 
     def execute(self, name: str, arguments: str) -> str:
+        executed = False
         try:
             schema = next((item for item in self.schemas if item["name"] == name), None)
             if schema is None:
                 raise ValueError(f"Unknown tool: {name}")
-            values = json.loads(arguments)
+            try:
+                values = json.loads(arguments)
+            except (ValueError, TypeError, RecursionError):
+                raise ValueError("Tool arguments must be valid JSON; correct them and call the tool again") from None
+            if not isinstance(values, dict):
+                raise ValueError("Tool arguments must be a JSON object; correct them and call the tool again")
             expected, allowed = schema["parameters"]["required"], schema["parameters"]["properties"]
-            if not isinstance(values, dict) or not set(expected) <= set(values) <= set(allowed):
+            if not set(expected) <= set(values) <= set(allowed):
                 raise ValueError(f"Expected arguments: {', '.join(expected)}")
             for key, value in values.items():
                 field = allowed[key]
@@ -138,6 +144,7 @@ class ToolRegistry:
                 raise ValueError("background_lifecycle=service requires run_in_background=true")
             try:
                 self.on_activity({"kind": "tool", "name": name, "task_name": values["name"]})
+                executed = True
                 if name == "shell":
                     environment = None
                     if self.process_scope is not None:
@@ -177,4 +184,6 @@ class ToolRegistry:
             raise
         except Exception as exc:
             result = {"error": str(exc)}
+            if not executed:
+                result["executed"] = False
         return json.dumps(result, ensure_ascii=False)

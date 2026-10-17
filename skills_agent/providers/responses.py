@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .base import (
     ProviderError, ProviderConnectionError, ProviderOutputLimitError, blocks,
-    encoded_file, parse_arguments, post_stream, stream_ended, stream_error, received_text, validate_calls, request_messages,
+    encoded_file, post_stream, stream_ended, stream_error, received_text, validate_calls, request_messages,
 )
 
 
@@ -45,7 +45,8 @@ def _normalized(output):
                 if block.get('text'):
                     content.append({'type': 'thinking', 'thinking': block['text']})
         elif kind == 'function_call':
-            parse_arguments(item['arguments'])
+            if not isinstance(item['arguments'], str):
+                raise ProviderError('Responses tool arguments must be a string')
             calls.append({'id': item['call_id'], 'name': item['name'], 'arguments': item['arguments']})
         else:
             raise ProviderError(f'Unsupported Responses output item: {kind}')

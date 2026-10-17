@@ -71,7 +71,7 @@ class BackgroundJobObservationTests(unittest.TestCase):
             self.monitor.refresh()
         first = self.events[-1]["jobs"][0]
         ended = datetime.fromisoformat(record["started_at"]) + timedelta(seconds=8)
-        record.update(state="exited", returncode=7, ended_at=ended.isoformat())
+        record.update(state="exited", returncode=7, ended_at=ended.isoformat(), cleanup_confirmed=True)
         path.write_text(json.dumps(record))
         self.monitor.refresh()
         self.monitor.refresh()
@@ -84,7 +84,7 @@ class BackgroundJobObservationTests(unittest.TestCase):
         path, record = self.record()
 
         def exited(records):
-            latest = {**record, "state": "exited", "returncode": 0,
+            latest = {**record, "state": "exited", "returncode": 0, "cleanup_confirmed": True,
                       "ended_at": datetime.now(timezone.utc).isoformat()}
             path.write_text(json.dumps(latest))
             return {}

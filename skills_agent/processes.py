@@ -11,6 +11,7 @@ import stat
 import subprocess
 import sys
 import threading
+import time
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -101,61 +102,224 @@ def _strict_registration(path):
             if record.get("returncode") is None:
                 raise ValueError("terminal return code is unavailable")
         return record
-    except (OSError, ValueError, TypeError, KeyError, AttributeError, OverflowError) as exc:
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, OverflowError, RecursionError) as exc:
         raise BackgroundJobError(f"Cannot verify background job {path}: {exc}") from exc
 
 
-def observe_background_jobs(scope_paths: list[Path]) -> list[dict]:
-    """Strict execution observations; unlike the UI, uncertainty is an error."""
-    records = []
+def observe_background_jobs(scope_paths: list[Path], *, tolerate_unconfirmed=False) -> list[dict]:
+    """Verify jobs; the Agent can retain uncertainty as observable pending work."""
+    records, jobs, valid_scopes = [], [], []
     for original_scope in sorted({Path(path) for path in scope_paths}):
-        scope = ProcessScope.attach(original_scope).path
-        for path in sorted((scope / "runs").glob("*.json")):
-            records.append((path, _strict_registration(path)))
+        try:
+            scope = ProcessScope.attach(original_scope).path
+            valid_scopes.append(scope)
+            for path in sorted((scope / "runs").glob("*.json")):
+                try:
+                    records.append((path, _strict_registration(path)))
+                except BackgroundJobError as exc:
+                    if not tolerate_unconfirmed:
+                        raise
+                    jobs.append(_unconfirmed_job(path, scope, exc))
+        except (BackgroundJobError, OSError) as exc:
+            if not tolerate_unconfirmed:
+                raise
+            jobs.append(_unconfirmed_job(original_scope / "scope.json", original_scope, exc))
+            # Even a damaged scope header must not hide its existing run IDs.
+            # Do not inspect directories whose ownership is a symbolic link.
+            if not any(path.is_symlink() for path in (
+                    original_scope, original_scope.parent, original_scope / "runs")):
+                jobs.extend(_unconfirmed_job(path, original_scope, exc)
+                            for path in sorted((original_scope / "runs").glob("*.json")))
     supervisors = _supervisors([record for _, record in records])
-    if supervisors is None:
+    if supervisors is None and not tolerate_unconfirmed:
         raise BackgroundJobError("Background supervisor identity probe failed")
-    jobs = []
     for path, record in records:
-        state = record["state"]
-        if state not in _TERMINAL:
-            pid = record.get("supervisor_pid")
-            valid_pid = isinstance(pid, int) and not isinstance(pid, bool) and pid > 1
-            identity = supervisors.get(pid) if valid_pid else None
-            command = (identity or {}).get("command", "")
-            scope_hash = hashlib.sha256(record["process_scope"].encode()).hexdigest()
-            owned = (identity is not None and identity == record.get("supervisor_identity")
-                     and " _supervise " in f" {command} "
-                     and f" --token {record['token']} " in f" {command} "
-                     and f" --scope-id {scope_hash} " in f" {command} ")
-            if not owned:
-                record = _strict_registration(path)
-                state = record["state"]
-                created = _timestamp(record.get("created_at"))
-                startup = record.get("startup_timeout_seconds", BACKGROUND_STARTUP_TIMEOUT_SECONDS)
-                starting = (state == "starting" and record.get("supervisor_pid") is None
-                            and created is not None and isinstance(startup, (int, float))
-                            and 0 <= datetime.now(timezone.utc).timestamp() - created <= startup + 2)
-                if state not in _TERMINAL and not starting:
-                    raise BackgroundJobError(f"Background supervisor ownership cannot be confirmed: {record['name']}")
-        if state in _TERMINAL and record.get("cleanup_confirmed") is False:
-            raise BackgroundJobError(f"Background cleanup was not confirmed: {record['name']}")
-        code = record.get("returncode")
-        if state in _TERMINAL and (not isinstance(code, int) or isinstance(code, bool)):
-            raise BackgroundJobError(f"Background return code is unavailable: {record['name']}")
-        job = {key: value for key, value in record.items()
-               if key not in {"token", "supervisor_identity", "stdout", "stderr"}}
-        job.update(id=hashlib.sha256(f"{record['process_scope']}/{record['token']}".encode()).hexdigest(),
-                   kind=record.get("kind", "job"), wait_on_exit=record.get("wait_on_exit", record.get("kind", "job") == "job"),
-                   background_lifecycle=record.get("background_lifecycle", "service" if record.get("kind") == "service" else "task"),
-                   owner_session_id=record.get("owner_session_id"),
-                   origin_tool_call_id=record.get("origin_tool_call_id"),
-                   timed_out=state == "timed_out", cleanup_confirmed=state in _TERMINAL,
-                   exit_code=124 if state == "timed_out" else record.get("exit_code", code if code is None or code >= 0 else 128 - code),
-                   stdout_path=record["stdout"], stderr_path=record["stderr"],
-                   _record_path=str(path), _artifacts_path=record["artifacts"], _scope_path=record["process_scope"])
-        jobs.append(job)
-    return sorted(jobs, key=lambda job: (job.get("created_at", ""), job["id"]))
+        try:
+            jobs.append(_observed_job(path, record, supervisors))
+        except BackgroundJobError as exc:
+            if not tolerate_unconfirmed:
+                raise
+            jobs.append(_unconfirmed_job(path, path.parent.parent, exc, record))
+    if tolerate_unconfirmed:
+        _observe_launch_expectations(valid_scopes, records, jobs)
+        for scope in valid_scopes:
+            # Resolve the header-level diagnostic only. Missing or unconfirmed
+            # individual runs retain their own independent completion gates.
+            identifier = hashlib.sha256(f"{scope}/scope".encode()).hexdigest()
+            resolved = [identifier]
+            directory = scope / "launches"
+            if not directory.is_symlink() and (not directory.exists() or directory.is_dir()):
+                resolved.append(hashlib.sha256(f"{scope}/launches".encode()).hexdigest())
+            jobs.append({"id": identifier + "-verification", "state": "verified_scope",
+                         "_verification_only": True, "_scope_path": str(scope),
+                         "resolved_uncertainty_ids": resolved})
+    return sorted(jobs, key=lambda job: (str(job.get("created_at") or ""), job["id"]))
+
+
+def _observed_job(path, record, supervisors):
+    state = record["state"]
+    if state not in _TERMINAL:
+        if supervisors is None:
+            raise BackgroundJobError("Background supervisor identity probe failed")
+        if not _owns_supervisor(record, supervisors):
+            record = _strict_registration(path)
+            state = record["state"]
+            created = _timestamp(record.get("created_at"))
+            startup = record.get("startup_timeout_seconds", BACKGROUND_STARTUP_TIMEOUT_SECONDS)
+            starting = (state == "starting" and record.get("supervisor_pid") is None
+                        and created is not None and isinstance(startup, (int, float))
+                        and 0 <= datetime.now(timezone.utc).timestamp() - created <= startup + 2)
+            if state not in _TERMINAL and not starting:
+                raise BackgroundJobError(f"Background supervisor ownership cannot be confirmed: {record['name']}")
+    if state in _TERMINAL and record.get("cleanup_confirmed") is not True:
+        raise BackgroundJobError(f"Background cleanup was not confirmed: {record['name']}")
+    code = record.get("returncode")
+    job = {key: value for key, value in record.items()
+           if key not in {"token", "supervisor_identity", "stdout", "stderr"}}
+    job.update(id=hashlib.sha256(f"{record['process_scope']}/{record['token']}".encode()).hexdigest(),
+               kind=record.get("kind", "job"), wait_on_exit=record.get("wait_on_exit", record.get("kind", "job") == "job"),
+               background_lifecycle=record.get("background_lifecycle", "service" if record.get("kind") == "service" else "task"),
+               owner_session_id=record.get("owner_session_id"), origin_tool_call_id=record.get("origin_tool_call_id"),
+               timed_out=state == "timed_out", cleanup_confirmed=state in _TERMINAL,
+               exit_code=124 if state == "timed_out" else record.get("exit_code", code if code is None or code >= 0 else 128 - code),
+               stdout_path=record["stdout"], stderr_path=record["stderr"],
+               _record_path=str(path), _artifacts_path=record["artifacts"], _scope_path=record["process_scope"])
+    return job
+
+
+def _unconfirmed_job(path, scope, error, record=None):
+    """Uncertainty is pending evidence, never a fabricated exit status."""
+    record = record or {}
+    identifier = hashlib.sha256(f"{scope}/{path.stem}".encode()).hexdigest()
+    job = {key: record[key] for key in (
+        "name", "display_name", "owner_session_id", "origin_tool_call_id", "created_at",
+        "kind", "background_lifecycle", "persistent", "job_timeout_seconds",
+    ) if key in record}
+    job.update(id=identifier, job_id=identifier, name=record.get("name", path.stem),
+               state="unconfirmed", status="unconfirmed", completed=False,
+               error=str(error), supervision_confirmed=False, cleanup_confirmed=False,
+               wait_on_exit=record.get("wait_on_exit", True), exit_code=None,
+               recorded_state=record.get("state"),
+               process_record_path=record.get("record", str(path)),
+               _record_path=str(path), _scope_path=str(scope))
+    for stream in ("stdout", "stderr"):
+        if stream in record:
+            job[f"{stream}_path"] = record[stream]
+    return job
+
+
+def _launch_id(scope, name):
+    return "launch-" + hashlib.sha256(f"{scope}/{name}".encode()).hexdigest()
+
+
+def _observe_launch_expectations(scope_paths, records, jobs):
+    """Adopt a recovered launch without forgetting an unresolved launch attempt."""
+    by_path = {job.get("_record_path"): job for job in jobs}
+    for scope in sorted({Path(path) for path in scope_paths}):
+        directory = scope / "launches"
+        if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
+            jobs.append(_unconfirmed_job(scope / "launches", scope,
+                                         "Launch expectations require a real directory, not a symbolic link or file"))
+            continue
+        for path in sorted((scope / "launches").glob("*.json")):
+            try:
+                value = json.loads(_regular_bytes(path, maximum=1024 * 1024)[0])
+                expected = value["expected"]
+                if (value.get("version") != 1 or not isinstance(expected, dict)
+                        or expected.get("name") != path.stem
+                        or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", path.stem)
+                        or expected.get("record") != str(scope / "jobs" / f"{path.stem}.json")
+                        or value.get("id") != _launch_id(scope, path.stem)):
+                    raise ValueError("Launch expectation does not match its scope and name")
+                _validate_launch_expectation(expected)
+                candidates = [(registered, record) for registered, record in records
+                              if registered.parent.parent == scope and record["name"] == path.stem]
+                if len(candidates) == 1 and _matches_launch(candidates[0][1], expected):
+                    job = by_path[str(candidates[0][0])]
+                    job.setdefault("resolved_uncertainty_ids", []).append(value["id"])
+                    job["launch_id"] = value["id"]
+                    continue
+                error = "Background launch has no matching verified registration; inspect before retrying"
+                job = _unconfirmed_job(path, scope, error, expected)
+                job.update(id=value["id"], job_id=value["id"], launch_id=value["id"],
+                           _launch_path=str(path), launch_record_path=str(path), state_dir=str(scope / "jobs"))
+                # This file records our own requested lifecycle. It does not
+                # establish that a service is ready or that a payload exited.
+                service = (expected.get("background_lifecycle") == "service"
+                           and expected.get("kind") == "service" and expected.get("wait_on_exit") is False
+                           and expected.get("persistent") is True)
+                job["wait_on_exit"] = not service
+                jobs.append(job)
+            except (BackgroundJobError, OSError, ValueError, KeyError, TypeError, AttributeError,
+                    OverflowError, RecursionError) as exc:
+                job = _unconfirmed_job(path, scope, exc)
+                job.update(id=_launch_id(scope, path.stem), job_id=_launch_id(scope, path.stem),
+                           launch_id=_launch_id(scope, path.stem), _launch_path=str(path))
+                jobs.append(job)
+
+
+def _matches_launch(record, expected):
+    return (all(record.get(key) == value for key, value in expected.items())
+            and ("images" in record) == ("images" in expected))
+
+
+def _validate_launch_expectation(expected):
+    required = {"name", "display_name", "record", "command", "cwd", "owner_session_id", "origin_tool_call_id",
+                "kind", "wait_on_exit", "background_lifecycle", "persistent",
+                "job_timeout_seconds", "startup_timeout_seconds"}
+    if not required <= set(expected) <= required | {"images"}:
+        raise ValueError("Incomplete launch expectation")
+    service = expected["background_lifecycle"] == "service"
+    if (expected["background_lifecycle"] not in ("task", "service")
+            or expected["kind"] != ("service" if service else "job")
+            or expected["wait_on_exit"] is not (not service) or expected["persistent"] is not service):
+        raise ValueError("Invalid launch lifecycle")
+    command = expected["command"]
+    if (not isinstance(command, list) or len(command) != 3 or command[:2] != ["/bin/sh", "-c"]
+            or not isinstance(command[2], str) or not command[2].strip()
+            or not isinstance(expected["display_name"], str) or not expected["display_name"].strip()
+            or not Path(expected["cwd"]).is_absolute()):
+        raise ValueError("Invalid launch command or working directory")
+    for key in ("owner_session_id", "origin_tool_call_id"):
+        if expected[key] is not None and (not isinstance(expected[key], str) or not expected[key].strip()):
+            raise ValueError(f"Invalid launch {key}")
+    for key in ("job_timeout_seconds", "startup_timeout_seconds"):
+        timeout = expected[key]
+        if timeout is None and service and key == "job_timeout_seconds":
+            continue
+        if type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError(f"Invalid launch {key}")
+    if "images" in expected:
+        validate_images(expected["images"])
+
+
+def _unconfirmed_launch(scope, expected, error):
+    path = scope / "launches" / f"{expected['name']}.json"
+    identifier = _launch_id(scope, expected["name"])
+    value = {"version": 1, "id": identifier, "expected": expected}
+    job = _unconfirmed_job(path, scope, error, expected)
+    job.update(id=identifier, job_id=identifier, launch_id=identifier,
+               launch_status="unconfirmed",
+               state_dir=str(scope / "jobs"), _launch_path=str(path), launch_record_path=str(path),
+               message="Launch state is unconfirmed. Inspect the registered job and logs before retrying; "
+                       "the runtime has not rerun this command.")
+    temporary = path.parent / f".launch-{uuid4().hex}.json"
+    try:
+        if path.parent.is_symlink():
+            raise OSError("Launch expectation directory must not be a symbolic link")
+        path.parent.mkdir(mode=0o700, exist_ok=True)
+        temporary.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+        os.replace(temporary, path)
+    except OSError as exc:
+        # The tool result itself is also persisted in session history. Keep its
+        # explicit pending identity even if the independent registry cannot save.
+        job["registration_error"] = str(exc)
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return job
 
 
 def completion_result(job, max_bytes=16384) -> dict:
@@ -164,7 +328,7 @@ def completion_result(job, max_bytes=16384) -> dict:
         raise ValueError("max_bytes must be a positive integer no greater than 1048576")
     record = _strict_registration(Path(job["_record_path"]))
     expected = hashlib.sha256(f"{record['process_scope']}/{record['token']}".encode()).hexdigest()
-    if expected != job.get("id") or record["state"] not in _TERMINAL or record.get("cleanup_confirmed") is False:
+    if expected != job.get("id") or record["state"] not in _TERMINAL or record.get("cleanup_confirmed") is not True:
         raise BackgroundJobError("A confirmed terminal background run is required")
     code = record.get("returncode")
     result = {key: record.get(key) for key in ("name", "display_name", "command", "cwd", "owner_session_id", "origin_tool_call_id", "started_at", "ended_at", "stop_reason", "job_timeout_seconds", "deadline_at", "forced", "cleanup_reason", "cleanup_process_count", "cleanup_message")}
@@ -227,6 +391,59 @@ def _supervisors(records):
         return identities
     except (OSError, subprocess.SubprocessError):
         return None
+
+
+def _owns_supervisor(record, identities):
+    pid = record.get("supervisor_pid")
+    valid_pid = isinstance(pid, int) and not isinstance(pid, bool) and pid > 1
+    identity = identities.get(pid) if valid_pid else None
+    command = (identity or {}).get("command", "")
+    scope_hash = hashlib.sha256(record["process_scope"].encode()).hexdigest()
+    return (identity is not None and identity == record.get("supervisor_identity")
+            and " _supervise " in f" {command} "
+            and f" --token {record['token']} " in f" {command} "
+            and f" --scope-id {scope_hash} " in f" {command} ")
+
+
+def _confirmed_launch(scope, expected, deadline):
+    """Recover this launch from the outbox, never by re-executing its command."""
+    matches = []
+    for path in sorted((scope / "runs").glob("*.json")):
+        record = _strict_registration(path)
+        if record["name"] == expected["name"]:
+            matches.append((path, record))
+    if not matches:
+        # The helper writes runs/<token> before its public alias and before it
+        # spawns a supervisor. An alias without a run is contradictory evidence.
+        if Path(expected["record"]).exists():
+            raise BackgroundJobError("Background launch alias has no authoritative registration")
+        return None
+    if len(matches) != 1:
+        raise BackgroundJobError("Background launch has ambiguous registrations")
+    path, record = matches[0]
+    while True:
+        if not _matches_launch(record, expected):
+            raise BackgroundJobError("Background launch registration does not match this request")
+        if record["state"] in _TERMINAL:
+            if record.get("cleanup_confirmed") is not True:
+                raise BackgroundJobError("Background launch cleanup was not confirmed")
+            return record
+        supervisors = _supervisors([record])
+        if supervisors is None:
+            raise BackgroundJobError("Background launch supervisor identity probe failed")
+        if _owns_supervisor(record, supervisors) and record["state"] != "starting":
+            return record
+        # A supervisor can finish during ps, or be created just before the
+        # launcher loses its receipt. Observe within the original startup limit;
+        # never infer a failed spawn from temporarily absent PID fields.
+        latest = _strict_registration(path)
+        if latest != record:
+            record = latest
+            continue
+        if latest["state"] != "starting" or time.monotonic() >= deadline:
+            raise BackgroundJobError("Background launch supervisor ownership cannot be confirmed")
+        time.sleep(min(0.05, max(0, deadline - time.monotonic())))
+        record = _strict_registration(path)
 
 
 def _registration(path):
@@ -296,11 +513,13 @@ class BackgroundJobMonitor:
                             state = "orphaned"
             elif state == "running" and record.get("supervisor_pid") is None:
                 state = "unknown"
+            if state in _TERMINAL and record.get("cleanup_confirmed") is not True:
+                state = "unconfirmed"
             started = _timestamp(record.get("started_at"))
             if started is None:
                 started = _timestamp(record.get("created_at"))
             ended = _timestamp(record.get("ended_at"))
-            end = ended if state in _TERMINAL | {"unknown", "orphaned"} else now.timestamp()
+            end = ended if state in _TERMINAL | {"unknown", "orphaned", "unconfirmed"} else now.timestamp()
             elapsed = max(0.0, end - started) if started is not None and end is not None else None
             code = record.get("returncode")
             jobs.append({
@@ -319,7 +538,7 @@ class BackgroundJobMonitor:
                 "cleanup_forced": record.get("cleanup_forced", record.get("forced", False)),
                 "cleanup_reason": record.get("cleanup_reason"),
             })
-            pending = pending or record.get("state") not in _TERMINAL
+            pending = pending or state not in _TERMINAL
         return jobs, pending, now.isoformat()
 
     def refresh(self, *, force=False):
@@ -409,7 +628,7 @@ class ProcessScope:
             scope = cls.__new__(cls)
             scope.path, scope.successful = path, value.get("successful") is True
             return scope
-        except (OSError, ValueError, TypeError) as exc:
+        except (OSError, ValueError, TypeError, RecursionError) as exc:
             raise BackgroundJobError(f"Cannot recover process scope {path}: {exc}") from exc
 
     def mark_successful(self):
@@ -437,7 +656,12 @@ class ProcessScope:
         Image declarations are registered before launch; this path never opens
         their files or attaches them to the receipt.
         """
-        scope = self.attach(self.path)
+        try:
+            scope = self.attach(self.path)
+        except BackgroundJobError as exc:
+            # No launch was attempted. The tolerant observer retains the
+            # damaged existing scope as an independent diagnostic blocker.
+            raise ValueError(f"Cannot start background work: {exc}") from exc
         if not isinstance(command, str) or not command.strip():
             raise ValueError("Background command must be a non-empty string")
         if not isinstance(name, str) or not name.strip():
@@ -464,7 +688,7 @@ class ProcessScope:
                                             for key, value in env.items()):
             raise ValueError("Background environment must contain string keys and values")
         if (scope.path / "closed").exists():
-            raise BackgroundJobError("The agent turn's process scope is closed")
+            raise ValueError("The agent turn's process scope is closed")
         # The display label is unrestricted by the helper's filesystem-name
         # contract.  A fresh suffix also makes repeated labels separate jobs.
         stem = re.sub(r"[^A-Za-z0-9_.-]+", "-", name).strip(".-_")[:32] or "job"
@@ -481,40 +705,48 @@ class ProcessScope:
             args.extend(["--images-json", json.dumps(images, ensure_ascii=False)])
         args.extend(["--", "/bin/sh", "-c", command])
         environment = {**env, SCOPE_ENV: str(scope.path)}
+        deadline = time.monotonic() + BACKGROUND_STARTUP_TIMEOUT_SECONDS
+        launched, launch_error = None, None
         try:
             launched = subprocess.run(args, env=environment, stdin=subprocess.DEVNULL,
                                       capture_output=True, text=True, timeout=BACKGROUND_STARTUP_TIMEOUT_SECONDS + 2)
         except (OSError, subprocess.SubprocessError) as exc:
-            raise BackgroundJobError(f"Background launch could not be confirmed: {exc}") from exc
+            launch_error = exc
+        expected = {
+            "name": internal_name, "display_name": name, "record": str(state_dir / f"{internal_name}.json"),
+            "command": ["/bin/sh", "-c", command], "cwd": str(cwd),
+            "owner_session_id": environment.get(CONTEXT_ENV), "origin_tool_call_id": environment.get(CALL_ENV),
+            "kind": "service" if service else "job", "wait_on_exit": not service,
+            "background_lifecycle": background_lifecycle, "persistent": service,
+            "job_timeout_seconds": timeout, "startup_timeout_seconds": BACKGROUND_STARTUP_TIMEOUT_SECONDS,
+        }
+        if images is not None:
+            expected["images"] = images
+        try:
+            registration = _confirmed_launch(scope.path, expected, deadline)
+        except (BackgroundJobError, OSError) as exc:
+            return _unconfirmed_launch(scope.path, expected, exc)
+        if registration is None:
+            # run() has reaped the launcher on return and on TimeoutExpired.
+            # Since registration precedes supervisor creation, no registration
+            # means the payload never started. Other subprocess errors do not
+            # establish that boundary, so retain an unconfirmed launch instead.
+            if launch_error is not None and not isinstance(launch_error, (OSError, subprocess.TimeoutExpired)):
+                return _unconfirmed_launch(scope.path, expected, launch_error)
+            detail = str(launch_error) if launch_error else (launched.stderr or launched.stdout).strip()
+            raise ValueError(f"Background command did not start: no job was registered. {detail}")
+        recovered = True
         try:
             payload = json.loads(launched.stdout)
-            record = payload["process"]
-            # Public helper output omits the ownership token.  Recover it only
-            # from the freshly created, uniquely named authoritative alias.
-            alias = state_dir / f"{internal_name}.json"
-            saved = json.loads(_regular_bytes(alias, maximum=1024 * 1024)[0])
-            registration = _strict_registration(scope.path / "runs" / f"{saved['token']}.json")
-            if (registration["name"] != internal_name or registration.get("kind") != ("service" if service else "job")
-                    or registration.get("wait_on_exit") is not (not service)
-                    or registration.get("persistent") is not service
-                    or ("images" in registration) != (images is not None)
-                    or registration.get("images") != images):
-                raise ValueError("Background launch registration does not match this request")
-            # A very short job can already have failed or timed out by the time
-            # the helper observes startup.  It still launched: preserve its
-            # separate terminal event instead of treating its exit as a launch
-            # failure or marking that event as already delivered.
-            early_completion = (registration["state"] in _TERMINAL
-                                and isinstance(registration.get("child_pid"), int))
-            if (launched.returncode or not payload.get("ok")) and not early_completion:
-                raise ValueError(payload.get("observations", {}).get("error") or registration.get("error")
-                                 or f"Supervisor launch failed with status {launched.returncode}")
-        except (ValueError, KeyError, TypeError, OSError) as exc:
-            detail = (launched.stderr or launched.stdout).strip()
-            raise BackgroundJobError(f"Background launch was not confirmed: {exc}; {detail}") from exc
+            recovered = (launched.returncode != 0 or payload.get("ok") is not True
+                         or payload["process"]["name"] != internal_name)
+        except (ValueError, KeyError, TypeError, AttributeError):
+            pass  # The independently verified registration is authoritative.
+        failed_start = registration["state"] in _TERMINAL and registration.get("child_pid") is None
         job_id = hashlib.sha256(f"{scope.path}/{registration['token']}".encode()).hexdigest()
-        return {
-            "status": "started", "launch_status": "started", "completed": False,
+        receipt = {
+            "status": "failed" if failed_start else "started",
+            "launch_status": "failed" if failed_start else "started", "completed": False,
             "message": "Background job registered. This is a launch receipt, not a completion result. "
                        "The runtime will deliver its terminal result separately.",
             "id": job_id, "job_id": job_id, "name": internal_name, "display_name": name,
@@ -524,6 +756,11 @@ class ProcessScope:
             "state_dir": str(state_dir), "process_record_path": registration["record"],
             "stdout_path": registration["stdout"], "stderr_path": registration["stderr"],
         }
+        if recovered:
+            receipt["receipt_recovered"] = True
+        if failed_start:
+            receipt["error"] = registration.get("error") or "Supervisor failed before starting the managed command"
+        return receipt
 
     def close_owner(self, owner_session_id: str):
         """Close and clean one agent's registrations without closing the scope.

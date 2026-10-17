@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from skills_agent.agent import Agent
-from skills_agent.background import BackgroundResults, RUNTIME_EVENT
+from skills_agent.background import BackgroundResults, RUNTIME_EVENT, UNCERTAINTY_EVENT
 from skills_agent.context import record_groups
 from skills_agent.processes import BackgroundJobError, ProcessScope
 from skills_agent.session import Session
@@ -33,7 +33,7 @@ class BackgroundResultsTests(unittest.TestCase):
         self.session = Session(self.root, "main")
         self.jobs = []
         observer = patch("skills_agent.background.observe_background_jobs",
-                         side_effect=lambda paths: deepcopy(self.jobs))
+                         side_effect=lambda paths, **kwargs: deepcopy(self.jobs))
         self.observe = observer.start()
         self.addCleanup(observer.stop)
         results = patch("skills_agent.background.completion_result", side_effect=self.result)
@@ -282,20 +282,22 @@ class BackgroundResultsTests(unittest.TestCase):
         self.assertEqual(report["child_session_id"], summary["child_session_id"])
         self.assertEqual(json.loads(report["content"])["result"], "Child verified evidence")
 
-    def test_unhanded_child_required_job_fails_closed_without_model_call(self):
+    def test_unhanded_child_required_job_reports_error_and_retains_gate(self):
         self.jobs = [self.job(owner="unknown-child")]
-        agent, model = self.agent([final("Must not claim completion")])
-        with self.assertRaisesRegex(BackgroundJobError, "handoff was not recorded"):
-            agent.run({"role": "user", "content": "Resume"})
-        self.assertEqual(model.calls, [])
+        delivery = BackgroundResults(self.session, lambda: [])
+        self.assertEqual(delivery.drain(self.session.append), (1, True))
+        message = self.session.messages()[-1]
+        self.assertEqual(message["runtime_event"], UNCERTAINTY_EVENT)
+        self.assertIn("handoff was not recorded", json.dumps(message))
 
     def test_disappearing_active_registration_is_not_treated_as_completion(self):
         self.jobs = [self.job()]
         delivery = BackgroundResults(self.session, lambda: [])
         self.assertEqual(delivery.drain(self.session.append), (0, True))
         self.jobs.clear()
-        with self.assertRaisesRegex(BackgroundJobError, "disappeared"):
-            delivery.drain(self.session.append)
+        self.assertEqual(delivery.drain(self.session.append), (1, True))
+        self.assertEqual(self.session.messages()[-1]["runtime_event"], UNCERTAINTY_EVENT)
+        self.assertIn("disappeared", json.dumps(self.session.messages()[-1]))
 
     def test_feedback_copies_complete_image_envelope_and_preserves_status_and_logs(self):
         image = self.root / "plot.png"

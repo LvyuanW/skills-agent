@@ -229,7 +229,8 @@ class AgentContextTests(unittest.TestCase):
                 agent.tools.execute = lambda *args: json.dumps(execution)
                 agent.auxiliary.tool_report = lambda *args: "Summary with no execution metadata"
                 agent.run({"role": "user", "content": "run work"})
-                result = json.loads(model.calls[-1][1][-1]["content"])
+                result = json.loads(next(message["content"] for message in reversed(model.calls[-1][1])
+                                         if message["role"] == "tool"))
                 for key in set(execution) - {"stdout", "stderr"}:
                     self.assertEqual(result[key], execution[key], key)
 

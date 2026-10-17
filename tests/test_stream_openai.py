@@ -199,8 +199,6 @@ class OpenAIStreamTests(unittest.TestCase):
         cases = [
             tool(-1, id="a", type="function", function={"name": "shell", "arguments": "{}"}),
             tool(2, id="a", type="function", function={"name": "shell", "arguments": "{}"}),
-            tool(0, id="a", type="function", function={"name": "shell", "arguments": "{"}),
-            tool(0, id="a", type="function", function={"name": "shell", "arguments": "[]"}),
             tool(0, id="a", type="function", function={"name": "", "arguments": "{}"}),
             tool(0, id="a", type="function", function={"name": "shell", "arguments": {}}),
         ]

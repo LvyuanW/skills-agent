@@ -67,13 +67,17 @@ def _message_text(message: dict) -> str:
                     label += f"\nSource URL: {block['source_url']}"
                 parts.append(label)
     for call in message.get("tool_calls", []):
-        arguments = call.get("arguments", "")
+        original_arguments = arguments = call.get("arguments", "")
         if isinstance(arguments, str):
             try:
                 arguments = json.loads(arguments)
-            except json.JSONDecodeError:
+            except (ValueError, RecursionError):
                 pass
-        parts.append(f"Tool call {call.get('id', '')}: {call.get('name', '')}\n{_value_text(arguments)}")
+        try:
+            argument_text = _value_text(arguments)
+        except RecursionError:
+            argument_text = original_arguments
+        parts.append(f"Tool call {call.get('id', '')}: {call.get('name', '')}\n{argument_text}")
     return "\n\n".join(part for part in parts if part)
 
 
@@ -167,7 +171,7 @@ class HistoryIndex:
                     for call in message.get("tool_calls", []):
                         try:
                             arguments = json.loads(call["arguments"]) if isinstance(call["arguments"], str) else call["arguments"]
-                        except (KeyError, json.JSONDecodeError):
+                        except (KeyError, ValueError, RecursionError):
                             arguments = {}
                         if not isinstance(arguments, dict):
                             arguments = {}

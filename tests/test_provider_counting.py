@@ -259,10 +259,11 @@ class ResponsesTests(unittest.TestCase):
         with patch('skills_agent.providers.base.request.urlopen', side_effect=URLError('private URL')), self.assertRaises(ProviderConnectionError):
             OpenAIProvider('model', 'key').complete('', [], [])
 
-    def test_invalid_responses_tool_arguments_never_return_executable_call(self):
+    def test_invalid_responses_tool_arguments_reach_tool_validation_unchanged(self):
         output = [{'type': 'function_call', 'call_id': 'a', 'name': 'shell', 'arguments': '{'}]
-        with patch('skills_agent.providers.responses.post_stream', return_value=responses_stream(output)), self.assertRaisesRegex(ProviderError, 'valid JSON'):
-            OpenAIProvider('model', 'key').complete('', [], [])
+        with patch('skills_agent.providers.responses.post_stream', return_value=responses_stream(output)):
+            reply = OpenAIProvider('model', 'key').complete('', [], [])
+        self.assertEqual(reply['tool_calls'], [{'id': 'a', 'name': 'shell', 'arguments': '{'}])
 
     def test_chat_and_messages_distinguish_connection_from_output_limit(self):
         cases = [

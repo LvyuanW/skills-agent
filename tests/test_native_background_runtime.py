@@ -152,10 +152,10 @@ class NativeBackgroundRuntimeTests(unittest.TestCase):
         self.assertEqual(list((self.scope.path / "runs").glob("*.json")), [])
         fake = ProcessScope.__new__(ProcessScope)
         fake.path = self.root / "unregistered"
-        with self.assertRaises(BackgroundJobError):
+        with self.assertRaises(ValueError):
             fake.start_background("true", "bad", self.root, self.environment)
         self.scope.close()
-        with self.assertRaisesRegex(BackgroundJobError, "closed"):
+        with self.assertRaisesRegex(ValueError, "closed"):
             self.launch("pass")
         self.assertEqual(list((self.scope.path / "runs").glob("*.json")), [])
 
@@ -265,7 +265,7 @@ class NativeBackgroundRuntimeTests(unittest.TestCase):
         self.assertTrue(result["cleanup_confirmed"])
         parent_job = next(job for job in observe_background_jobs([self.scope.path]) if job["id"] == parent["job_id"])
         self.assertEqual(parent_job["state"], "running")
-        with self.assertRaisesRegex(BackgroundJobError, "owner.*closed"):
+        with self.assertRaisesRegex(ValueError, "owner.*closed"):
             self.launch("print('late child must not start')", lifecycle="service")
         self.assertEqual(len(list((self.scope.path / "runs").glob("*.json"))), 2)
         # Other owners can still register and complete new work in this scope.
@@ -282,7 +282,7 @@ class NativeBackgroundRuntimeTests(unittest.TestCase):
     def test_owner_can_be_closed_before_its_first_start(self):
         self.scope.close_owner(self.environment[CONTEXT_ENV])
         self.assertFalse((self.scope.path / "closed").exists())
-        with self.assertRaisesRegex(BackgroundJobError, "owner.*closed"):
+        with self.assertRaisesRegex(ValueError, "owner.*closed"):
             self.launch("print('must not start')")
         self.assertEqual(list((self.scope.path / "runs").glob("*.json")), [])
 
@@ -339,7 +339,7 @@ class NativeBackgroundRuntimeTests(unittest.TestCase):
     def test_startup_confirmation_has_ten_seconds_and_distinct_twelve_second_transport_bound(self):
         with patch("skills_agent.processes.subprocess.run",
                    side_effect=subprocess.TimeoutExpired("background launch", 12)) as launch:
-            with self.assertRaisesRegex(BackgroundJobError, "launch could not be confirmed"):
+            with self.assertRaisesRegex(ValueError, "did not start: no job was registered"):
                 self.launch("print('work')", timeout=7200)
         args = launch.call_args.args[0]
         self.assertEqual(args[args.index("--startup-timeout") + 1], "10")

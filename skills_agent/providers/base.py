@@ -397,7 +397,7 @@ def encoded_file(block: dict) -> str:
 def parse_arguments(arguments: str) -> dict:
     try:
         value = json.loads(arguments)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, RecursionError):
         raise ProviderError("Tool arguments must be valid JSON") from None
     if not isinstance(value, dict):
         raise ProviderError("Tool arguments must be a JSON object")

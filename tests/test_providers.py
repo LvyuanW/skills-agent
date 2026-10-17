@@ -346,7 +346,7 @@ class ProviderTests(unittest.TestCase):
 
     def test_response_parse_errors_keep_text_and_top_level_refusal(self):
         raw = openai_response("original", [{"id": "a", "type": "function", "function": {
-            "name": "shell", "arguments": "{"}}], "tool_calls")
+            "name": "", "arguments": "{}"}}], "tool_calls")
         raw["choices"][0]["message"]["refusal"] = "received refusal"
         with patch("skills_agent.providers.openai.post_stream", return_value=response_events(raw)), self.assertRaises(ProviderError) as raised:
             OpenAIProvider("model", "key").complete("", [], [])
@@ -403,12 +403,13 @@ class ProviderTests(unittest.TestCase):
                     cls("model", "key").complete("", messages, [])
                 send.assert_not_called()
 
-    def test_invalid_tool_arguments_are_not_returned(self):
+    def test_invalid_tool_arguments_are_returned_for_tool_validation(self):
         for arguments in ['{"command":', "[]"]:
             raw = openai_response(None, [{"id": "a", "type": "function", "function": {
                 "name": "shell", "arguments": arguments}}], "tool_calls")
-            with patch("skills_agent.providers.openai.post_stream", return_value=response_events(raw)), self.assertRaises(ProviderError):
-                OpenAIProvider("model", "key").complete("", [], [])
+            with patch("skills_agent.providers.openai.post_stream", return_value=response_events(raw)):
+                reply = OpenAIProvider("model", "key").complete("", [], [])
+            self.assertEqual(reply["tool_calls"], [{"id": "a", "name": "shell", "arguments": arguments}])
 
     def test_duplicate_response_calls_are_rejected_before_execution(self):
         call = {"id": "same", "type": "function", "function": {"name": "shell", "arguments": "{}"}}

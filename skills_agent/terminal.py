@@ -523,7 +523,8 @@ class TerminalView:
             state, code = job["state"], job.get("returncode")
             failed = state in {"failed", "timed_out"} or (state == "exited" and code is not None and code != 0)
             status = {"starting": "启动中", "running": "运行中", "stopping": "停止中",
-                      "exited": "完成", "stopped": "已停止", "orphaned": "失去进程归属"}.get(
+                      "exited": "完成", "stopped": "已停止", "orphaned": "失去进程归属",
+                      "unconfirmed": "监管状态未确认"}.get(
                           state, "状态未知")
             if state == "exited" and code is None:
                 status = "已退出（退出码未知）"
@@ -546,7 +547,7 @@ class TerminalView:
                     elapsed += max(0, now - job["observed"])
                 text += f" · {max(0, elapsed):.1f} 秒"
             yield {"kind": "line", "text": text, "background_job_id": job["id"],
-                   "role": "error" if failed or cleanup_required or state in {"orphaned", "unknown", "stopped"} else "tool"}
+                   "role": "error" if failed or cleanup_required or state in {"orphaned", "unknown", "unconfirmed", "stopped"} else "tool"}
 
     def _animate(self):
         self._animation_scheduled = False

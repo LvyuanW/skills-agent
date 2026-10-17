@@ -28,7 +28,7 @@ class BackgroundDeliveryBoundaryTests(unittest.TestCase):
         self.session = Session(self.root, "main")
         self.jobs = []
         observer = patch("skills_agent.background.observe_background_jobs",
-                         side_effect=lambda paths: deepcopy(self.jobs))
+                         side_effect=lambda paths, **kwargs: deepcopy(self.jobs))
         observer.start()
         self.addCleanup(observer.stop)
         results = patch("skills_agent.background.completion_result", side_effect=lambda job: {

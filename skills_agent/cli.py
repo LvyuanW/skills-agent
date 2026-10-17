@@ -65,7 +65,7 @@ def _assistant_content(message, output):
 def _arguments(call):
     try:
         value = json.loads(call.get("arguments", ""))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, RecursionError):
         return {}
     return value if isinstance(value, dict) else {}
 
@@ -156,14 +156,39 @@ def _background_result(message):
 
 
 def _background_result_key(message, result):
-    identifier = message.get("background_result_id") or result.get("job_id") or message.get("background_job_id")
-    return ("background-result", identifier) if isinstance(identifier, str) and identifier else None
+    uncertain = message.get("runtime_event") == "background_job_uncertainty"
+    identifier = (message.get("background_uncertainty_id") if uncertain
+                  else message.get("background_result_id")) or result.get("job_id") or message.get("background_job_id")
+    namespace = "background-uncertainty" if uncertain else "background-result"
+    return (namespace, identifier) if isinstance(identifier, str) and identifier else None
+
+
+def _render_background_uncertainty(message, output, *, full=False):
+    result, blocks = _background_result(message)
+    label = "后台服务" if result.get("kind") == "service" else "后台任务"
+    name = _purpose(result, "display_name", "name")
+    if name:
+        label += f"「{name}」"
+    delegated = _purpose(result, "delegated_task_name")
+    if delegated:
+        label += f"（子任务「{delegated}」）"
+    _tool_note(f"· {label}：监管状态未确认；错误已加入上下文，仍需诊断和恢复", output,
+               key=_background_result_key(message, result), failed=True)
+    if full:
+        for block in blocks:
+            if (isinstance(block, dict) and block.get("type") == "text"
+                    and not block.get("text", "").startswith("[Runtime background job uncertainty")):
+                _print(block["text"], "error", output)
 
 
 def _render_background_result(message, output, *, full=False):
     result, blocks = _background_result(message)
     if hasattr(output, "complete_background_job"):
         output.complete_background_job(message.get("background_job_id") or result.get("job_id") or result.get("id"))
+        resolved = message.get("resolved_uncertainty_ids", [])
+        if isinstance(resolved, list):
+            for identifier in resolved:
+                output.complete_background_job(identifier)
     state, code = result.get("state"), result.get("exit_code")
     cleanup = result.get("cleanup_required") is True
     timed_out = state == "timed_out" or result.get("timed_out") is True
@@ -225,6 +250,8 @@ def _render_full_event(event, output):
         _print(f"error: {event['message']}", "assistant", output)
     elif kind == "message":
         message = event["message"]
+        if message.get("runtime_event") == "background_job_uncertainty":
+            return _render_background_uncertainty(message, output, full=True)
         if message.get("runtime_event") == "background_job_result":
             return _render_background_result(message, output, full=True)
         role = message["role"]
@@ -311,6 +338,8 @@ def render_event(event, output=None, *, full=False, echo_user=True, tool_names=N
         _print(f"error: {_brief(event['message'])}", "assistant", output)
     elif kind == "message":
         message = event["message"]
+        if message.get("runtime_event") == "background_job_uncertainty":
+            return _render_background_uncertainty(message, output)
         if message.get("runtime_event") == "background_job_result":
             return _render_background_result(message, output)
         role = message["role"]
@@ -461,7 +490,7 @@ class ConsoleRenderer:
         receiving = f"· {label}：接收调用"
         try:
             arguments = json.loads(call["arguments"])
-        except ValueError:
+        except (ValueError, RecursionError):
             arguments = None
         display = None
         if isinstance(arguments, dict) and not call["shown"]:
@@ -502,7 +531,8 @@ class ConsoleRenderer:
 
     def __call__(self, event):
         if (event.get("type") == "message"
-                and event["message"].get("runtime_event") == "background_job_result"):
+                and event["message"].get("runtime_event") in {
+                    "background_job_result", "background_job_uncertainty"}):
             message = event["message"]
             key = _background_result_key(message, _background_result(message)[0])
             if key is not None:

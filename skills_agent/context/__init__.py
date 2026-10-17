@@ -89,7 +89,7 @@ def interrupted_result(call: dict) -> dict:
     """The recorded tool result for a call that never produced one."""
     try:
         arguments = json.loads(call.get("arguments") or "{}")
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, RecursionError):
         arguments = {}
     task_name = arguments.get("name") if isinstance(arguments, dict) else None
     return {"role": "tool", "name": call.get("name"), "tool_call_id": call.get("id"),
@@ -308,7 +308,12 @@ class WorkingContext:
                     execution = json.loads(text)
                 except (ValueError, TypeError):
                     execution = None
-                metadata = ({key: execution[key] for key in ("feedback_errors", "feedback_image_count", "exit_code")
+                metadata = ({key: execution[key] for key in (
+                    "feedback_errors", "feedback_image_count", "exit_code", "error", "executed",
+                    "status", "completed", "job_id", "id", "state", "name", "display_name", "launch_status",
+                    "launch_id", "launch_record_path", "process_record_path", "state_dir", "stdout_path", "stderr_path",
+                    "background_lifecycle", "wait_on_exit", "supervision_confirmed", "registration_error",
+                )
                              if key in execution} if isinstance(execution, dict) else {})
                 replace_result_text(record["message"], json.dumps({
                     "notice": "Requested original result does not fit the active context. Read a narrower range.",

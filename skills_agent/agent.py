@@ -3,7 +3,7 @@ from copy import deepcopy
 from pathlib import Path
 from uuid import uuid4
 
-from .background import BackgroundResults, RUNTIME_EVENT
+from .background import BackgroundResults, RUNTIME_EVENT, UNCERTAINTY_EVENT
 from .context import DEFAULT_CONTEXT_TOKENS, WorkingContext, interrupted_result
 from .context.auxiliary import Auxiliary
 from .context.history import HistoryIndex, _message_text
@@ -20,7 +20,7 @@ def _arguments(call):
     try:
         value = json.loads(call.get("arguments", "{}"))
         return value if isinstance(value, dict) else {}
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, RecursionError):
         return {}
 
 
@@ -41,9 +41,16 @@ class Agent:
         self.report_background = None
         self.process_scope = process_scope
         self._inherited_process_scope = process_scope is not None
-        self._process_scopes = ([] if self._inherited_process_scope else
-                                [ProcessScope.attach(path) for path in
-                                 sorted((session.path / "process-scopes").glob("*")) if path.is_dir()])
+        self._process_scopes = []
+        if not self._inherited_process_scope:
+            for path in sorted((session.path / "process-scopes").glob("*")):
+                if path.is_dir():
+                    try:
+                        self._process_scopes.append(ProcessScope.attach(path))
+                    except BackgroundJobError:
+                        # Keep invalid scopes discoverable by the diagnostic
+                        # observer without adopting their cleanup ownership.
+                        pass
         self.allow_persistent_processes = allow_persistent_processes
         self._background_jobs = (None if self._inherited_process_scope else
                                  BackgroundJobMonitor(session.path, lambda event: self.on_event(event)))
@@ -60,8 +67,16 @@ class Agent:
             return [self.process_scope.path]
         # Closed scopes remain a durable completion outbox. Cancellation removes
         # cleanup ownership, but its result must reach the next resumed turn.
-        return sorted(path for path in (self.session.path / "process-scopes").glob("*")
-                      if path.is_dir())
+        paths = sorted(path for path in (self.session.path / "process-scopes").glob("*")
+                       if path.is_dir() or path.is_symlink())
+        known = {scope.path for scope in self._process_scopes}
+        for path in paths:
+            if path not in known:
+                try:
+                    self._process_scopes.append(ProcessScope.attach(path))
+                except BackgroundJobError:
+                    pass
+        return paths
 
     def _activity(self, activity):
         self.on_event({"type": "activity", "activity": activity})
@@ -230,14 +245,15 @@ class Agent:
             if isinstance(execution, dict):
                 # A derived report must not hide ownership or interrupted child work.
                 fields = [key for key in execution if key.startswith("cleanup_")]
-                fields.extend(("feedback_errors", "feedback_image_count"))
+                fields.extend(("feedback_errors", "feedback_image_count", "executed", "error"))
                 if execution.get("feedback_errors"):
                     fields.append("exit_code")
                 if execution.get("job_id"):
                     fields.extend(("status", "completed", "job_id", "id", "state", "name", "display_name",
                                    "process_record_path", "state_dir", "stdout_path", "stderr_path",
                                    "job_timeout_seconds", "startup_timeout_seconds", "background_lifecycle",
-                                   "kind", "wait_on_exit", "persistent"))
+                                   "kind", "wait_on_exit", "persistent", "error", "launch_status", "launch_id",
+                                   "supervision_confirmed", "registration_error", "message", "launch_record_path"))
                 if execution.get("cleanup_required"):
                     fields.extend(("exit_code", "process_returncode"))
                 selected.update({key: execution[key] for key in fields if key in execution})
@@ -251,7 +267,7 @@ class Agent:
         if streamed:
             event["streamed"] = True
         event = self.session.append_event(event)
-        background_result = message.get("runtime_event") == RUNTIME_EVENT
+        background_result = message.get("runtime_event") in {RUNTIME_EVENT, UNCERTAINTY_EVENT}
         if not background_result:
             self.on_event(event)
         self.context.sync(self._select)

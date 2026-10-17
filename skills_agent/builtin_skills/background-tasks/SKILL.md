@@ -76,6 +76,8 @@ Your entry script must wait for all required internal work and report failures. 
 
 The runtime delivers each completed job's actual status, bounded stdout/stderr and full log paths once into the owning Agent's working context. The UI can update before that delivery; results enter context at a safe boundary before the next model request. A no-tool reply does not end the run while a registered `task` is pending; the runtime waits for a result and then resumes the model. After completion, inspect the result, produce remaining deliverables and verify them. A launch receipt or progress message is not completion evidence. Failure is evidence to investigate, not permission to retry without limit.
 
+If a launch receipt is missing or damaged, the runtime checks the durable registration before returning an error; it does not rerun the command. A `state: "unconfirmed"` or `status: "unconfirmed"` result means the outcome or supervision is unknown, not that the job exited or completed. The error and available job identifiers, record and log paths are returned to you so you can diagnose and recover while the conversation continues. Read that evidence and use the [process-management skill](../process-management/SKILL.md) for verified status, logs or stop. Do not blindly launch a duplicate, invent a PID or edit the registration to claim cleanup. The runtime preserves a required task's final-reply gate until supervision is restored or actual exit and cleanup are confirmed; reporting the uncertainty alone does not release this gate. A verified service retains its nonblocking lifecycle contract, but uncertainty is not evidence that it is healthy or ready for delivery.
+
 A `service` remains under its independent supervisor after a successful Agent reply and normal CLI exit. Startup is not readiness: check a meaningful health endpoint or task-specific behavior before delivery. For the example server, use a foreground shell call such as:
 
 ```json
@@ -90,6 +92,27 @@ A `service` remains under its independent supervisor after a successful Agent re
 A successful HTTP response proves reachability and response content; also check what matters for the delivered service. Hand over its address, `job_id`, absolute state/log paths and an exact stop command from the process-management skill. Stop it when no longer needed. A failed or cancelled turn cleans its newly launched services as well as computations; services retained by earlier successful turns stay available. Benchmark does not permit service retention.
 
 Use the [process-management skill](../process-management/SKILL.md) only when you need an intermediate status, log tail, readiness check, bounded wait or explicit stop. It is not required merely to launch a job or receive its automatic completion result. Avoid repeated polls without a question the observation can answer; continue independent work while the runtime monitors the job.
+
+## Observe progress and replace work
+
+Make intermediate progress visible when it will inform a decision: run Python with `-u` or flush meaningful milestones, such as completed batches, current phase and elapsed time. Let the supervisor capture stdout/stderr directly, then inspect bounded tails with the process-management helper. Avoid launching `python worker.py 2>&1 | tail -35` when you need live progress: `tail -35` normally waits for end of input before emitting the last lines, and cannot reveal progress the worker has not printed.
+
+Empty logs or no output files do not establish a stall. CPU at 100% shows activity but proves neither useful progress nor a hang. Compare task-specific progress, expected work and the remaining budget before choosing to wait, stop or optimize and restart; you need not wait for the full execution timeout when replacement is justified.
+
+To stop or replace registered work, use the process-management helper's `stop` with the exact receipt's `state_dir` and internal `name`, and confirm cleanup before starting a replacement:
+
+```json
+{
+  "name": "Stop registered work before replacing it",
+  "command": "python3 /ABS/PROCESS-MANAGEMENT/scripts/process.py stop --state-dir /ABS/RETURNED/jobs --name RETURNED-INTERNAL-NAME --grace 3 --timeout 10",
+  "run_in_background": false,
+  "timeout_seconds": 15
+}
+```
+
+Resolve the helper path from the process-management skill and copy the two identifiers from the receipt. Avoid broad command-line matching such as `pkill -f worker.py`: the same text can also occur in the shell and launch helper starting the new job, so it can kill the new launch as well as the old worker. If stop reports an unconfirmed state, diagnose it before launching a replacement.
+
+Counterexample from a refinement task: `python run_refine.py 2>&1 | tail -35` showed no logs or output files while the worker used 100% CPU. After about 126 seconds of a 600-second deadline, the Agent tried to optimize and rerun with `pkill -f run_refine.py; ...` inside the replacement command; the new launch lost its receipt, consistent with the broad match also killing its helper or shell. The empty log did not prove a hang, and optimizing was not itself the error: expose flushed progress, then stop the exact registered job and confirm cleanup before replacing it.
 
 ## Runnable script examples
 

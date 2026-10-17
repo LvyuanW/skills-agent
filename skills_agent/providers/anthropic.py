@@ -78,20 +78,45 @@ class AnthropicProvider(HTTPProvider):
     def _payload(self, system: str, messages: list[dict], tools: list[dict],
                  *, disable_thinking: bool = False) -> dict:
         converted = []
+        rejected = {}
+        projected_rejection = False
         for message in request_messages(messages):
             role = message["role"]
             if role == "tool":
                 role = "user"
-                content = [{"type": "tool_result", "tool_use_id": message["tool_call_id"],
-                            "content": message["content"]}]
-            elif role == "assistant" and "_anthropic_content" in message:
-                content = deepcopy(message["_anthropic_content"])
+                identifier = message["tool_call_id"]
+                if identifier in rejected:
+                    content = [{"type": "text", "text":
+                                f"Tool call {identifier} was not executed. Tool failure: {message['content']}"}]
+                else:
+                    content = [{"type": "tool_result", "tool_use_id": identifier,
+                                "content": message["content"]}]
             else:
-                content = _content(message.get("content"))
+                rejected, call_inputs = {}, {}
                 for call in message.get("tool_calls", []):
-                    content.append({"type": "tool_use", "id": call["id"],
-                                    "name": call["name"],
-                                    "input": parse_arguments(call["arguments"])})
+                    try:
+                        call_inputs[call["id"]] = parse_arguments(call["arguments"])
+                    except ProviderError as exc:
+                        # Anthropic requires tool_use.input to be an object. Keep
+                        # the rejected attempt as text rather than inventing an
+                        # executable input. Persisted calls/results stay intact.
+                        rejected[call["id"]] = {**call, "error": str(exc), "executed": False}
+                def tool_block(call):
+                    if call["id"] in rejected:
+                        return {"type": "text", "text": "Rejected tool call:\n" +
+                                json.dumps(rejected[call["id"]], ensure_ascii=False)}
+                    return {"type": "tool_use", "id": call["id"], "name": call["name"],
+                            "input": call_inputs[call["id"]]}
+
+                if role == "assistant" and "_anthropic_content" in message:
+                    calls = {call["id"]: call for call in message.get("tool_calls", [])}
+                    content = [tool_block(calls[block["id"]])
+                               if block.get("type") == "tool_use" and block.get("id") in rejected
+                               else deepcopy(block) for block in message["_anthropic_content"]]
+                else:
+                    content = _content(message.get("content"))
+                    content.extend(tool_block(call) for call in message.get("tool_calls", []))
+                projected_rejection = projected_rejection or bool(rejected)
             if role not in {"user", "assistant"}:
                 raise ProviderError(f"Unsupported Anthropic message role: {role}")
             if role == "assistant" and not content:
@@ -100,6 +125,11 @@ class AnthropicProvider(HTTPProvider):
                 converted[-1]["content"].extend(content)
             else:
                 converted.append({"role": role, "content": content})
+        if projected_rejection:
+            # Native results must precede observations in a mixed result group.
+            for message in converted:
+                if message["role"] == "user":
+                    message["content"].sort(key=lambda block: block.get("type") != "tool_result")
         payload = {"model": self.model, "messages": converted}
         if system:
             payload["system"] = system
@@ -200,9 +230,12 @@ class AnthropicProvider(HTTPProvider):
                         block = raw["content"][index]
                         if block["type"] == "tool_use":
                             if inputs[index]:
-                                block["input"] = parse_arguments("".join(inputs[index]))
-                            if not isinstance(block["input"], dict):
-                                raise ProviderError("Tool arguments must be a JSON object")
+                                try:
+                                    block["input"] = parse_arguments("".join(inputs[index]))
+                                except ProviderError:
+                                    # The raw fragments are retained below and
+                                    # validated by the ordinary tool boundary.
+                                    block.pop("input", None)
                         active.remove(index)
                     elif kind == "message_delta":
                         if not started:
@@ -222,12 +255,13 @@ class AnthropicProvider(HTTPProvider):
             if reason not in {"end_turn", "tool_use", "stop_sequence", "refusal"}:
                 raise ProviderError(f"Anthropic response stopped: {reason}", finish_reason=reason)
             content, calls = [], []
-            for block in raw["content"]:
+            for index, block in enumerate(raw["content"]):
                 if block["type"] == "text":
                     content.append({"type": "text", "text": block["text"]})
                 elif block["type"] == "tool_use":
                     calls.append({"id": block["id"], "name": block["name"],
-                                  "arguments": json.dumps(block["input"], ensure_ascii=False)})
+                                  "arguments": "".join(inputs[index]) if inputs[index] else
+                                  json.dumps(block["input"], ensure_ascii=False)})
                 elif block["type"] in {"thinking", "redacted_thinking"}:
                     content.append(deepcopy(block))
                 else:
