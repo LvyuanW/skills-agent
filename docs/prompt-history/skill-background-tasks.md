@@ -707,7 +707,7 @@ This is a native POSIX process-group contract, not a hard sandbox. Descendants t
 
 ## v7 · 2026-10-17 · 可见进度、精确停止与细化任务反例
 
-来源：工作区未提交；`skills_agent/builtin_skills/background-tasks/SKILL.md`。
+来源：提交 `46adca584389cc787b5b6ba358ee999a1664c394`；`skills_agent/builtin_skills/background-tasks/SKILL.md`。
 
 - 发现的问题：后台计算的缓冲和 tail 管道隐藏进度，模型依据空日志决定重跑，并用宽泛 pkill 误匹配启动链，失去启动回执。
 - 本版本目标：说明可观测进度与停止判断，提供基于登记标识的精确停止调用，加入此次细化任务的简短反例；保持未确认状态可恢复和完成门槛。

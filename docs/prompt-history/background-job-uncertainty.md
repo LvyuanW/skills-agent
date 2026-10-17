@@ -4,7 +4,7 @@
 
 ## v1 · 2026-10-17 · 监管未确认时返回诊断并继续会话
 
-来源：工作区未提交；`BackgroundResults._report_uncertainty()`。
+来源：提交 `46adca584389cc787b5b6ba358ee999a1664c394`；`BackgroundResults._report_uncertainty()`。
 
 - 发现的问题：无法确认后台监管状态时直接终止 Agent，模型失去诊断与恢复机会。
 - 本版本目标：将错误与已有作业、登记和日志信息作为观察返回模型，明确原完成门槛和禁止自动重复执行的边界。

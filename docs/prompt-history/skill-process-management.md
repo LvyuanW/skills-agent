@@ -330,7 +330,7 @@ Read [references/across-turns.md](references/across-turns.md) for status, logs, 
 
 ## v8 · 2026-10-17 · 恢复未确认监管状态
 
-来源：工作区未提交；`skills_agent/builtin_skills/process-management/SKILL.md`。
+来源：提交 `46adca584389cc787b5b6ba358ee999a1664c394`；`skills_agent/builtin_skills/process-management/SKILL.md`。
 
 - 发现的问题：原说明仅报告归属丢失，没有说明会话继续后如何处理未确认作业。
 - 本版本目标：按准确登记与日志诊断，不重复启动、不猜测 PID、不伪造清理确认，保留必需 task 的完成门槛。
