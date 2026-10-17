@@ -38,6 +38,7 @@
 | [sandbox 工具说明](tool-sandbox.md) | Docker 执行说明及参数描述 | v1 |
 | [subagent 工具说明](tool-subagent.md) | 委派范围、输入、报告和历史模式说明 | v1 |
 | [workspace 技能](skill-workspace.md) | `builtin_skills/workspace/SKILL.md` | v4 |
+| [resource-management 技能](skill-resource-management.md) | `builtin_skills/resource-management/SKILL.md` | v1 |
 | [investigation 技能](skill-investigation.md) | `builtin_skills/investigation/SKILL.md` | v3 |
 | [code-repair 技能](skill-code-repair.md) | `builtin_skills/code-repair/SKILL.md` | v3 |
 | [file-editing 技能](skill-file-editing.md) | `builtin_skills/file-editing/SKILL.md` | v3 |
