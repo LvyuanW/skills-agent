@@ -1,9 +1,0 @@
-{
-  "payload": "no-tool-reply-hold-test:payload:v1",
-  "sha256": "71b1ff21bc95257fcb8eb8867ddbe033b3e0452e3bea09b112d4ed13fb18d624",
-  "sum_squares_1_1000": 333833500,
-  "pid": 49170,
-  "started_at": 1792193254.116,
-  "finished_at": 1792193299.134,
-  "elapsed_seconds": 45.018
-}

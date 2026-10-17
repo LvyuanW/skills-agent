@@ -1,6 +1,8 @@
 # ALE 接入
 
-现有服务器的正式测评核查、固定 release 的启动命令及结果验收，见 [服务器测评启动流程](../../docs/ale-evaluation-runbook.md)。其中包含官方 Docker 镜像证据和该批次的资源配置差异。
+当前环境、隔离与评分验收要求见 [ALE 测评流程](../../../benchmark/ale/evaluation-protocol-20261017.txt)。本适配器说明只描述安装和执行接口，不能单独证明镜像干净或成绩与官榜等价。
+
+旧版 [服务器测评启动流程](../../../benchmark/ale/archive/skills-agent-cleanup-20261017/docs/ale-evaluation-runbook.md) 已归档。该文档早于隐藏参考文件暴露的审计，不应继续用作环境隔离保证。
 
 适配器使用 ALE 的 `sandbox` executor，在每道题的任务容器内执行。对应官方源码版本：[`d9abc073`](https://github.com/rdi-berkeley/agents-last-exam/tree/d9abc0734b56ea34116c5bfcbdd0b808269ab9e2)。
 
