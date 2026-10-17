@@ -252,3 +252,101 @@ Before a substantial computation with unknown cost, try a small representative i
 
 For explicit saved-data conditions, [scripts/check.py](scripts/check.py) supports `file PATH... [--min-bytes N]`, `text PATH --contains TEXT [--absent TEXT]`, and `json PATH [--pointer /path] --equals-json VALUE`. It distinguishes missing from null and booleans from numbers; exit codes are 0 for supplied conditions passing, 1 for a mismatch and 2 for acquisition/input failure. Derive expected values from the task rather than the produced answer. Read [references/acceptance-checks.md](references/acceptance-checks.md) for condition-specific examples, or [references/feedback-loop.md](references/feedback-loop.md) for connecting returned observations to the next action. Neither prescribes a fixed checklist.
 ````
+
+
+## v7 · 2026-10-17 · 视觉反馈使用声明式附图
+
+来源：工作区未提交；`skills_agent/builtin_skills/feedback/SKILL.md`。
+
+- 发现的问题：反馈技能仍将单 stdout JSON 作为附图入口，组合调用容易破坏。
+- 本版本目标：视觉反馈转向 images 技能和 shell.images；保留实际像素验证要求。
+- 本版本效果：技能与工具契约保持一致，脚本可打印普通日志和多个结果；技能格式与 JSON 示例校验通过，实际模型遵循待观察。
+
+### 完整原文
+
+````markdown
+---
+name: feedback
+description: >-
+  Use when the next decision needs actual execution or artifact evidence, including
+  bounded command runs with full logs, exact text/JSON checks, or rendering
+  HTML/SVG. All image attachments also require the images skill. Skip pure planning or lookups that
+  require no execution or artifact verification; this does not replace final review.
+---
+
+Choose the observation needed for the next decision: actual execution for behavior, saved text or values for content, and pixels for appearance. A successful write, file path or screenshot command alone does not establish the contents or visual result.
+
+[scripts/feedback.py](scripts/feedback.py) supplies reference acquisition methods. Reuse them, read/adapt the source, or write task-specific checks when appropriate. Direct invocation requires Python 3.11 or newer and an absolute script path resolved from this SKILL.md; variables do not persist across shell calls.
+
+| Operation | Result |
+| --- | --- |
+| `file PATH [--limit 100]` | File type, size, modification time and SHA-256; bounded directory metadata |
+| `text PATH [--start 1 --end 200 --column 1 --max-chars 12000]` | Exact numbered UTF-8 text with `next_line`/`next_column` continuation |
+| `run --log-dir DIR [--timeout 120] -- COMMAND...` | Actual exit status, timeout flag, bounded stdout/stderr tails and complete separate binary logs |
+| `render PATH --output PNG [--width 1200 --height 800 --wait-ms 1000 --browser PATH --timeout 30]` | Screenshot file of local HTML/SVG through installed Chrome/Chromium, plus acquisition metadata |
+
+`run` executes argument lists directly; use `sh -lc '...'` explicitly for shell syntax. `run` and `render` preserve failing status and return 124 on timeout. Inspect `timed_out`, actual `exit_code`, acquisition diagnostics and truncation. A tail may omit the cause; read the complete logs as needed. The helpers do not install dependencies.
+
+Before a substantial computation with unknown cost, try a small representative input that reaches the expensive work. Check correctness and measure runtime or progress before scaling up; an extrapolation is an estimate, and a pilot does not replace the required full result. Choose the sample size and a meaningful stopping condition from the task, such as an execution deadline, iteration limit, convergence criterion or interval without progress. The `run --timeout` limit stops command execution; set it for the planned work rather than assuming one duration fits every task.
+
+**Images:** always use the [images skill](../images/SKILL.md) and declare selected outputs in the shell tool's `images` parameter. A model request permits at most 5 images total, each at most 1,000,000 bytes before base64 encoding. Its `images.py prepare` makes bounded copies while keeping originals; `compose` combines more than five needed sources into a numbered grid with source URLs and coordinate mappings. New images use its in-memory `save_bounded` before writing. These feedback helpers reject oversized images.
+
+**Image declaration:** use `images: [{"path": "/absolute/host/output.png", "label": "Current result"}]`; local `file://` snapshot URLs also work, and optional `source_url` retains the original source. After execution the runtime reads and snapshots the declared files, then supplies pixels and snapshot URLs before filtering text. Background jobs register their images at launch and attach them only with the completion result. Explicit `images`, including `[]`, determines attachment independently of logs, JSON metadata or other stdout. Preparation/render metadata alone is not the attachment interface; do not call an extra attach helper. A header check only identifies format; inspect the actual image or acquisition error. Use `result_mode: direct` for exact text; native images also work with `auto` or `report`.
+
+`render` uses a fresh screenshot and isolated browser profile. Its wait value is a virtual-time budget, not an exact animation timestamp. A screenshot covers only the captured viewport and state. PDF/office files need an appropriate reader or page rendering first; text extraction is not visual inspection.
+
+For explicit saved-data conditions, [scripts/check.py](scripts/check.py) supports `file PATH... [--min-bytes N]`, `text PATH --contains TEXT [--absent TEXT]`, and `json PATH [--pointer /path] --equals-json VALUE`. It distinguishes missing from null and booleans from numbers; exit codes are 0 for supplied conditions passing, 1 for a mismatch and 2 for acquisition/input failure. Derive expected values from the task rather than the produced answer. Read [references/acceptance-checks.md](references/acceptance-checks.md) for condition-specific examples, or [references/feedback-loop.md](references/feedback-loop.md) for connecting returned observations to the next action. Neither prescribes a fixed checklist.
+````
+
+### 同步更新的 helper 帮助原文
+
+来源：`skills_agent/builtin_skills/feedback/scripts/feedback.py`；仅改 image 子命令帮助，旧输出保持兼容。
+
+```text
+image: legacy image feedback metadata; prefer shell.images
+```
+
+
+## v8 · 2026-10-17 · 图片上限统一为10张
+
+来源：工作区未提交；`skills_agent/builtin_skills/feedback/SKILL.md`。
+
+- 发现的问题：原上限为每个请求5张图片，用户要求扩展为10张。
+- 本版本目标：统一运行时、工具说明与技能的10图上限；每图1 MB及历史图片引用规则不变。
+- 本版本效果：允许同一请求携带至多10张图片；超出时使用合图，实际模型表现待观察。
+
+### 完整原文
+
+````markdown
+---
+name: feedback
+description: >-
+  Use when the next decision needs actual execution or artifact evidence, including
+  bounded command runs with full logs, exact text/JSON checks, or rendering
+  HTML/SVG. All image attachments also require the images skill. Skip pure planning or lookups that
+  require no execution or artifact verification; this does not replace final review.
+---
+
+Choose the observation needed for the next decision: actual execution for behavior, saved text or values for content, and pixels for appearance. A successful write, file path or screenshot command alone does not establish the contents or visual result.
+
+[scripts/feedback.py](scripts/feedback.py) supplies reference acquisition methods. Reuse them, read/adapt the source, or write task-specific checks when appropriate. Direct invocation requires Python 3.11 or newer and an absolute script path resolved from this SKILL.md; variables do not persist across shell calls.
+
+| Operation | Result |
+| --- | --- |
+| `file PATH [--limit 100]` | File type, size, modification time and SHA-256; bounded directory metadata |
+| `text PATH [--start 1 --end 200 --column 1 --max-chars 12000]` | Exact numbered UTF-8 text with `next_line`/`next_column` continuation |
+| `run --log-dir DIR [--timeout 120] -- COMMAND...` | Actual exit status, timeout flag, bounded stdout/stderr tails and complete separate binary logs |
+| `render PATH --output PNG [--width 1200 --height 800 --wait-ms 1000 --browser PATH --timeout 30]` | Screenshot file of local HTML/SVG through installed Chrome/Chromium, plus acquisition metadata |
+
+`run` executes argument lists directly; use `sh -lc '...'` explicitly for shell syntax. `run` and `render` preserve failing status and return 124 on timeout. Inspect `timed_out`, actual `exit_code`, acquisition diagnostics and truncation. A tail may omit the cause; read the complete logs as needed. The helpers do not install dependencies.
+
+Before a substantial computation with unknown cost, try a small representative input that reaches the expensive work. Check correctness and measure runtime or progress before scaling up; an extrapolation is an estimate, and a pilot does not replace the required full result. Choose the sample size and a meaningful stopping condition from the task, such as an execution deadline, iteration limit, convergence criterion or interval without progress. The `run --timeout` limit stops command execution; set it for the planned work rather than assuming one duration fits every task.
+
+**Images:** always use the [images skill](../images/SKILL.md) and declare selected outputs in the shell tool's `images` parameter. A model request permits at most 10 images total, each at most 1,000,000 bytes before base64 encoding. Its `images.py prepare` makes bounded copies while keeping originals; `compose` combines more than ten needed sources into a numbered grid with source URLs and coordinate mappings. New images use its in-memory `save_bounded` before writing. These feedback helpers reject oversized images.
+
+**Image declaration:** use `images: [{"path": "/absolute/host/output.png", "label": "Current result"}]`; local `file://` snapshot URLs also work, and optional `source_url` retains the original source. After execution the runtime reads and snapshots the declared files, then supplies pixels and snapshot URLs before filtering text. Background jobs register their images at launch and attach them only with the completion result. Explicit `images`, including `[]`, determines attachment independently of logs, JSON metadata or other stdout. Preparation/render metadata alone is not the attachment interface; do not call an extra attach helper. A header check only identifies format; inspect the actual image or acquisition error. Use `result_mode: direct` for exact text; native images also work with `auto` or `report`.
+
+`render` uses a fresh screenshot and isolated browser profile. Its wait value is a virtual-time budget, not an exact animation timestamp. A screenshot covers only the captured viewport and state. PDF/office files need an appropriate reader or page rendering first; text extraction is not visual inspection.
+
+For explicit saved-data conditions, [scripts/check.py](scripts/check.py) supports `file PATH... [--min-bytes N]`, `text PATH --contains TEXT [--absent TEXT]`, and `json PATH [--pointer /path] --equals-json VALUE`. It distinguishes missing from null and booleans from numbers; exit codes are 0 for supplied conditions passing, 1 for a mismatch and 2 for acquisition/input failure. Derive expected values from the task rather than the produced answer. Read [references/acceptance-checks.md](references/acceptance-checks.md) for condition-specific examples, or [references/feedback-loop.md](references/feedback-loop.md) for connecting returned observations to the next action. Neither prescribes a fixed checklist.
+````

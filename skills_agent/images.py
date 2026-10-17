@@ -5,7 +5,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 
-MAX_REQUEST_IMAGES = 5
+MAX_REQUEST_IMAGES = 10
 MAX_IMAGE_BYTES = 1_000_000
 
 
@@ -57,7 +57,7 @@ def _same_reference(block, reference):
 
 
 def project_images(messages: list[dict]) -> list[dict]:
-    """Keep at most five images after the last assistant; retain all references.
+    """Keep at most ten images after the last assistant; retain all references.
 
     Projection never reads files or changes the original history. A model turn
     ends at every assistant message, including one that requests more tools.

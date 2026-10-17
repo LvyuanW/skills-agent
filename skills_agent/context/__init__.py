@@ -301,9 +301,19 @@ class WorkingContext:
             for record in reversed(self.records):
                 if not record.get("pending_direct"):
                     continue
+                original = record["message"].get("content")
+                text = original if isinstance(original, str) else next(
+                    (block["text"] for block in original or [] if block.get("type") == "text"), "")
+                try:
+                    execution = json.loads(text)
+                except (ValueError, TypeError):
+                    execution = None
+                metadata = ({key: execution[key] for key in ("feedback_errors", "feedback_image_count", "exit_code")
+                             if key in execution} if isinstance(execution, dict) else {})
                 replace_result_text(record["message"], json.dumps({
                     "notice": "Requested original result does not fit the active context. Read a narrower range.",
                     "source": record["source"],
+                    **metadata,
                 }, ensure_ascii=False))
                 record.pop("pending_direct", None)
                 count = self._count(system, tools)

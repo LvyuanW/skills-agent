@@ -47,6 +47,21 @@ For a service:
 
 The launch receipt confirms startup only. It contains a stable `job_id`, the human-facing `display_name`, `process_record_path`, `stdout_path`, `stderr_path`, and the internal `state_dir` and safe `name` needed for later management. Preserve these returned values; do not derive the internal name from the display name or invent a PID. The runtime records ownership, saves complete logs, and displays the job's status and elapsed time in the UI.
 
+For image outputs, read the [images skill](../images/SKILL.md) and declare future files in the same shell call:
+
+```json
+{
+  "name": "Compute and inspect final plot",
+  "command": "python3 -u /ABS/TASK/analyze.py",
+  "run_in_background": true,
+  "background_lifecycle": "task",
+  "timeout_seconds": 7200,
+  "images": [{"path": "/ABS/TASK/plot.png", "label": "Final analysis plot"}]
+}
+```
+
+The runtime registers these paths at launch and reads/snapshots the images only after the job finishes; the startup receipt contains no image payload. The script must save each final image within 1 MB before exiting. Declare at most ten images, using absolute host paths or local `file://` URLs and optional `source_url`. Stdout may contain any progress logs or JSON metadata: explicit `images`, including `[]`, controls attachments independently of that output. Image acquisition failures belong to the completion result and must be checked. For a service that stays running, inspect a current screenshot with a separate synchronous shell call and `images`; do not wait for the service to exit merely to view its output.
+
 There are separate deadlines:
 
 - With `run_in_background=false`, `timeout_seconds` limits synchronous execution: default 120 seconds, maximum 600.

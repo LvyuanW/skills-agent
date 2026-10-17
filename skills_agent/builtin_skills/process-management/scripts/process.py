@@ -197,6 +197,9 @@ def start(args: argparse.Namespace) -> int:
         raise ValueError("Job timeout must be a positive finite number of seconds")
     if args.persistent and not service:
         raise ValueError("--persistent requires --service")
+    images = json.loads(args.images_json) if getattr(args, "images_json", None) is not None else None
+    if images is not None and not isinstance(images, list):
+        raise ValueError("Declared images must be a list")
 
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command:
@@ -235,6 +238,10 @@ def start(args: argparse.Namespace) -> int:
             "cleanup_process_count": 0, "cleanup_message": None,
             "exit_code": None, "stop_reason": None,
         }
+        if images is not None:
+            # Save launch metadata with the ownership token before any payload
+            # can finish; never patch a supervisor's live record after launch.
+            record["images"] = images
         try:
             with scope_lock(os.environ.get(SCOPE_ENV)) as scope:
                 if scope:
@@ -712,6 +719,7 @@ def parser() -> argparse.ArgumentParser:
             child.add_argument("--job-timeout", type=job_timeout_value, help="Independent job execution deadline in seconds; default 3600 for computations, none for services")
             child.add_argument("--persistent", action="store_true", help="After its CLI turn succeeds, keep an ongoing service across session exit; forbidden in benchmark runs")
             child.add_argument("--startup-timeout", type=positive, default=10)
+            child.add_argument("--images-json", help=argparse.SUPPRESS)
             child.add_argument("command", nargs=argparse.REMAINDER, help="Arguments after -- execute directly, without a shell")
         elif operation == "wait":
             child.add_argument("--timeout", type=positive, default=30)

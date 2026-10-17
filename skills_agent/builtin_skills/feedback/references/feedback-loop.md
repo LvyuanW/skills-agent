@@ -46,21 +46,29 @@ Decision after observation: obtain missing evidence, resolve the execution gap, 
 
 ## Acquire pixels when the question is visual
 
-If a task already produced an image, request that image directly:
+Use the [images skill](../../images/SKILL.md) and declare the selected image in the shell tool call. If the task already produced a bounded image, no preparation command is needed:
 
-```sh
-feedback='/absolute/path/from/skill-catalog/feedback/scripts/feedback.py'
-python3 "$feedback" image output.png --label 'Current work result'
+```json
+{
+  "name": "Inspect current work result",
+  "command": "true",
+  "run_in_background": false,
+  "images": [{"path": "/absolute/workspace/output.png", "label": "Current work result"}]
+}
 ```
 
 For a local HTML or SVG result, the installed browser can produce a screenshot:
 
-```sh
-feedback='/absolute/path/from/skill-catalog/feedback/scripts/feedback.py'
-python3 "$feedback" render preview.html --output .verify/preview.png --width 1200 --height 800 --wait-ms 0
+```json
+{
+  "name": "Render and inspect preview",
+  "command": "python3 /absolute/path/from/skill-catalog/feedback/scripts/feedback.py render /absolute/workspace/preview.html --output /absolute/workspace/.verify/preview.png --width 500 --height 400 --wait-ms 0",
+  "run_in_background": false,
+  "images": [{"path": "/absolute/workspace/.verify/preview.png", "label": "Preview"}]
+}
 ```
 
-Choose a viewport and wait budget relevant to the property under review. A zero wait requests capture without a virtual-time budget; a nonzero value does not promise an exact animation timestamp. These calls return one JSON envelope as the entire stdout. The runtime then supplies acquired images as native visual evidence.
+Choose a viewport and wait budget relevant to the property under review. A zero wait requests capture without a virtual-time budget; a nonzero value does not promise an exact animation timestamp. The command may print acquisition metadata and ordinary logs; `images` selects which files become native visual evidence after the command finishes. Use absolute host paths or local snapshot URLs, at most ten images per request and at most 1 MB per image. If only preparing files for later inspection, pass `images: []`. A background call registers future output paths and supplies the images with its completion result, not its launch receipt.
 
 Decision after observation: inspect the actual native image for the task's visible requirements. If acquisition fails, address or report that gap instead of inferring appearance from a filename, hash, or successful render command. If the visible result differs from the requirement, make a relevant correction and acquire the updated image when needed to judge that correction. One screenshot covers its captured state and viewport; motion, interaction and other states require their own relevant observations.
 

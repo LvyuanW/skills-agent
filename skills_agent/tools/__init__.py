@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 
 from ..execution import DEFAULT_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS, ToolCleanupError, run_command, validate_timeout
+from ..feedback import validate_images
+from ..images import MAX_REQUEST_IMAGES
 from ..processes import CALL_ENV, CONTEXT_ENV, SCOPE_ENV
 
 
@@ -31,6 +33,19 @@ class ToolRegistry:
                             "report: concise conclusions with evidence. Default auto."},
         }
         shell_script = {**script,
+            "images": {"type": "array", "maxItems": MAX_REQUEST_IMAGES, "description":
+                "Optional images to inspect after this command completes. Read the images skill first. "
+                f"Use at most {MAX_REQUEST_IMAGES} images, each at most 1 MB. Paths are absolute host paths or file:// URLs; "
+                "they may be produced by the command. Background images are attached only on completion, "
+                "never to the launch receipt. An explicit list, including [], takes precedence over "
+                "image declarations in stdout.", "items": {
+                    "type": "object", "required": ["path"], "additionalProperties": False,
+                    "properties": {
+                        "path": {"type": "string", "description": "Absolute host path or file:// URL."},
+                        "label": {"type": "string", "description": "Optional image label."},
+                        "source_url": {"type": "string", "description": "Optional original file:// or HTTP(S) URL."},
+                    },
+                }},
             "run_in_background": {"type": "boolean", "description":
                 "Required. false: wait for the entry process, clean remaining processes in its group, "
                 "then return its result. true: return a registered job receipt while the entry process "
@@ -98,6 +113,9 @@ class ToolRegistry:
                 raise ValueError(f"Expected arguments: {', '.join(expected)}")
             for key, value in values.items():
                 field = allowed[key]
+                if key == "images":
+                    values[key] = validate_images(value)
+                    continue
                 if key == "timeout_seconds":
                     if name == "shell" and values.get("run_in_background") is True:
                         try:
@@ -135,6 +153,7 @@ class ToolRegistry:
                             values["command"], values["name"], cwd=self.workspace,
                             env=environment, timeout_seconds=values.get("timeout_seconds"),
                             background_lifecycle=values.get("background_lifecycle", "task"),
+                            images=values.get("images"),
                         )
                     else:
                         result = run_command(
@@ -143,6 +162,8 @@ class ToolRegistry:
                             timeout_seconds=values.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS),
                             log_dir=self.log_dir,
                         )
+                        if "images" in values:
+                            result["images"] = values["images"]
                 elif name == "sandbox":
                     result = self.sandbox.run(
                         values["command"], timeout_seconds=values.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS),

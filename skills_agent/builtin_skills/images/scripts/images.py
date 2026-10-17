@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare, compose, or attach bounded images through the shared feedback protocol."""
+"""Prepare bounded image files and metadata; declare their paths in shell.images."""
 
 from __future__ import annotations
 
@@ -137,7 +137,7 @@ def save_image(output: Path, encoded: bytes, label: str, source_url: str | None 
 
 
 def save_bounded(image, output: str | Path, *, label: str = "Generated image") -> dict:
-    """Save a newly generated Pillow image only once it fits, and return its feedback envelope."""
+    """Save a bounded Pillow image and return preparation metadata in a legacy feedback envelope."""
     filename = getattr(image, "filename", None)
     sources = [feedback.absolute(filename)] if filename else []
     path = output_path(str(output), sources)
@@ -182,7 +182,7 @@ def compose(args: argparse.Namespace) -> dict:
     cell = min(512, 4096 // max(columns, rows))
     if cell < 96:
         raise FeedbackError("Too many panels for a useful single image; select fewer sources or split "
-                            "into several composites while keeping the request at most 5 images")
+                            f"into several composites while keeping the request at most {feedback.MAX_IMAGES} images")
     label_height, padding = 28, 8
     canvas = Image.new("RGB", (columns * cell, rows * cell), "#e5e7eb")
     draw = ImageDraw.Draw(canvas)
@@ -231,16 +231,16 @@ def attach(args: argparse.Namespace) -> dict:
 def parser() -> argparse.ArgumentParser:
     cli = argparse.ArgumentParser(description=__doc__)
     commands = cli.add_subparsers(dest="operation", required=True)
-    prepare_cli = commands.add_parser("prepare", help="compress a separate copy and attach it")
+    prepare_cli = commands.add_parser("prepare", help="compress a separate copy; declare its output in shell.images")
     prepare_cli.add_argument("source")
     prepare_cli.add_argument("--output", required=True)
     prepare_cli.add_argument("--source-url")
-    compose_cli = commands.add_parser("compose", help="attach one numbered grid of source images")
+    compose_cli = commands.add_parser("compose", help="create a numbered grid; declare its output in shell.images")
     compose_cli.add_argument("sources", nargs="+")
     compose_cli.add_argument("--output", required=True)
     compose_cli.add_argument("--columns", type=feedback.positive_int)
     compose_cli.add_argument("--source-url", action="append")
-    attach_cli = commands.add_parser("attach", help="attach up to five already bounded images")
+    attach_cli = commands.add_parser("attach", help="legacy image feedback metadata; prefer shell.images")
     attach_cli.add_argument("paths", nargs="+")
     attach_cli.add_argument("--source-url", action="append")
     for command in (prepare_cli, compose_cli, attach_cli):

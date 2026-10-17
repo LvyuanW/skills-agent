@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from .execution import ToolCleanupError
+from .feedback import validate_images
 
 
 SCOPE_ENV = "SKILLS_AGENT_PROCESS_SCOPE"
@@ -85,6 +86,8 @@ def _strict_registration(path):
         if "display_name" in record and (not isinstance(record["display_name"], str)
                                           or not record["display_name"].strip()):
             raise ValueError("invalid display_name")
+        if "images" in record:
+            record["images"] = validate_images(record["images"])
         for field in ("job_timeout_seconds", "startup_timeout_seconds"):
             value = record.get(field)
             if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))
@@ -165,6 +168,8 @@ def completion_result(job, max_bytes=16384) -> dict:
         raise BackgroundJobError("A confirmed terminal background run is required")
     code = record.get("returncode")
     result = {key: record.get(key) for key in ("name", "display_name", "command", "cwd", "owner_session_id", "origin_tool_call_id", "started_at", "ended_at", "stop_reason", "job_timeout_seconds", "deadline_at", "forced", "cleanup_reason", "cleanup_process_count", "cleanup_message")}
+    if "images" in record:
+        result["images"] = record["images"]
     started, ended = _timestamp(record.get("started_at")), _timestamp(record.get("ended_at"))
     result.update(id=expected, job_id=expected, state=record["state"],
                   kind=record.get("kind", "job"), wait_on_exit=record.get("wait_on_exit", record.get("kind", "job") == "job"),
@@ -420,13 +425,17 @@ class ProcessScope:
         self.successful = True
 
     def start_background(self, command: str, name: str, cwd: Path, env: dict,
-                         timeout_seconds: float | None = None, *, background_lifecycle: str = "task") -> dict:
+                         timeout_seconds: float | None = None, *, background_lifecycle: str = "task",
+                         images: list[dict] | None = None) -> dict:
         """Register a supervised shell and return its launch receipt, not its result.
 
         The independently owned supervisor keeps the payload's process-group
         leader unreaped until group cleanup is confirmed.  This is cooperative
         POSIX process-group ownership; a deliberately detached process is outside
         the contract, rather than a containment guarantee.
+
+        Image declarations are registered before launch; this path never opens
+        their files or attaches them to the receipt.
         """
         scope = self.attach(self.path)
         if not isinstance(command, str) or not command.strip():
@@ -435,6 +444,7 @@ class ProcessScope:
             raise ValueError("Background name must be a non-empty string")
         if background_lifecycle not in ("task", "service"):
             raise ValueError("background_lifecycle must be task or service")
+        images = validate_images(images) if images is not None else None
         service = background_lifecycle == "service"
         scope_policy = json.loads(_regular_bytes(scope.path / "scope.json", maximum=65536)[0])
         if service and scope_policy.get("allow_persistent") is not True:
@@ -467,6 +477,8 @@ class ProcessScope:
             args.extend(["--job-timeout", str(timeout)])
         if service:
             args.extend(["--service", "--persistent"])
+        if images is not None:
+            args.extend(["--images-json", json.dumps(images, ensure_ascii=False)])
         args.extend(["--", "/bin/sh", "-c", command])
         environment = {**env, SCOPE_ENV: str(scope.path)}
         try:
@@ -484,7 +496,9 @@ class ProcessScope:
             registration = _strict_registration(scope.path / "runs" / f"{saved['token']}.json")
             if (registration["name"] != internal_name or registration.get("kind") != ("service" if service else "job")
                     or registration.get("wait_on_exit") is not (not service)
-                    or registration.get("persistent") is not service):
+                    or registration.get("persistent") is not service
+                    or ("images" in registration) != (images is not None)
+                    or registration.get("images") != images):
                 raise ValueError("Background launch registration does not match this request")
             # A very short job can already have failed or timed out by the time
             # the helper observes startup.  It still launched: preserve its

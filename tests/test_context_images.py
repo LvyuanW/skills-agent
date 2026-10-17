@@ -113,9 +113,9 @@ class ContextImageTests(ImageTestCase):
         self.assertEqual(images(context.prepare("system", [])[1]), [new])
         self.assertEqual(images([context.latest_user()]), [new])
 
-    def test_parallel_tool_images_keep_newest_five_without_breaking_pairs(self):
-        supplied = [self.image(f"parallel-{number}.png") for number in range(7)]
-        calls = [{"id": f"call-{number}", "name": "shell", "arguments": "{}"} for number in range(7)]
+    def test_parallel_tool_images_keep_newest_ten_without_breaking_pairs(self):
+        supplied = [self.image(f"parallel-{number}.png") for number in range(12)]
+        calls = [{"id": f"call-{number}", "name": "shell", "arguments": "{}"} for number in range(12)]
         self.append({"role": "user", "content": "Inspect outputs"},
                     {"role": "assistant", "content": "", "tool_calls": calls})
         for number, image in enumerate(supplied):
@@ -123,13 +123,13 @@ class ContextImageTests(ImageTestCase):
         context = self.context()
         context.sync()
         sent = context.prepare("system", [])[1]
-        self.assertEqual(images(sent), supplied[-5:])
-        self.assertEqual(len(references(sent)), 7)
+        self.assertEqual(images(sent), supplied[-10:])
+        self.assertEqual(len(references(sent)), 12)
         self.assertEqual([ref["name"] for ref in references(sent) if ref.get("omitted_reason") == "request_limit"],
                          ["parallel-0.png", "parallel-1.png"])
-        self.assertEqual([len(group) for group in record_groups(context.records)], [1, 8])
+        self.assertEqual([len(group) for group in record_groups(context.records)], [1, 13])
         self.assertEqual(images(self.session.messages()), supplied)
-        self.assertEqual(images(self.context().prepare("system", [])[1]), supplied[-5:])
+        self.assertEqual(images(self.context().prepare("system", [])[1]), supplied[-10:])
 
     def test_loading_legacy_context_expires_history_and_preserves_raw_evidence(self):
         old = self.image("legacy.png")
@@ -231,12 +231,12 @@ class AuxiliaryImageTests(ImageTestCase):
         self.assertEqual(records, original)
 
     def test_auxiliary_request_limit_retains_urls_for_omitted_images(self):
-        supplied = [self.image(f"auxiliary-{number}.png") for number in range(7)]
+        supplied = [self.image(f"auxiliary-{number}.png") for number in range(12)]
         model = Model(["report"])
         Auxiliary(model, self.session).tool_report("output", {}, {}, {}, attachments=supplied)
         sent = model.calls[0]["messages"]
-        self.assertEqual(images(sent), supplied[-5:])
-        self.assertEqual(len(references(sent)), 7)
+        self.assertEqual(images(sent), supplied[-10:])
+        self.assertEqual(len(references(sent)), 12)
         self.assertIn(sent, model.counted)
 
     def test_summary_drafts_do_not_reattach_images_from_other_batches(self):

@@ -46,16 +46,16 @@ class ImageAcquisitionTests(unittest.TestCase):
         self.assertIn(str(MAX_IMAGE_BYTES), rejected["feedback_errors"][0])
         self.assertEqual(set((self.session.path / "attachments").iterdir()), before)
 
-    def test_six_feedback_images_do_not_create_native_attachments(self):
-        rejected = json.loads(self.feedback([self.path] * 6))
-        self.assertIn("at most 5", rejected["feedback_errors"][0])
+    def test_eleven_feedback_images_fail_and_ten_are_accepted(self):
+        rejected = json.loads(self.feedback([self.path] * 11))
+        self.assertIn("at most 10", rejected["feedback_errors"][0])
         self.assertFalse((self.session.path / "attachments").exists())
-        accepted = self.feedback([self.path] * 5)
-        self.assertEqual(len([block for block in accepted if block["type"] == "image"]), 5)
+        accepted = self.feedback([self.path] * 10)
+        self.assertEqual(len([block for block in accepted if block["type"] == "image"]), 10)
 
     def test_user_images_are_validated_before_snapshots_and_keep_urls(self):
-        with self.assertRaisesRegex(ValueError, "at most 5"):
-            self.session.make_user_message("inspect", [self.path] * 6)
+        with self.assertRaisesRegex(ValueError, "at most 10"):
+            self.session.make_user_message("inspect", [self.path] * 11)
         self.assertFalse((self.session.path / "attachments").exists())
         self.path.write_bytes(bytes(MAX_IMAGE_BYTES + 1))
         with self.assertRaisesRegex(ValueError, str(MAX_IMAGE_BYTES)):
@@ -65,6 +65,8 @@ class ImageAcquisitionTests(unittest.TestCase):
         image = self.session.make_user_message("inspect", [self.path])["content"][1]
         self.assertEqual(image["url"], Path(image["path"]).as_uri())
         self.assertEqual(image["source_url"], self.path.as_uri())
+        ten = self.session.make_user_message("inspect ten views", [self.path] * 10)
+        self.assertEqual(len([block for block in ten["content"] if block["type"] == "image"]), 10)
 
     def test_report_replacement_retains_history_reference(self):
         reference = image_reference({"type": "image", "path": str(self.path)})

@@ -23,7 +23,7 @@ import time
 from urllib.parse import urlsplit
 
 
-MAX_IMAGES = 5
+MAX_IMAGES = 10
 MAX_IMAGE_BYTES = 1_000_000
 
 
@@ -362,7 +362,7 @@ def parser() -> argparse.ArgumentParser:
     run.add_argument("--log-dir", required=True)
     run.add_argument("--timeout", type=positive_seconds, default=120)
     run.add_argument("command", nargs=argparse.REMAINDER)
-    image = commands.add_parser("image", help="request native visual feedback from existing image files")
+    image = commands.add_parser("image", help="legacy image feedback metadata; prefer shell.images")
     image.add_argument("paths", nargs="+")
     image.add_argument("--label")
     image.add_argument("--source-url", action="append",

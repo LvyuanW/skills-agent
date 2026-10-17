@@ -105,10 +105,9 @@ class BackgroundResults:
             if delegation:
                 result["delegated_task_name"] = delegation["name"]
             text = json.dumps(result, ensure_ascii=False)
-            # A tail may happen to look like an envelope without being the full
-            # output. Interpret attachments only from complete stdout; retain
-            # full paths and truncation metadata in either case.
-            content = text if result.get("stdout_truncated") else feedback_content(text, self.session)
+            # Explicit declarations do not depend on log completeness. Legacy
+            # stdout envelopes are interpreted only from complete output.
+            content = feedback_content(text, self.session)
             content = ([{"type": "text", "text": content}] if isinstance(content, str) else content)
             append({
                 "role": "user", "runtime_event": RUNTIME_EVENT,

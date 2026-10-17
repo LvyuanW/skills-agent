@@ -126,9 +126,11 @@ class Agent:
             "Whenever attaching images to a model request, use the images skill, whether the images "
             "are newly created or already exist. Create images no larger than 1 MB (1,000,000 bytes); "
             "compress larger existing images into separate copies before attaching them. Attach at "
-            "most five images per request and include each image's retrievable URL. If more source "
+            "most ten images per request and include each image's retrievable URL. If more source "
             "images are necessary, compose them into a labeled image within the same size limit. Images from past "
-            "requests are retained as URL references; use the skill to load them again when needed.\n\n"
+            "requests are retained as URL references; use the skill to load them again when needed. "
+            "Declare images in shell.images, independently of stdout. The runtime attaches them after "
+            "execution completes, including background job completion; a startup receipt has no images.\n\n"
             "Read relevant references and script source to understand or adapt a method. You may "
             "reuse a helper, adapt it or write your own script; preserve the relevant input/output "
             "contracts. Use --help for helper arguments. Derive deliverables and acceptance conditions "
@@ -228,6 +230,9 @@ class Agent:
             if isinstance(execution, dict):
                 # A derived report must not hide ownership or interrupted child work.
                 fields = [key for key in execution if key.startswith("cleanup_")]
+                fields.extend(("feedback_errors", "feedback_image_count"))
+                if execution.get("feedback_errors"):
+                    fields.append("exit_code")
                 if execution.get("job_id"):
                     fields.extend(("status", "completed", "job_id", "id", "state", "name", "display_name",
                                    "process_record_path", "state_dir", "stdout_path", "stderr_path",

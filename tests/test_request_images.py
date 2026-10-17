@@ -69,8 +69,8 @@ class RequestImageTests(unittest.TestCase):
             self.assertIn(Path(block["path"]).as_uri(), text)
         self.assertEqual(project_images(projected), projected)
 
-    def test_parallel_tool_images_keep_latest_five_with_explicit_references(self):
-        blocks = [self.image(f"image-{index}.png", None) for index in range(7)]
+    def test_parallel_tool_images_keep_latest_ten_with_explicit_references(self):
+        blocks = [self.image(f"image-{index}.png", None) for index in range(12)]
         messages = [{"role": "assistant", "content": "", "tool_calls": [call("a"), call("b")]},
                     {"role": "tool", "tool_call_id": "a", "content": blocks[:4]},
                     {"role": "tool", "tool_call_id": "b", "content": blocks[4:]}]
@@ -78,7 +78,7 @@ class RequestImageTests(unittest.TestCase):
         self.assertEqual(native_images(projected), blocks[-MAX_REQUEST_IMAGES:])
         references = [block for message in projected for block in message["content"]
                       if isinstance(block, dict) and "image_reference" in block]
-        self.assertEqual(len(references), 7)
+        self.assertEqual(len(references), 12)
         self.assertEqual([block["image_reference"].get("omitted_reason") for block in references[:2]],
                          ["request_limit", "request_limit"])
         self.assertTrue(all("not attached" in block["text"] for block in references[:2]))
@@ -95,25 +95,25 @@ class RequestImageTests(unittest.TestCase):
         self.assertEqual(image_reference(reference), reference)
 
     def test_incremental_parallel_results_do_not_duplicate_existing_references(self):
-        images = [self.image(f"image-{index}.png", None) for index in range(7)]
+        images = [self.image(f"image-{index}.png", None) for index in range(12)]
         projected = project_images([
             {"role": "assistant", "content": "", "tool_calls": [call("a"), call("b")]},
-            {"role": "tool", "tool_call_id": "a", "content": images[:5]},
+            {"role": "tool", "tool_call_id": "a", "content": images[:10]},
         ])
         for block in projected[-1]["content"]:
             if "image_reference" in block:
                 block["image_reference"]["event_id"] = "event-first-result"
-        projected.append({"role": "tool", "tool_call_id": "b", "content": images[5:]})
+        projected.append({"role": "tool", "tool_call_id": "b", "content": images[10:]})
         original = deepcopy(projected)
         result = project_images(projected)
         references = [block["image_reference"] for message in result
                       for block in message.get("content", [])
                       if isinstance(block, dict) and "image_reference" in block]
-        self.assertEqual(len(references), 7)
-        self.assertEqual([reference["event_id"] for reference in references[:5]], ["event-first-result"] * 5)
+        self.assertEqual(len(references), 12)
+        self.assertEqual([reference["event_id"] for reference in references[:10]], ["event-first-result"] * 10)
         self.assertEqual([reference.get("omitted_reason") for reference in references[:2]],
                          ["request_limit", "request_limit"])
-        self.assertEqual(native_images(result), images[-5:])
+        self.assertEqual(native_images(result), images[-10:])
         self.assertEqual(project_images(result), result)
         self.assertEqual(projected, original)
 

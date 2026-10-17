@@ -79,17 +79,17 @@ class ImagesSkillTests(unittest.TestCase):
         self.assertIn('compress', data['observations']['error'])
         self.assertEqual(path.read_bytes(), original)
 
-    def test_five_images_pass_but_six_fail_without_partial_attachment(self):
-        paths = [self.workspace / f'image-{i}.png' for i in range(6)]
+    def test_ten_images_pass_but_eleven_fail_without_partial_attachment(self):
+        paths = [self.workspace / f'image-{i}.png' for i in range(11)]
         for path in paths:
             path.write_bytes(png())
-        result, data = self.run_helper('image', *paths[:5])
+        result, data = self.run_helper('image', *paths[:10])
         self.assertEqual(result.returncode, 0, result.stderr.decode())
-        self.assertEqual([item['url'] for item in data['attachments']], [p.as_uri() for p in paths[:5]])
+        self.assertEqual([item['url'] for item in data['attachments']], [p.as_uri() for p in paths[:10]])
         result, data = self.run_helper('image', *paths)
         self.assertEqual(result.returncode, 1)
         self.assertEqual(data['attachments'], [])
-        self.assertIn('5', data['observations']['error'])
+        self.assertIn('10', data['observations']['error'])
 
     def test_source_urls_remain_distinct_from_sent_local_urls(self):
         paths = [self.workspace / 'first.png', self.workspace / 'second.png']
@@ -207,9 +207,9 @@ class ImagesPreparationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         self.assertEqual(data['attachments'][0]['path'], str(source))
 
-    def test_compose_more_than_five_sources_is_one_image_with_panel_mapping(self):
+    def test_compose_more_than_ten_sources_is_one_image_with_panel_mapping(self):
         sources = [self.source(f'source-{i}.png', (70 + i * 7, 50 + i * 3),
-                               color=(i * 25, 30, 210)) for i in range(8)]
+                               color=(i * 20, 30, 210)) for i in range(11)]
         originals = [path.read_bytes() for path in sources]
         output = self.workspace / 'overview.png'
         result, data = self.run_helper('compose', *(path.as_uri() for path in sources),
@@ -219,7 +219,7 @@ class ImagesPreparationTests(unittest.TestCase):
         self.assertLessEqual(output.stat().st_size, 1_000_000)
         observations = data['observations']
         self.assertEqual(observations['source_urls'], [path.as_uri() for path in sources])
-        self.assertEqual([p['number'] for p in observations['panels']], list(range(1, 9)))
+        self.assertEqual([p['number'] for p in observations['panels']], list(range(1, 12)))
         with Image.open(output) as image:
             self.assertEqual(image.format, 'PNG')
             self.assertEqual(list(image.size), observations['dimensions'])
@@ -231,7 +231,7 @@ class ImagesPreparationTests(unittest.TestCase):
                 self.assertAlmostEqual((right - left) * panel['scale_to_source'][0], 70 + index * 7)
                 self.assertAlmostEqual((bottom - top) * panel['scale_to_source'][1], 50 + index * 3)
                 self.assertEqual(image.getpixel((round((left + right) / 2), round((top + bottom) / 2))),
-                                 (index * 25, 30, 210))
+                                 (index * 20, 30, 210))
                 pl, pt, _, _ = panel['panel_box']
                 strip = image.crop((pl, pt, pl + 48, pt + 28))
                 self.assertGreater(len(strip.getcolors(maxcolors=10_000)), 1)
@@ -243,7 +243,10 @@ class ImagesPreparationTests(unittest.TestCase):
 
     def test_attach_uses_shared_size_and_count_limits(self):
         source = self.source()
-        result, data = self.run_helper('attach', *([source] * 6))
+        result, data = self.run_helper('attach', *([source] * 10))
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(len(data['attachments']), 10)
+        result, data = self.run_helper('attach', *([source] * 11))
         self.assertEqual(result.returncode, 1)
         self.assertEqual(data['attachments'], [])
         self.assertIn('compose', data['observations']['error'])
