@@ -162,6 +162,8 @@ def _background_result_key(message, result):
 
 def _render_background_result(message, output, *, full=False):
     result, blocks = _background_result(message)
+    if hasattr(output, "complete_background_job"):
+        output.complete_background_job(message.get("background_job_id") or result.get("job_id") or result.get("id"))
     state, code = result.get("state"), result.get("exit_code")
     cleanup = result.get("cleanup_required") is True
     timed_out = state == "timed_out" or result.get("timed_out") is True

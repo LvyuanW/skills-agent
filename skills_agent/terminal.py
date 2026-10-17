@@ -223,6 +223,8 @@ class TerminalView:
         self._activity_tool_key = None
         self._activity_started = 0
         self._background_jobs = {}
+        self._background_rows = {}
+        self._finished_background_jobs = set()
         self._animation_scheduled = False
         self._closed = False
 
@@ -465,19 +467,50 @@ class TerminalView:
 
     @_display_only
     def set_background_jobs(self, jobs):
-        """Update runtime snapshots without interrupting the current response."""
+        """Anchor each job at its first observation and update that row in place."""
         with self._lock:
             if self._closed:
                 return
             observed = monotonic()
             current = {}
             for job in jobs:
+                identifier = job["id"]
+                if identifier in self._finished_background_jobs:
+                    continue
                 elapsed = job.get("elapsed_seconds")
-                if not isinstance(elapsed, (int, float)) or not isfinite(elapsed):
+                if isinstance(elapsed, bool) or not isinstance(elapsed, (int, float)) or not isfinite(elapsed):
                     elapsed = None
-                current[job["id"]] = {**job, "elapsed_seconds": elapsed,
-                                      "observed": observed}
+                current[identifier] = {**job, "elapsed_seconds": elapsed, "observed": observed}
+                if identifier not in self._background_rows:
+                    block = {"kind": "line", "role": "tool", "text": "",
+                             "background_job_id": identifier}
+                    self._background_rows[identifier] = block
+                    self.blocks.append(block)
+            for identifier, previous in self._background_jobs.items():
+                if identifier in current:
+                    continue
+                # A missing snapshot must not silently erase unconfirmed work.
+                previous = dict(previous)
+                if previous["state"] in _RUNNING_JOB_STATES:
+                    elapsed = previous["elapsed_seconds"]
+                    if elapsed is not None:
+                        previous["elapsed_seconds"] += max(0, observed - previous["observed"])
+                    previous.update(state="unknown", observed=observed)
+                current[identifier] = previous
             self._background_jobs = current
+        self.flush()
+
+    @_display_only
+    def complete_background_job(self, identifier):
+        """Retire the live row when its existing completion enters the transcript."""
+        if not isinstance(identifier, str) or not identifier:
+            return
+        with self._lock:
+            self._finished_background_jobs.add(identifier)
+            self._background_jobs.pop(identifier, None)
+            block = self._background_rows.pop(identifier, None)
+            if block is not None:
+                self.blocks[:] = [item for item in self.blocks if item is not block]
         self.flush()
 
     def _running_jobs(self):
@@ -512,7 +545,7 @@ class TerminalView:
                 if state in _RUNNING_JOB_STATES:
                     elapsed += max(0, now - job["observed"])
                 text += f" · {max(0, elapsed):.1f} 秒"
-            yield {"kind": "line", "text": text,
+            yield {"kind": "line", "text": text, "background_job_id": job["id"],
                    "role": "error" if failed or cleanup_required or state in {"orphaned", "unknown", "stopped"} else "tool"}
 
     def _animate(self):
@@ -667,7 +700,9 @@ class TerminalView:
         lines = []
         self._headers = {}
         self._image_links = {}
-        blocks = [*self.blocks, *self._background_blocks()]
+        for status in self._background_blocks():
+            self._background_rows[status["background_job_id"]].update(status)
+        blocks = list(self.blocks)
         activity_row = None
         activity_block = None
         activity_target = None

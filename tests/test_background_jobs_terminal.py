@@ -31,7 +31,8 @@ class BackgroundJobsTerminalTests(unittest.TestCase):
 
     def line(self, terminal, name):
         return next((line.rstrip() for line in terminal.screen.display
-                     if any(f"{label}「{name}」" in line for label in ("后台", "服务"))), "")
+                     if any(f"{label}「{name}」" in line
+                            for label in ("后台", "服务", "后台任务", "后台服务"))), "")
 
     def elapsed(self, terminal, name):
         match = re.search(r"(\d+\.\d) 秒", self.line(terminal, name))
@@ -67,11 +68,50 @@ class BackgroundJobsTerminalTests(unittest.TestCase):
         self.assertEqual(fixture.record("fit-failed")["returncode"], 7)
         fixture.release_model.set()
         terminal.prompt(FINISHED)
+        terminal.wait_for(lambda output: "结果已加入上下文" in self.line(terminal, "extract-ok")
+                          and "结果已加入上下文" in self.line(terminal, "fit-failed"))
+        completed = self.line(terminal, "extract-ok")
+        failed = self.line(terminal, "fit-failed")
         terminal.read(.1)
         self.assertEqual(self.line(terminal, "extract-ok"), completed)
         self.assertEqual(self.line(terminal, "fit-failed"), failed)
-        self.assertEqual(terminal.visible.count("后台「extract-ok」"), 1)
-        self.assertEqual(terminal.visible.count("后台「fit-failed」"), 1)
+        self.assertEqual(terminal.visible.count("后台任务「extract-ok」"), 1)
+        self.assertEqual(terminal.visible.count("后台任务「fit-failed」"), 1)
+        self.assertNotIn("后台「extract-ok」", terminal.visible)
+        self.assertNotIn("后台「fit-failed」", terminal.visible)
+        self.assert_clean(terminal)
+
+    def test_delivered_job_scrolls_away_after_later_user_and_tool_turn(self):
+        terminal, fixture = self.start([("past-job", 0)])
+        self.assert_running_timer(terminal, "past-job")
+        fixture.gate("past-job").touch()
+        terminal.wait_for(lambda output: "完成" in self.line(terminal, "past-job"))
+        fixture.release_model.set()
+        terminal.prompt("NEXT_TURN_DONE")
+        terminal.wait_for(lambda output: "结果已加入上下文" in self.line(terminal, "past-job"))
+        self.assertEqual(terminal.visible.count("后台任务「past-job」"), 1)
+        self.assertLess(terminal.visible.index("结果已加入上下文"),
+                        terminal.visible.index("NEXT_TURN_DONE"))
+
+        # Exercise the real next input, tool result, and model stream. Enough
+        # new output moves historical chat off screen; a footer would survive.
+        later = "\n\n".join(f"later work line {index}" for index in range(30)) + "\n\nLATER_ROUND_DONE"
+        fixture.after_stream = [response("NEXT_TURN_DONE"),
+                                response(command="printf verified", name="后续检查"),
+                                response(later)]
+        terminal.send("continue with another checked task\n")
+        terminal.prompt("LATER_ROUND_DONE")
+        self.assertEqual(len(fixture.requests), 5)
+        self.assertNotIn("past-job", terminal.visible)
+        self.assertNotIn("结果已加入上下文", terminal.visible)
+        events = self.events()
+        self.assertEqual(sum(event.get("type") == "message"
+                             and event["message"].get("runtime_event") == "background_job_result"
+                             for event in events), 1)
+        self.assertTrue(any(event.get("type") == "message"
+                            and event["message"].get("role") == "tool"
+                            and event["message"].get("task_name") == "后续检查"
+                            for event in events))
         self.assert_clean(terminal)
 
     def test_selection_freezes_job_timer_and_completion_until_return(self):

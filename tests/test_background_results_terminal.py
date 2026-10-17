@@ -93,7 +93,7 @@ class BackgroundResultsTerminalTests(unittest.TestCase):
     @staticmethod
     def job_line(terminal):
         return next((line.rstrip() for line in terminal.screen.display
-                     if "后台「extract」" in line and "结果已加入上下文" not in line), "")
+                     if any(label in line for label in ("后台「extract」", "后台任务「extract」"))), "")
 
     @staticmethod
     def turn_line(terminal):
@@ -141,6 +141,7 @@ class BackgroundResultsTerminalTests(unittest.TestCase):
         self.assertIn("后台任务「extract」", summary)
         self.assertIn("完成" if fixture.exit_code == 0 else f"失败（退出码 {fixture.exit_code}）", summary)
         self.assertEqual(terminal.visible.count("结果已加入上下文"), 1)
+        self.assertNotIn("后台「extract」", terminal.visible)
         self.assertLess(terminal.visible.index("结果已加入上下文"), terminal.visible.index(DONE))
         original_users = [event for event in self.events() if event.get("type") == "message"
                           and event["message"].get("role") == "user"

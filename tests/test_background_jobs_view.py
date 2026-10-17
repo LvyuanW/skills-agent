@@ -1,4 +1,4 @@
-"""Background status stays independent of foreground output and selection."""
+"""Background status has a fixed transcript position until result delivery."""
 
 from io import StringIO
 import json
@@ -156,16 +156,18 @@ class BackgroundJobsViewTests(unittest.TestCase):
                 for private in hidden:
                     self.assertNotIn(private, output.getvalue())
 
-    def test_same_name_completion_records_remain_distinct_and_do_not_replace_status(self):
+    def test_same_name_completion_records_replace_only_their_matching_status(self):
         self.update(self.job("first"), self.job("second"))
         self.renderer(self.completion("first"))
+        self.assertEqual(sum("运行中" in line for line in self.lines()), 1)
         self.renderer(self.completion("second", code=7, elapsed=3.1))
         lines = self.lines()
         completed = [line for line in lines if "结果已加入上下文" in line]
         self.assertEqual(len(completed), 2)
         self.assertIn("完成", completed[0])
         self.assertIn("失败（退出码 7）", completed[1])
-        self.assertEqual(sum("运行中" in line for line in lines), 2)
+        self.assertEqual(sum("运行中" in line for line in lines), 0)
+        self.assertEqual(len(lines), 2)
         self.assertIn("ansired", self.view._lines(100)[1][0][0])
 
     def test_completion_obeys_selection_freeze_and_keeps_service_and_cleanup_warning(self):
