@@ -16,6 +16,7 @@ import time
 import unittest
 
 import pyte
+from wcwidth import wcwidth
 
 from tests.sse import stream_response, responses_from_chat
 
@@ -32,6 +33,31 @@ PROJECT = Path(__file__).resolve().parents[1]
 
 
 class TerminalScreen(pyte.HistoryScreen):
+    @property
+    def display(self):
+        # pyte leaves the other half of a wide glyph behind when a redraw
+        # overwrites/erases just one cell. Real terminals clear that half.
+        # Render those incomplete glyphs as blanks rather than treating their
+        # empty continuation cells as ordinary characters (which pyte indexes).
+        rendered = []
+        for y in range(self.lines):
+            row, x = [], 0
+            while x < self.columns:
+                data = self.buffer[y][x].data
+                if not data:
+                    row.append(" ")
+                elif wcwidth(data[0]) == 2 and x + 1 < self.columns:
+                    if self.buffer[y][x + 1].data == "":
+                        row.append(data)
+                        x += 1
+                    else:
+                        row.append(" ")
+                else:
+                    row.append(data)
+                x += 1
+            rendered.append("".join(row))
+        return rendered
+
     def index(self):
         bottom = self.margins.bottom if self.margins else self.lines - 1
         scroll = self.cursor.y == bottom
@@ -151,6 +177,32 @@ class Terminal:
                 self.process.kill()
                 self.process.wait(timeout=2)
         os.close(self.master)
+
+
+class TerminalScreenTests(unittest.TestCase):
+    def screen(self, text):
+        screen = TerminalScreen(10, 1)
+        pyte.Stream(screen).feed(text)
+        return screen
+
+    def test_overwriting_first_half_of_wide_glyph_leaves_a_blank_second_cell(self):
+        screen = self.screen("中\x1b[1;1HA")
+        self.assertEqual(screen.display, ["A" + " " * 9])
+
+    def test_overwriting_second_half_of_wide_glyph_does_not_hide_new_character(self):
+        screen = self.screen("中\x1b[1;2HA")
+        self.assertEqual(screen.display, [" A" + " " * 8])
+
+    def test_erasing_one_half_of_wide_glyph_removes_its_remaining_half(self):
+        for column in (1, 2):
+            with self.subTest(column=column):
+                screen = self.screen(f"中\x1b[1;{column}H\x1b[1X")
+                self.assertEqual(screen.display, [" " * 10])
+
+    def test_intact_wide_and_combining_characters_keep_their_visible_width(self):
+        screen = self.screen("中e\u0301A")
+        self.assertEqual(screen.display, ["中éA" + " " * 6])
+        self.assertEqual(screen.buffer[0][1].data, "", "A valid continuation is still preserved")
 
 
 @unittest.skipUnless(os.name == "posix", "PTY interaction requires POSIX")

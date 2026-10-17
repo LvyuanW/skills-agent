@@ -2,13 +2,14 @@
 
 from collections import deque
 from dataclasses import dataclass
+from functools import wraps
 from io import StringIO
 from math import isfinite
 import os
 import signal
 import subprocess
 import sys
-from threading import Condition as ThreadCondition, Event, RLock, Thread
+from threading import Condition as ThreadCondition, Event, RLock, Thread, get_ident
 from time import monotonic
 
 from prompt_toolkit.application import Application
@@ -30,6 +31,7 @@ from rich.console import Console
 from rich.text import Text
 
 from .markdown import _Body
+from .display import DisplayQueue
 
 
 _STYLES = {"user": "bright_white on black", "assistant": "black on bright_white",
@@ -40,6 +42,49 @@ _LINE_STYLES = {"user": "fg:ansiwhite bg:ansiblack",
                 "error": "fg:ansired bg:default",
                 "thinking": "fg:ansibrightblack bg:default"}
 _RUNNING_JOB_STATES = {"starting", "running", "stopping"}
+_THINKING_PREVIEW_LINES = 8
+
+
+def _display_only(method):
+    """Display mutations belong to the UI thread once its event loop is running."""
+    @wraps(method)
+    def invoke(self, *args, **kwargs):
+        if self._closed:
+            return
+        if self._thread is not None and get_ident() != self._ui_thread_id:
+            self._display.post(method, self, *args, **kwargs)
+            return
+        return method(self, *args, **kwargs)
+    return invoke
+
+
+class _PlainRows:
+    """Wrap only newly appended text, retaining a bounded tail for thinking."""
+    def __init__(self, width, *, tail=None):
+        self.width = width
+        self.rows = deque([""], maxlen=tail) if tail is not None else [""]
+        self.columns = 0
+        self.processed = 0
+
+    def append(self, text):
+        for character in text:
+            if character == "\n":
+                self.rows.append("")
+                self.columns = 0
+                continue
+            if character == "\t":
+                self.append(" " * (8 - self.columns % 8))
+                continue
+            size = get_cwidth(character)
+            if not character.isprintable() and size <= 0:
+                continue
+            if size > self.width:
+                character, size = "�", 1
+            if self.columns + size > self.width:
+                self.rows.append("")
+                self.columns = 0
+            self.rows[-1] += character
+            self.columns += size
 
 
 @dataclass(eq=False, frozen=True)
@@ -100,9 +145,12 @@ class _Transcript(UIControl):
     def create_content(self, width, height):
         view = self.view
         with view._lock:
-            # Keep the displayed frame stable while the terminal owns selection.
-            if not view._selecting:
-                self.lines = view._lines(width)
+            selecting = view._selecting
+        # Rendering is UI-owned; never hold the short control lock during Rich.
+        # Keep the displayed frame stable while the terminal owns selection.
+        if not selecting:
+            self.lines = view._lines(width)
+        with view._lock:
             lines = self.lines
             view._height = max(1, height)
             view._bottom = max(0, len(lines) - view._height)
@@ -142,7 +190,6 @@ class TerminalView:
         self._tool_blocks = {}
         self._lock = RLock()
         self._stream = None
-        self._response = []
         self._headers = {}
         self._image_links = {}
         self._scroll = self._bottom = 0
@@ -162,6 +209,10 @@ class TerminalView:
         self._stop_requested = False
         self._ready = Event()
         self._thread = None
+        self._ui_thread_id = None
+        self._display_scheduled = False
+        self._last_display_drain = 0
+        self._display = DisplayQueue(self._wake_display)
         self._failure = None
         self._context_usage = context_usage or (lambda: None)
         self._last_usage = None
@@ -245,7 +296,8 @@ class TerminalView:
             if not app.is_done:
                 app.output.set_cursor_shape(CursorShape.BLINKING_BEAM)
                 app.output.flush()
-                if ((self._activity or self._turn_started is not None or self._running_jobs())
+                if ((self._activity or self._turn_started is not None or self._running_jobs()
+                     or self._thinking_active())
                         and not self._selecting and not self._animation_scheduled):
                     self._animation_scheduled = True
                     app.loop.call_later(0.1 if self._turn_started is not None or self._activity_task
@@ -260,7 +312,7 @@ class TerminalView:
             key_bindings=merge_key_bindings(merged), full_screen=True,
             mouse_support=Condition(lambda: not self._selecting),
             after_render=after_render,
-            input=input, output=output, min_redraw_interval=0.03,
+            input=input, output=output, min_redraw_interval=0.1,
         )
         self.app.key_processor.before_key_press += self._clear_hover
 
@@ -268,6 +320,52 @@ class TerminalView:
         if self._hovered is not None and not self._selecting:
             self._hovered = None
             self.flush()
+
+    def post_event(self, renderer, event):
+        if self._closed:
+            return
+        if self._thread is None:
+            renderer(event)
+        else:
+            self._display.post_event(renderer, event)
+
+    def _wake_display(self):
+        loop = self.app.loop
+        if loop is not None and not loop.is_closed():
+            try:
+                loop.call_soon_threadsafe(self._schedule_display)
+            except RuntimeError:
+                # Closing the loop can race a producer that already enqueued
+                # its last event. A disappearing display must not fail a run.
+                if not self._closed and not loop.is_closed():
+                    raise
+
+    def _schedule_display(self):
+        if self._closed or self._display_scheduled:
+            return
+        self._display_scheduled = True
+        delay = max(0, 0.1 - (monotonic() - self._last_display_drain))
+        self.app.loop.call_later(delay, self._drain_display)
+
+    def _drain_display(self):
+        self._display_scheduled = False
+        if self._closed:
+            return
+        self._last_display_drain = monotonic()
+        try:
+            self._display.drain()
+        except BaseException as exc:
+            self._display_failed(exc)
+
+    def _display_failed(self, error):
+        self._failure = error
+        self._display.close()
+        self._closed = True
+        if self.app.is_running:
+            self.app.exit()
+
+    def _thinking_active(self):
+        return self._stream is not None and self._stream["kind"] == "thinking" and not self._stream["complete"]
 
     def _enqueue(self, value):
         with self._input_ready:
@@ -352,6 +450,7 @@ class TerminalView:
             os.kill(os.getpid(), signal.SIGINT)
         self.flush()
 
+    @_display_only
     def set_activity(self, text, *, task=None, preview=None, thinking=False, tool_key=None):
         with self._lock:
             if (not self._activity or task != self._activity_task
@@ -364,6 +463,7 @@ class TerminalView:
             self._activity_thinking = thinking
         self.flush()
 
+    @_display_only
     def set_background_jobs(self, jobs):
         """Update runtime snapshots without interrupting the current response."""
         with self._lock:
@@ -419,7 +519,7 @@ class TerminalView:
         self._animation_scheduled = False
         with self._lock:
             if self._selecting or (not self._activity and self._turn_started is None
-                                   and not self._running_jobs()):
+                                   and not self._running_jobs() and not self._thinking_active()):
                 return
         self.flush()
 
@@ -429,12 +529,14 @@ class TerminalView:
             self._enqueue(_QueuedMessage(buffer.text, monotonic()))
         return False
 
+    @_display_only
     def append_line(self, text, role):
         with self._lock:
             self.finish_stream()
             self.blocks.append({"kind": "line", "text": str(text), "role": role})
         self.flush()
 
+    @_display_only
     def upsert_tool(self, key, text, role="tool"):
         with self._lock:
             self.finish_stream()
@@ -453,6 +555,7 @@ class TerminalView:
                 self._activity_thinking = False
         self.flush()
 
+    @_display_only
     def append_image_link(self, label, path):
         with self._lock:
             self.finish_stream()
@@ -478,36 +581,46 @@ class TerminalView:
         block = {"kind": channel, "text": text, "expanded": channel != "thinking" or live,
                  "complete": not live}
         self.blocks.append(block)
-        if channel == "thinking" and live:
-            self._response.append(block)
         return block
 
+    @_display_only
     def append_body(self, text, channel="text"):
         with self._lock:
             self.finish_stream()
             self._body(text, channel, False)
         self.flush()
 
+    @_display_only
     def write_delta(self, text, channel="text", live=True):
         if not text:
             return
         with self._lock:
             if self._stream is None or self._stream["kind"] != channel:
+                self.finish_stream()
                 self._stream = self._body("", channel, live)
-            self._stream["text"] += text
+                self._stream["chunks"] = []
+            self._stream["chunks"].append(text)
         self.flush()
 
+    @_display_only
     def finish_stream(self):
         with self._lock:
+            changed = self._stream is not None
+            if self._stream is not None:
+                block = self._stream
+                block["text"] = "".join(block.pop("chunks", []))
+                block["complete"] = True
+                if block["kind"] == "thinking":
+                    block["expanded"] = False
+                block.pop("plain_rows", None)
             self._stream = None
+        if changed:
+            self.flush()
 
+    @_display_only
     def finish_response(self):
         with self._lock:
             self.finish_stream()
-            for block in self._response:
-                block["complete"] = True
-                block["expanded"] = False
-            self._response.clear()
         self.flush()
 
     def scroll(self, amount):
@@ -534,6 +647,21 @@ class TerminalView:
             block["render_key"] = key
             block["lines"] = lines
         return block["lines"]
+
+    def _plain_rows(self, block, width):
+        preview = block["kind"] == "thinking"
+        cache = block.get("plain_rows")
+        if cache is None or cache.width != width:
+            cache = block["plain_rows"] = _PlainRows(width, tail=_THINKING_PREVIEW_LINES if preview else None)
+        chunks = block.get("chunks", [block["text"]])
+        for index in range(cache.processed, len(chunks)):
+            cache.append(chunks[index])
+        cache.processed = len(chunks)
+        rows = list(cache.rows)
+        if preview:
+            rows.extend([""] * (_THINKING_PREVIEW_LINES - len(rows)))
+        style = _LINE_STYLES["thinking" if preview else "assistant"]
+        return [[(style, text)] for text in rows]
 
     def _lines(self, width):
         lines = []
@@ -579,12 +707,19 @@ class TerminalView:
             style = _LINE_STYLES[role]
             if block["kind"] == "thinking":
                 self._headers[len(lines)] = block
-                rows = [[(style, "▼ 思考" if block["expanded"] else "▶ 思考")]]
+                active = not block["complete"]
+                header = "▼ 思考" if block["expanded"] else "▶ 思考"
+                if active:
+                    header += "." * (int(monotonic() / 0.4) % 3 + 1)
+                rows = [[(style, header)]]
                 if block["expanded"]:
-                    rows.extend(self._render(block, max(1, width)))
+                    rows.extend(self._plain_rows(block, max(1, width)) if active
+                                else self._render(block, max(1, width)))
             else:
                 rows = [[(style, "assistant:")]] if block["kind"] == "text" else []
-                rows.extend(self._render(block, max(1, width)))
+                rows.extend(self._plain_rows(block, max(1, width))
+                            if block["kind"] == "text" and not block["complete"]
+                            else self._render(block, max(1, width)))
             if "image_path" in block:
                 for index, row in enumerate(rows):
                     text = fragment_list_to_text(row)
@@ -607,17 +742,29 @@ class TerminalView:
             self.app.invalidate()
 
     def start(self):
+        def ready():
+            self._schedule_display()
+            self._ready.set()
+
         def run():
+            self._ui_thread_id = get_ident()
             try:
-                self.app.run(pre_run=self._ready.set, handle_sigint=False, set_exception_handler=False)
+                self.app.run(pre_run=ready, handle_sigint=False, set_exception_handler=False)
             except BaseException as exc:
                 self._failure = exc
             finally:
-                self._ready.set()
-                with self._input_ready:
-                    self._submitted.clear()
-                    self._submitted.append(self._failure or EOFError())
-                    self._input_ready.notify()
+                try:
+                    self._display.close()
+                    if self._failure is None:
+                        self._display.drain()
+                except BaseException as exc:
+                    self._failure = exc
+                finally:
+                    self._ready.set()
+                    with self._input_ready:
+                        self._submitted.clear()
+                        self._submitted.append(self._failure or EOFError())
+                        self._input_ready.notify()
 
         self._thread = Thread(target=run, name="terminal-ui")
         self._thread.start()
@@ -644,10 +791,27 @@ class TerminalView:
         return value.text
 
     def close(self):
-        with self._lock:
-            self._closed = True
+        def finish():
+            try:
+                self._display.close()
+                if self._failure is None:
+                    self._display.drain()
+                    self.finish_response()
+            except BaseException as exc:
+                self._failure = exc
+            finally:
+                self._closed = True
+                if self.app.is_running:
+                    self.app.exit()
+
         if self._thread is not None:
             if self.app.is_running:
-                self.app.loop.call_soon_threadsafe(self.app.exit)
-            self._thread.join()
+                if get_ident() == self._ui_thread_id:
+                    finish()
+                    return
+                self.app.loop.call_soon_threadsafe(finish)
+            if get_ident() != self._ui_thread_id:
+                self._thread.join()
             self._thread = None
+        else:
+            finish()

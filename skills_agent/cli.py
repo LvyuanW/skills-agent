@@ -554,6 +554,7 @@ class ConsoleRenderer:
             self._write_delta(event["text"], channel="thinking" if event["type"] == "thinking_delta" else "text")
             return
         if event.get("type") == "tool_call_delta":
+            self._finish_stream()
             self._had_deltas = True
             self._tool_delta(event)
             return
@@ -647,7 +648,8 @@ def interact(agent, files):
             for event in agent.session.events():
                 replay(event)
             replay.close()
-            agent.on_event = ConsoleRenderer(view)
+            renderer = ConsoleRenderer(view)
+            agent.on_event = lambda event: view.post_event(renderer, event)
             try:
                 view.start()
                 return _interact(agent, files, draft, read_input=view.prompt, output=view)

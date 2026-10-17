@@ -5,7 +5,7 @@ import os
 import threading
 import unittest
 
-from tests.sse import frame, responses_from_chat
+from tests.sse import frame, responses_from_chat, stream_response
 from tests import test_cli_terminal as terminal_helpers
 from tests.test_cli_terminal import Terminal
 
@@ -51,7 +51,7 @@ class ThinkingTerminalTests(unittest.TestCase):
         terminal.prompt()
         return terminal
 
-    def test_stream_expands_completion_folds_mouse_toggles_and_replay_starts_folded(self):
+    def test_stream_preview_folds_at_body_then_mouse_toggles_and_replay_starts_folded(self):
         continue_stream = threading.Event()
         finish_stream = threading.Event()
         self.addCleanup(continue_stream.set)
@@ -94,12 +94,20 @@ class ThinkingTerminalTests(unittest.TestCase):
         self.assertNotIn("FINAL_BODY", terminal.visible)
         continue_stream.set()
         terminal.wait_for(lambda output: "FINAL_BODY" in terminal.visible)
-        self.assertIn(second, terminal.visible)
-        self.assertIn("▼ 思考", terminal.visible)
-        self.assertLess(terminal.visible.index(first), terminal.visible.index("FINAL_BODY"))
+        self.assertNotIn(first, terminal.visible)
+        self.assertNotIn(second, terminal.visible)
+        self.assertIn("▶ 思考", terminal.visible)
+        self.assertLess(terminal.visible.index("▶ 思考"), terminal.visible.index("FINAL_BODY"))
+        self.assertIn("**FINAL_BODY**", terminal.visible, "Active body deltas remain literal plain text")
+        self.assertFalse(any(event.get("type") == "message" and event["message"].get("role") == "assistant"
+                             for event in self.events()), "Reasoning folds before response.completed")
         finish_stream.set()
+        terminal.wait_for(lambda output: any(event.get("type") == "message"
+                          and event["message"].get("role") == "assistant" for event in self.events())
+                          and "停止" not in terminal.visible)
         terminal.wait_for(lambda output: "▶ 思考" in terminal.visible
-                          and first not in terminal.visible and "FINAL_BODY" in terminal.visible)
+                          and first not in terminal.visible and "FINAL_BODY" in terminal.visible
+                          and "**FINAL_BODY**" not in terminal.visible)
         terminal.prompt("FINAL_BODY")
         self.assertNotIn(first, terminal.visible)
         self.assertNotIn(second, terminal.visible)
@@ -129,6 +137,116 @@ class ThinkingTerminalTests(unittest.TestCase):
         replay.click("▶ 思考")
         replay.wait_for(lambda output: first in replay.visible)
         self.assertEqual(log.read_bytes(), before_toggle)
+
+    def test_live_thinking_is_eight_plain_tail_lines_and_finished_thinking_expands_as_markdown(self):
+        release_body = threading.Event()
+        release_completed = threading.Event()
+        self.addCleanup(release_body.set)
+        self.addCleanup(release_completed.set)
+        thought = "\n".join(f"**THOUGHT_{index:02}**" for index in range(14))
+        response = self.response("ANSWER_AFTER_TAIL")
+        response["choices"][0]["message"]["reasoning_content"] = thought
+        native = responses_from_chat(response)
+
+        def chunks():
+            yield frame({"type": "response.created", "response": {
+                "id": native["id"], "status": "in_progress", "output": [],
+            }})
+            yield frame({"type": "response.output_item.added", "output_index": 0,
+                         "item": {"type": "reasoning", "id": "reasoning", "summary": []}})
+            yield frame({"type": "response.reasoning_summary_text.delta", "output_index": 0,
+                         "summary_index": 0, "delta": thought})
+            if not release_body.wait(10):
+                return
+            yield frame({"type": "response.output_item.done", "output_index": 0,
+                         "item": native["output"][0]})
+            yield frame({"type": "response.output_item.added", "output_index": 1,
+                         "item": native["output"][1]})
+            yield frame({"type": "response.output_text.delta", "output_index": 1,
+                         "content_index": 0, "delta": "ANSWER_AFTER_TAIL"})
+            if not release_completed.wait(10):
+                return
+            yield frame({"type": "response.output_item.done", "output_index": 1,
+                         "item": native["output"][1]})
+            yield frame({"type": "response.completed", "response": native})
+
+        terminal = self.open_terminal(self.streaming_server(chunks))
+        terminal.send("inspect bounded reasoning preview\n")
+        terminal.wait_for(lambda output: "THOUGHT_13" in terminal.visible)
+        for index in range(6):
+            self.assertNotIn(f"THOUGHT_{index:02}", terminal.visible)
+        for index in range(6, 14):
+            self.assertIn(f"**THOUGHT_{index:02}**", terminal.visible,
+                          "The live tail is literal text, not Markdown")
+        release_body.set()
+        terminal.wait_for(lambda output: "ANSWER_AFTER_TAIL" in terminal.visible)
+        self.assertIn("▶ 思考", terminal.visible)
+        self.assertNotIn("THOUGHT_", terminal.visible)
+        self.assertFalse(any(event.get("type") == "message" and event["message"].get("role") == "assistant"
+                             for event in self.events()))
+        release_completed.set()
+        terminal.wait_for(lambda output: any(event.get("type") == "message"
+                          and event["message"].get("role") == "assistant" for event in self.events())
+                          and "停止" not in terminal.visible)
+        terminal.prompt("ANSWER_AFTER_TAIL")
+        log = self.workspace / ".agent/sessions/terminal/events.jsonl"
+        assistant = next(event["message"] for event in self.events()
+                         if event.get("type") == "message" and event["message"].get("role") == "assistant")
+        self.assertEqual("".join(block.get("thinking", "") for block in assistant["content"]
+                                 if block.get("type") == "thinking"), thought)
+        before = log.read_bytes()
+        terminal.click("▶ 思考")
+        terminal.wait_for(lambda output: "THOUGHT_00" in terminal.visible)
+        self.assertIn("THOUGHT_13", terminal.visible)
+        self.assertNotIn("**THOUGHT_", terminal.visible)
+        self.assertEqual(log.read_bytes(), before)
+
+    def test_first_tool_delta_folds_reasoning_before_arguments_or_response_finish(self):
+        release_tool, release_arguments = threading.Event(), threading.Event()
+        self.addCleanup(release_tool.set)
+        self.addCleanup(release_arguments.set)
+        response = self.response(command="printf TOOL_OUTPUT", summary="检查思考结束边界")
+        response["choices"][0]["message"]["reasoning_content"] = "THINK_BEFORE_TOOL"
+        native = responses_from_chat(response)
+        reasoning, call = native["output"]
+        requests = []
+
+        def chunks():
+            requests.append(True)
+            if len(requests) > 1:
+                yield stream_response(responses_from_chat(self.response("DONE_AFTER_TOOL")))
+                return
+            yield frame({"type": "response.created", "response": {
+                "id": native["id"], "status": "in_progress", "output": [],
+            }})
+            yield frame({"type": "response.output_item.added", "output_index": 0,
+                         "item": {**reasoning, "summary": []}})
+            yield frame({"type": "response.reasoning_summary_text.delta", "output_index": 0,
+                         "summary_index": 0, "delta": "THINK_BEFORE_TOOL"})
+            if not release_tool.wait(10):
+                return
+            yield frame({"type": "response.output_item.done", "output_index": 0, "item": reasoning})
+            yield frame({"type": "response.output_item.added", "output_index": 1,
+                         "item": {**call, "arguments": ""}})
+            if not release_arguments.wait(10):
+                return
+            yield frame({"type": "response.function_call_arguments.delta", "output_index": 1,
+                         "delta": call["arguments"]})
+            yield frame({"type": "response.output_item.done", "output_index": 1, "item": call})
+            yield frame({"type": "response.completed", "response": native})
+
+        terminal = self.open_terminal(self.streaming_server(chunks))
+        terminal.send("check tool boundary\n")
+        terminal.wait_for(lambda output: "THINK_BEFORE_TOOL" in terminal.visible)
+        release_tool.set()
+        terminal.wait_for(lambda output: "接收调用" in terminal.visible)
+        self.assertIn("▶ 思考", terminal.visible)
+        self.assertNotIn("THINK_BEFORE_TOOL", terminal.visible)
+        self.assertFalse(any(event.get("type") == "message" and event["message"].get("role") == "assistant"
+                             for event in self.events()))
+        release_arguments.set()
+        terminal.prompt("DONE_AFTER_TOOL")
+        self.assertIn("shell「检查思考结束边界」：完成", terminal.visible)
 
     def test_expanded_long_thinking_remains_scrollable_and_keeps_message_order(self):
         thought = "\n\n".join(f"THOUGHT_{index:03}" for index in range(60))

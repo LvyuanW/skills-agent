@@ -56,11 +56,14 @@ class MessageQueueTests(unittest.TestCase):
 
         self.assertEqual([item.text for item in self.view.queue_control.items()],
                          ["first queued", "second queued"])
-        self.assertEqual(self.view.blocks[0]["text"], "still answering")
+        self.assertIn("still answering", [fragment_list_to_text(row).rstrip()
+                                         for row in self.view._lines(60)])
         self.assertEqual(self.view.prompt(), "first queued")
         self.assertEqual(self.view.prompt(), "second queued")
         self.assertEqual(self.view.queue_control.items(), [])
         self.assertEqual(self.view.buffer.text, "unfinished draft")
+        self.view.finish_response()
+        self.assertEqual(self.view.blocks[0]["text"], "still answering")
 
     def test_cancel_identical_text_by_identity_and_ignore_already_dispatched_item(self):
         self.view._busy = True

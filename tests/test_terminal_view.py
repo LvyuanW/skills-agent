@@ -30,11 +30,13 @@ class TerminalViewTests(unittest.TestCase):
             position=Point(x=2, y=row), event_type=event_type, button=button, modifiers=frozenset(),
         ))
 
-    def test_live_thinking_closes_after_response_and_click_restores_original(self):
+    def test_live_thinking_is_plain_and_closes_at_segment_end_then_click_restores_markdown(self):
         self.view.write_delta("**检查** ", channel="thinking")
         self.view.write_delta("当前任务", channel="thinking")
-        self.assertIn("检查 当前任务", self.lines())
+        self.assertIn("**检查** 当前任务", self.lines())
+        self.assertEqual(len(self.lines()), 9)
         self.view.finish_stream()
+        self.assertEqual(self.lines(), ["▶ 思考"])
         self.view.append_line("· shell「读取」：调用", "tool")
         self.view.write_delta("完成")
         self.assertEqual([block["kind"] for block in self.view.blocks], ["thinking", "line", "text"])
