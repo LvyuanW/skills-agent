@@ -9,7 +9,7 @@ from .base import (
     post_stream, stream_ended, stream_error, validate_calls, request_messages,
 )
 from .responses import ResponsesMixin
-from .usage import count_from_usage
+from .usage import count_from_usage, usage_snapshot
 
 
 def _content(content) -> list[dict]:
@@ -41,8 +41,7 @@ class OpenAIProvider(ResponsesMixin, HTTPProvider):
 
     def __init__(self, model: str, api_key: str, base_url: str | None = None,
                  max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS, *, api_format: str = "auto",
-                 token_counter: str = "auto", tokenizer_path: str | None = None,
-                 tokenizer_encoding: str | None = None, model_context_window: int | None = None,
+                 token_counter: str = "auto", model_context_window: int | None = None,
                  deepseek_effort: str | None = None):
         super().__init__(model, api_key, base_url, max_output_tokens,
                          model_context_window=model_context_window)
@@ -56,46 +55,28 @@ class OpenAIProvider(ResponsesMixin, HTTPProvider):
             if deepseek_effort is not None and deepseek_effort not in {"none", "low", "high", "max"}:
                 raise ValueError("DeepSeek effort must be one of: none, low, high, max")
             self.deepseek_effort = deepseek_effort
-        if token_counter not in {"auto", "official", "deepseek", "usage"}:
-            raise ValueError("token_counter must be auto, official, deepseek, or usage")
+        if token_counter not in {"auto", "official", "usage"}:
+            raise ValueError("token_counter must be auto, official, or usage")
         self.token_counter = token_counter
         if token_counter == "auto":
-            self.token_counter = ("deepseek" if host == "api.deepseek.com" else
-                                  "usage" if host == "openrouter.ai" and self.api_format == "responses" else
-                                  "official")
-        self.tokenizer_path = tokenizer_path
-        self.tokenizer_encoding = tokenizer_encoding
-        self._deepseek_counter = None
+            self.token_counter = ("usage" if self.api_format == "chat"
+                                  or host in {"api.deepseek.com", "openrouter.ai"} else "official")
+        self._deepseek_chat = host == "api.deepseek.com" or "deepseek" in model.lower()
 
     def count_tokens(self, system: str, messages: list[dict], tools: list[dict],
                      *, disable_thinking: bool = False) -> int | None:
         if self.token_counter == "usage":
-            if self.api_format != "responses":
-                raise ProviderError("Usage-based counting requires api_format=responses")
             return count_from_usage(self.model, messages)
-        if self.token_counter == "deepseek":
-            if self.api_format != "chat":
-                raise ProviderError("DeepSeek counting requires api_format=chat")
-            return self._counter().count_request(self._chat_payload(
-                system, messages, tools, disable_thinking=disable_thinking))
         if self.api_format != "responses":
-            raise ProviderError("Chat gateway needs a matching token counter; use Responses with its official count endpoint or configure DeepSeek tokenizer")
+            raise ProviderError("Official counting requires api_format=responses; use token_counter=usage for Chat")
         return input_token_count(post_json(self.base_url + "/responses/input_tokens",
                                            self._responses_payload(system, messages, tools,
                                                                    disable_thinking=disable_thinking),
                                            {"Authorization": f"Bearer {self.api_key}"}))
 
-    def _counter(self):
-        if self._deepseek_counter is None:
-            from .deepseek import DeepSeekCounter
-            self._deepseek_counter = DeepSeekCounter(self.tokenizer_path, self.tokenizer_encoding)
-        return self._deepseek_counter
-
     def count_text(self, text: str) -> int | None:
         if self.token_counter == "usage":
             return None
-        if self.token_counter == "deepseek":
-            return self._counter().count_text(text)
         return super().count_text(text)
 
     def _chat_payload(self, system: str, messages: list[dict], tools: list[dict],
@@ -141,7 +122,7 @@ class OpenAIProvider(ResponsesMixin, HTTPProvider):
         limit = self.max_output_tokens if max_output_tokens is None else max_output_tokens
         if limit <= 0:
             raise ValueError("max_output_tokens must be positive")
-        output_key = "max_tokens" if self.token_counter == "deepseek" else "max_completion_tokens"
+        output_key = "max_tokens" if self._deepseek_chat else "max_completion_tokens"
         payload.update({output_key: limit, "stream": True, "stream_options": {"include_usage": True}})
         message = {"role": "assistant", "content": None}
         choice = {"index": 0, "message": message, "finish_reason": None}
@@ -300,6 +281,10 @@ class OpenAIProvider(ResponsesMixin, HTTPProvider):
                 raise ProviderError("OpenAI tool calls do not match finish_reason")
             validate_calls(calls)
             result = {"role": "assistant", "content": content, "_raw": raw}
+            if self.token_counter == "usage":
+                snapshot = usage_snapshot(self.model, raw.get("usage"), total_only=True)
+                if snapshot is not None:
+                    result["_token_usage"] = snapshot
             if "reasoning_content" in message:
                 result["reasoning_content"] = message["reasoning_content"]
             if calls:

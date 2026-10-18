@@ -15,8 +15,6 @@ class SkillsAgentConfig:
     context_tokens: int = 1_000_000
     api_format: str = "auto"
     token_counter: str = "auto"
-    tokenizer_path: str | None = None
-    tokenizer_encoding: str | None = None
     model_context_window: int | None = None
     max_output_tokens: int = 32768
     summary_output_tokens: int = 8192
@@ -33,5 +31,5 @@ class SkillsAgentConfig:
             raise ValueError("model_context_window must be positive")
         if self.api_format not in {"auto", "responses", "chat"}:
             raise ValueError("api_format must be auto, responses, or chat")
-        if self.token_counter not in {"auto", "official", "deepseek"}:
-            raise ValueError("token_counter must be auto, official, or deepseek")
+        if self.token_counter not in {"auto", "official", "usage"}:
+            raise ValueError("token_counter must be auto, official, or usage")

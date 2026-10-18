@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from skills_agent.images import (
     MAX_IMAGE_BYTES, MAX_REQUEST_IMAGES, ImageRequestError,
@@ -167,7 +167,7 @@ class RequestImageTests(unittest.TestCase):
                     provider.complete("", messages, [])
                 send.assert_not_called()
 
-    def test_counting_and_generation_send_the_same_current_images_on_all_apis(self):
+    def test_generation_preserves_current_images_with_official_or_usage_counting(self):
         old = self.image("missing-old.png", None)
         first, second = self.image("first.png", b"first"), self.image("second.png", b"second")
         messages = [
@@ -189,19 +189,23 @@ class RequestImageTests(unittest.TestCase):
         ]
         for provider, stream in providers:
             with self.subTest(provider=type(provider).__name__, api_format=getattr(provider, "api_format", None)):
-                counter = Mock()
-                counter.count_request.return_value = 42
-                provider._deepseek_counter = counter
-                local = getattr(provider, "token_counter", None) == "deepseek"
-                responses = [io.BytesIO(stream)] if local else [io.BytesIO(b'{"input_tokens":42}'), io.BytesIO(stream)]
+                usage_based = getattr(provider, "token_counter", None) == "usage"
+                responses = ([io.BytesIO(stream)] if usage_based else
+                             [io.BytesIO(b'{"input_tokens":42}'), io.BytesIO(stream)])
                 with patch("skills_agent.providers.base.request.urlopen", side_effect=responses) as send:
-                    self.assertEqual(provider.count_tokens("system", messages, []), 42)
+                    count = provider.count_tokens("system", messages, [])
+                    if usage_based:
+                        self.assertIsNone(count)
+                    else:
+                        self.assertEqual(count, 42)
                     provider.complete("system", messages, [])
-                counted = counter.count_request.call_args.args[0] if local else json.loads(send.call_args_list[0].args[0].data)
                 sent = json.loads(send.call_args_list[-1].args[0].data)
                 for key in ("stream", "stream_options", "max_tokens", "max_completion_tokens", "max_output_tokens", "store", "include"):
                     sent.pop(key, None)
-                self.assertEqual(sent, counted)
+                if usage_based:
+                    self.assertEqual(send.call_count, 1)
+                else:
+                    self.assertEqual(sent, json.loads(send.call_args_list[0].args[0].data))
                 self.assertEqual(len(native_images(sent)), 2)
                 wire = json.dumps(sent)
                 for block in (old, first, second):

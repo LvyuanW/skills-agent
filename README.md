@@ -26,13 +26,13 @@ export OPENAI_MODEL='支持工具调用的模型名称'
 .venv/bin/skills-agent run --session task --workspace /path/to/task --file ./input.txt
 ```
 
-Anthropic 接口使用 `--provider anthropic`，并设置 `ANTHROPIC_API_KEY` 与 `ANTHROPIC_MODEL`。DeepSeek 的 Chat 协议、模型匹配 tokenizer 和思考强度配置见 [完整使用说明](docs/usage.md#会话与上下文)。
+Anthropic 接口使用 `--provider anthropic`，并设置 `ANTHROPIC_API_KEY` 与 `ANTHROPIC_MODEL`。DeepSeek 的 Chat 协议、网关返回用量计量和思考强度配置见 [完整使用说明](docs/usage.md#会话与上下文)。
 
 ## 配置
 
 `run` 和 `benchmark` 自动读取工作目录中的 [skills-agent.toml](skills-agent.toml)；`--config PATH` 可指定另一份配置。优先级为 **命令行参数 > 配置文件 > 已支持的环境变量 > 默认值**。API key 只从环境变量读取。
 
-工作目录默认是当前目录，会话默认写入 `<workspace>/.agent/sessions`。模型窗口、上下文预算、输出额度和 tokenizer 必须与实际模型匹配；完整配置、界面操作、图片附件、后台作业与中断恢复见 [使用说明](docs/usage.md)。
+工作目录默认是当前目录，会话默认写入 `<workspace>/.agent/sessions`。模型窗口、上下文预算和输出额度必须与实际模型匹配；完整配置、界面操作、图片附件、后台作业与中断恢复见 [使用说明](docs/usage.md)。
 
 ## 单次任务与测评
 

@@ -82,14 +82,14 @@ api_format = "responses"
         self.assertEqual((args.model, args.base_url), ("file-model", "https://example.invalid/file"))
 
     def test_missing_automatic_config_uses_existing_environment_and_defaults(self):
-        os.environ.update(OPENAI_MODEL="existing-model", SKILLS_AGENT_TOKEN_COUNTER="deepseek",
-                          SKILLS_AGENT_TOKENIZER_PATH="relative-tokenizer")
+        os.environ.update(OPENAI_MODEL="existing-model", SKILLS_AGENT_TOKEN_COUNTER="usage")
         args = load_agent_config(self.args())
         self.assertEqual(args.model, "existing-model")
         self.assertEqual(args.context_tokens, 1000000)
         self.assertEqual(args.max_output_tokens, 32768)
-        self.assertEqual(args.token_counter, "deepseek")
-        self.assertEqual(args.tokenizer_path, "relative-tokenizer")
+        self.assertEqual(args.token_counter, "usage")
+        self.assertFalse(hasattr(args, "tokenizer_path"))
+        self.assertFalse(hasattr(args, "tokenizer_encoding"))
         self.assertIsNone(args.model_context_window)
 
     def test_usage_counter_is_accepted_from_cli_file_and_environment(self):
@@ -108,15 +108,20 @@ api_format = "responses"
         directory = self.root / "other config"
         directory.mkdir()
         config = directory / "agent.toml"
-        config.write_text('tokenizer_path = "tokenizer"\nskill_dirs = ["skills"]\n')
+        config.write_text('skill_dirs = ["skills"]\n')
         args = load_agent_config(self.args("--config", str(config)))
         self.assertEqual(args.context_tokens, 1000000)
-        self.assertEqual(args.tokenizer_path, str(directory / "tokenizer"))
         self.assertEqual(args.skill_dirs, [str(directory / "skills")])
-        override = load_agent_config(self.args("--config", str(config), "--skill-dir", "cli-skills",
-                                               "--tokenizer-path", "cli-tokenizer"))
+        override = load_agent_config(self.args("--config", str(config), "--skill-dir", "cli-skills"))
         self.assertEqual(override.skill_dirs, ["cli-skills"])
-        self.assertEqual(override.tokenizer_path, "cli-tokenizer")
+
+    def test_removed_local_deepseek_configuration_is_rejected(self):
+        for content in ('token_counter = "deepseek"', 'tokenizer_path = "tokenizer.json"',
+                        'tokenizer_encoding = "v41"'):
+            with self.subTest(content=content):
+                self.write_config(content)
+                with self.assertRaises(ValueError):
+                    load_agent_config(self.args())
 
     def test_invalid_configuration_is_reported_instead_of_silently_ignored(self):
         for content in ('max_output_token = 32768', 'context_tokens = 0', 'max_output_tokens = true',

@@ -90,10 +90,14 @@ class AdapterConfigTests(unittest.TestCase):
         self.assertEqual(config.token_counter, "auto")
         self.assertEqual(config.max_output_tokens, 32768)
         self.assertEqual(config.summary_output_tokens, 8192)
+        self.assertEqual(LocalConfig(package="unused", model="test", token_counter="usage").token_counter, "usage")
+        self.assertFalse(hasattr(config, "tokenizer_path"))
+        self.assertFalse(hasattr(config, "tokenizer_encoding"))
         self.assertEqual(LocalConfig(package="unused", model="test", max_output_tokens=8192).max_output_tokens, 8192)
         for setting in ({"context_tokens": 0}, {"model_context_window": -1},
                         {"max_output_tokens": 0}, {"summary_output_tokens": 0},
-                        {"api_format": "invalid"}, {"token_counter": "characters"}):
+                        {"api_format": "invalid"}, {"token_counter": "characters"},
+                        {"token_counter": "deepseek"}):
             with self.subTest(setting=setting), self.assertRaises(ValueError):
                 LocalConfig(package="unused", model="test", **setting)
 
@@ -177,15 +181,15 @@ class AdapterTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             path = Path(directory)
             deployed = SkillsAgentDeployer(executor(
-                path, context_tokens=272000, api_format="chat", token_counter="deepseek",
-                tokenizer_path="/opt/tokenizers/model/tokenizer.json", tokenizer_encoding="v4",
+                path, context_tokens=272000, api_format="chat", token_counter="usage",
                 model_context_window=1000000,
             ))
             args = deployed._argv(path / "prompt.txt", path, path / "logs")
-            for key, value in (("api-format", "chat"), ("token-counter", "deepseek"),
-                               ("tokenizer-path", "/opt/tokenizers/model/tokenizer.json"),
-                               ("tokenizer-encoding", "v4"), ("model-context-window", "1000000")):
+            for key, value in (("api-format", "chat"), ("token-counter", "usage"),
+                               ("model-context-window", "1000000")):
                 self.assertEqual(args[args.index("--" + key) + 1], value)
+            self.assertNotIn("--tokenizer-path", args)
+            self.assertNotIn("--tokenizer-encoding", args)
 
     @unittest.skipUnless(os.name == "posix", "POSIX process groups")
     def test_cancellation_reaps_process_and_kills_descendants(self):

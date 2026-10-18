@@ -48,9 +48,9 @@ uv run --env-file .env skills-agent run --session demo --max-output-tokens 32768
 
 优先级为 **显式命令行参数 > 配置文件 > 已支持的环境变量 > 内置默认值**。`--config /path/to/agent.toml` 可指定另一份文件，只读取这一份，不合并多份配置。相对 `--config` 路径按启动目录解析。会话名、工作目录和输入附件仍通过启动参数指定。
 
-配置文件还可填写 `provider`、`model`、`base_url`、`api_format`、`token_counter`、`tokenizer_path`、`tokenizer_encoding`、`skill_dirs` 和 `sandbox_image`。文件中的 `tokenizer_path` 和 `skill_dirs` 相对配置文件所在目录解析；命令行及环境变量中的路径仍相对启动目录。`--skill-dir` 覆盖文件中的额外技能目录列表。API key 只从环境变量读取，可继续放在 `.env` 中，不写入 TOML。
+配置文件还可填写 `provider`、`model`、`base_url`、`api_format`、`token_counter`、`skill_dirs` 和 `sandbox_image`。文件中的 `skill_dirs` 相对配置文件所在目录解析；命令行中的路径仍相对启动目录。`--skill-dir` 覆盖文件中的额外技能目录列表。API key 只从环境变量读取，可继续放在 `.env` 中，不写入 TOML。`token_counter` 可选 `auto`、`official` 或 `usage`；旧的 DeepSeek 本地计数器及 tokenizer 配置已移除。
 
-工作上下文默认预算为 **1M（1000000 tokens）**，各项 token 额度均可独立设置为正整数。`usage` 模式仅以网关最近一次主模型回复返回的输入加输出 token 判断是否达到 `min(context_tokens, model_context_window) × 80%`，不预留输出额度而提前压缩。其他计数模式的有效输入预算为 `min(context_tokens, model_context_window - max_output_tokens)`，压缩阈值取该预算与上述 80% 阈值的较小值；未设置实际窗口时使用 `context_tokens`。配置数值仍需符合所用模型的实际能力。
+工作上下文默认预算为 **1M（1000000 tokens）**，各项 token 额度均可独立设置为正整数。`usage` 模式仅以网关最近一次有效的主模型返回用量判断是否达到 `min(context_tokens, model_context_window) × 80%`：Chat Completions 直接读取 `usage.total_tokens`，Responses 使用 `usage.input_tokens + usage.output_tokens`；不预留输出额度而提前压缩。其他计数模式的有效输入预算为 `min(context_tokens, model_context_window - max_output_tokens)`，压缩阈值取该预算与上述 80% 阈值的较小值；未设置实际窗口时使用 `context_tokens`。配置数值仍需符合所用模型的实际能力。
 
 两种 API 均使用流式接收。正文收到即显示；正文和工具调用按到达顺序记录、渲染。交互终端中，每次工具调用只保留一条摘要，原位更新接收、调用、执行进度和最终状态；重新打开会话时也合并为一条。工具摘要显示名称及完成状态、失败退出码和输出行数，不展开命令源码或工具 JSON；可读思考标记为“思考”，按到达顺序显示，签名和加密内容不显示。终端输入时显示 `>`，发送后清除临时输入区，显示一次与历史回放相同的 `user:` 消息块；附件只列名称。用户消息的黑底铺满整行，Agent 回复为白底黑字，段落空行同样填充白底；工具摘要为蓝字，失败或中断时为红字，均使用终端默认背景。颜色只用于终端，重定向输出及原始日志不含新增的颜色控制码。`history` 按到达顺序输出摘要；`history --full` 展开完整公开记录，两者都将失败的工具结果标红，不调用模型。原始日志始终完整保存，显示摘要不调用模型；工作上下文的压缩与长工具结果报告另有独立模型调用。
 
@@ -68,7 +68,7 @@ uv run --env-file .env skills-agent run --session demo --max-output-tokens 32768
 
 按 F2 进入文本选择模式，拖选文字后使用终端的复制快捷键（macOS 为 Cmd-C）；再按 F2 返回。选择期间画面保持不变，模型运行和日志记录继续，返回后显示最新内容并恢复思考标题的点击操作。
 
-右下角“上下文窗口 x%”在 `usage` 模式下显示最近一次主模型回复报告的输入加输出 token，占配置预算与模型窗口中较小者的比例；新增消息不改变这个数值，没有有效返回用量时显示 `—`。其他计数模式显示最近一次主模型请求前计量的输入 token 数占有效输入预算的比例，不包含该次新生成的回答。显示本身不额外调用计量接口；恢复会话沿用对应模式最近一次有效数值。
+右下角“上下文窗口 x%”在 `usage` 模式下显示最近一次有效的主模型返回用量，占配置预算与模型窗口中较小者的比例；新增消息不改变这个数值，没有有效返回用量时显示 `—`。Chat 读取 `usage.total_tokens`，Responses 使用返回的输入与输出之和。其他计数模式显示最近一次主模型请求前计量的输入 token 数占有效输入预算的比例，不包含该次新生成的回答。显示本身不额外调用计量接口；恢复会话沿用对应模式最近一次有效数值。
 
 工具通过参数校验并开始执行后，消息区尾部显示带省略号动画的执行状态；上下文压缩期间显示“正在压缩上下文”。结束、失败或中断时清除该状态。动画不写入会话记录，F2 选择期间暂停，返回后恢复。
 
@@ -90,11 +90,11 @@ export ANTHROPIC_MODEL='支持工具调用的模型名称'
 .venv/bin/skills-agent run --provider anthropic --session claude
 ```
 
-未在命令行或配置文件指定时，模型名称读取对应的 `OPENAI_MODEL` / `ANTHROPIC_MODEL`，API 地址读取 `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`。`base_url` 为包含 API 前缀的根地址，例如 `http://localhost:8000/v1`。OpenAI 官方接入默认使用 `/v1/responses`，并以 `/v1/responses/input_tokens` 计量同一份输入；Anthropic 使用 `/v1/messages` 和 `/v1/messages/count_tokens`。本地兼容服务可以不设置密钥。网关可通过 `api_format = "responses"` 使用对应接口；Chat 协议需配置与模型匹配的计量方式，不能用 Responses 的计数冒充 Chat 请求计数。
+未在命令行或配置文件指定时，模型名称读取对应的 `OPENAI_MODEL` / `ANTHROPIC_MODEL`，API 地址读取 `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`。`base_url` 为包含 API 前缀的根地址，例如 `http://localhost:8000/v1`。OpenAI 官方接入默认使用 `/v1/responses`，并以 `/v1/responses/input_tokens` 计量同一份输入；Anthropic 使用 `/v1/messages` 和 `/v1/messages/count_tokens`。本地兼容服务可以不设置密钥。网关可通过 `api_format = "responses"` 使用对应接口；Chat 协议在 `token_counter = "auto"` 时选择 `usage`，直接读取生成响应中的 `usage.total_tokens`，不调用独立计数接口。
 
-OpenRouter Responses 自动使用 `usage` 计量，无需独立的计数接口。压缩只依据最近一次主模型回复返回的 `usage.input_tokens + usage.output_tokens`，不估算文本、图片、新增消息或首次请求的长度。尚无有效返回用量时，不作本地长度阈值判定。例如上次返回用量为窗口的 79.999%，即使再加入相当于窗口 5% 的消息，也不因此压缩；等下一次主模型回复报告 90% 时，才按 80% 阈值触发压缩。
+OpenRouter Responses 自动使用 `usage` 计量，无需独立的计数接口。压缩只依据最近一次有效的主模型返回用量 `usage.input_tokens + usage.output_tokens`，不估算文本、图片、新增消息或首次请求的长度。本轮缺少有效用量时沿用已有有效快照；尚无有效快照时长度未知，不作本地长度阈值判定。例如上次返回用量为窗口的 79.999%，即使再加入相当于窗口 5% 的消息，也不因此压缩；等下一次主模型回复报告 90% 时，才按 80% 阈值触发压缩。
 
-有效用量随主会话保存，重启后恢复；辅助生成和子 Agent 的用量不会替换主会话数值。压缩后旧快照失效，等待下一次主模型回复提供新用量，不估算压缩后的长度，也不以旧快照重复触发压缩。其他 Responses 网关也可显式设置 `token_counter = "usage"` 或 `--token-counter usage`。
+有效用量随主会话保存，重启后恢复；辅助生成和子 Agent 的用量不会替换主会话数值。压缩后旧快照失效，等待下一次主模型回复提供新用量，不估算压缩后的长度，也不以旧快照重复触发压缩。其他 Responses 网关也可显式设置 `token_counter = "usage"` 或 `--token-counter usage`；Chat 同样可显式选择 `usage`。Chat 与 Responses 的用量来源分别按上面的字段读取。
 
 例如通过单独的 TOML 配置运行 GPT-6 Luna（密钥使用 `OPENAI_API_KEY`）：
 
@@ -182,7 +182,7 @@ adapters/ale/        ALE Deployer 与运行配置
 - `events.jsonl` 只追加原始消息、流式事件和完整工具输出；事件 ID 是稳定的字节偏移引用。`attachments/` 保存输入副本，`subagents/` 保存子任务和辅助调用的私有记录。
 - `context.json` 保存已挑选的工作记录、摘要、覆盖事件、已处理位置和最近计量。每次只处理新增事件；已压缩内容不会从原始日志重新填回。
 - 会话在工具调用与结果之间被强制结束时，下一次准备请求会给这些调用补记中断结果，使记录组可发送。补记记录是派生状态：ID 形如 `recovered-<原调用事件偏移>-<调用 ID>`，含原响应因而跨响应唯一；记录自身带 `recovered_from` 指向可回查的原调用事件。派生记录由程序生成，摘要不能将它当作用户原话。调用 ID 中的其他字符会被替换，并始终附 8 位摘要（对原始调用 ID 取 sha256 前缀），使不同调用 ID 得到不同引用。补记只进入工作上下文，原始日志不改。只修复被后续记录越过的组；未被越过的尾组仍按原样拒绝发送。同一响应内重复的调用 ID 仍由记录组校验报错。
-- `--context-tokens` 默认 **1000000**。`usage` 模式只在最近一次主模型返回的输入加输出 token 达到配置预算与模型窗口中较小者的 **80%（默认 800000）** 时触发压缩；新增消息不改变判定，也不因输出预留空间提前触发。其他计数模式在请求前计量完整输入，若有效输入预算更小，则提前在该上限触发。以已有摘要和较早的已挑选记录生成新摘要；保留最近 **10 次主模型响应及全部对应工具结果**，另保留最新用户任务原文。辅助模型调用不计入这10次。
+- `--context-tokens` 默认 **1000000**。`usage` 模式只在最近一次有效的主模型返回用量达到配置预算与模型窗口中较小者的 **80%（默认 800000）** 时触发压缩；Chat 使用 `usage.total_tokens`，Responses 使用返回的输入与输出之和。新增消息不改变判定，也不因输出预留空间提前触发。其他计数模式在请求前计量完整输入，若有效输入预算更小，则提前在该上限触发。以已有摘要和较早的已挑选记录生成新摘要；保留最近 **10 次主模型响应及全部对应工具结果**，另保留最新用户任务原文。辅助模型调用不计入这10次。
 - 压缩摘要关闭思考，默认生成上限为8192 tokens，提示词要求正文和引用合计在本次额度内完成。用旧摘要和本次移出的工作记录生成新摘要；使用请求前计数器时，材料过长按完整调用组分批合并。摘要期望格式为 `{"summary": "正文，可使用【R1】", "references": {"R1": ["event-123"]}}`；引用作为原文定位线索，JSON 格式、引用或引文错误不阻断压缩，旧 Markdown 摘要仍可继续使用。程序直接保存模型返回文本，不调用独立模型核验。达到生成上限而正常结束时，已返回的非空文本仍可采用，结束原因保存在私有日志中。请求前计数器发现候选请求仍超预算时，在同一摘要流程中继续缩短摘要；`usage` 模式不估算候选长度，摘要采用后等待下一次主模型返回新用量。网络断流、取消或程序异常时保留旧上下文；辅助生成和远程 token 计量遇到可重试故障时，每次失败后固定等待5秒，无次数上限；不拼接残片，不重跑工具。Ctrl-C、进程退出和 ALE 等外层运行时限仍可终止等待。
 - `--summary-output-tokens` 默认8192，是辅助生成的输出额度，与工具报告正文预算分开；需符合实际模型输出能力。使用请求前计数器时，摘要请求的实际额度还受模型剩余窗口和候选主请求空间约束；受保护内容本身过长时明确报告预算限制。`usage` 模式不在本地估算这些长度。两种模式均不缩短受保护记录范围。
 - Anthropic 客户端压缩在协议允许的边界移除失效 thinking 的发送副本，原始历史不变。工具结果尚待回送且需要原签名时延后压缩；硬预算仍不能超出。
@@ -192,17 +192,15 @@ adapters/ale/        ALE Deployer 与运行配置
 - `history.sqlite` 增量索引原始主会话，支持中文与英文检索、事件/路径精确查找、行范围、邻近记录及工具配对。检索子任务通过查询扩展、回看证据和检查后续修正生成报告，只把最终报告带回主上下文。任何时候均可检索，不必等到压缩后。
 - `max_output_tokens` / `--max-output-tokens` 默认32768，包含思考和回答。主模型输出截断时保留已收到的公开内容和原始响应，记录错误，不执行不完整的工具调用。
 
-DeepSeek 使用官方请求编码器与匹配的 tokenizer：
+DeepSeek 自动使用 Chat Completions，并以最近一次有效的主模型返回的 `usage.total_tokens` 作为压缩依据，无需安装额外计数依赖或下载 tokenizer：
 
 ```sh
-uv sync --extra deepseek
-# 从所用模型的官方发布资源取得 tokenizer.json，编码版本必须与模型匹配。
-export SKILLS_AGENT_TOKENIZER_PATH='/absolute/path/to/tokenizer.json'
-export SKILLS_AGENT_TOKENIZER_ENCODING='v41'  # 使用对应模型版本；另支持 v4
+export OPENAI_MODEL='deepseek-flash'
+export OPENAI_BASE_URL='https://api.deepseek.com'
 uv run --env-file .env skills-agent run --session demo
 ```
 
-`api.deepseek.com` 自动选择 Chat 协议和 DeepSeek 计量；其他 DeepSeek 网关还需 `--token-counter deepseek --api-format chat`。配置也可用 `--tokenizer-path` 与 `--tokenizer-encoding`。不使用字符数估算替代；不支持的模型编码或媒体计量会明确报错。官方编码器及模型匹配说明见 [deepseek-recipe](https://github.com/deepseek-ai/deepseek-recipe/blob/main/docs/tokenizer.md)。
+其他 DeepSeek 网关可显式设置 `--api-format chat --token-counter usage`。Chat 只接受网关返回的 `usage.total_tokens`，不自行把 `prompt_tokens` 与 `completion_tokens` 相加作为替代；本轮缺少有效字段时沿用已有有效快照，尚无有效快照时长度未知，不作本地长度判定。首次请求和新增用户消息、工具结果、图片等均不在本地计数或估算；重启恢复同一主会话的有效用量，压缩后等待下一次主模型回复刷新。阈值固定为上述预算与实际窗口中较小者的 80%，不会扣除输出额度而提前触发。
 
 当前 DeepSeek 官方 Chat 链路支持在 `.env` 中设置小写 `effort`：
 
@@ -212,7 +210,7 @@ effort=low
 
 可选 `low`、`high`、`max`，分别控制思考强度；`none` 关闭思考。未设置或留空时不传思考控制参数，使用服务端默认值；其他非空值会在启动时明确报错。此字段目前仅从环境变量读取，不提供 TOML 或命令行选项，仅对 `provider=openai`、主机名为 `api.deepseek.com` 的 Chat 接口生效（包含 `/v1` 地址），其他接口忽略它。
 
-通过 `uv run --env-file .env skills-agent run --session demo` 加载，修改后需重启进程。子 Agent 和工具报告继承该设置；上下文压缩摘要仍按原有规则关闭思考。计量与生成使用相同思考设置。`effort` 控制思考强度，`max_output_tokens` 仍限制单次总输出（含思考），两者用途不同。参数语义见 [DeepSeek 思考模式文档](https://api-docs.deepseek.com/guides/thinking_mode/)。
+通过 `uv run --env-file .env skills-agent run --session demo` 加载，修改后需重启进程。子 Agent 和工具报告继承该设置；上下文压缩摘要仍按原有规则关闭思考。`effort` 控制思考强度，`max_output_tokens` 仍限制单次总输出（含思考），两者用途不同。参数语义见 [DeepSeek 思考模式文档](https://api-docs.deepseek.com/guides/thinking_mode/)。
 
 ### Skills 和 scripts
 
@@ -272,7 +270,7 @@ shell 和 sandbox 必填 `name`，用简短自然语言说明脚本用途，供�
 }
 ```
 
-DeepSeek 本地完整请求计数会在副本中把保留字面量 `<｜image｜>` 替换为 `<|image|>`，避免编码库因普通工具文本包含该串而拒绝转换。实际发送请求及原始记录保留原文；计数量允许存在少量近似误差。
+DeepSeek 不再通过本地编码库转换或计数请求，普通工具文本中的保留标记不会触发本地 tokenizer 转换错误；实际发送请求及原始记录保留原文。
 
 模型 HTTP 请求统一携带 `User-Agent`，格式如 `skills-agent/0.1.0 (Linux; x86_64) Python/3.12.0`。产品版本从安装包 `skills-cli-agent` 的元数据读取，操作系统、架构和 Python 版本根据运行环境生成；直接运行未安装的源码时，产品版本显示为 `dev`。共享请求层覆盖主 Agent、子 Agent、辅助生成、远程 token 计量及重试请求。
 

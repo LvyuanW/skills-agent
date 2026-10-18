@@ -12,8 +12,6 @@ summary_output_tokens = 8192
 # base_url = "https://api.deepseek.com"
 # api_format = "auto"
 # token_counter = "auto"
-# tokenizer_path = ".agent/tokenizers/deepseek/tokenizer.json"
-# tokenizer_encoding = "v41"
 
 # Paths in this file are relative to this file's directory.
 # skill_dirs = ["extra-skills"]

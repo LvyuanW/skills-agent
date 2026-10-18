@@ -3,16 +3,13 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import struct
-import sys
 import tempfile
-import types
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 import zlib
 
 from skills_agent.providers import AnthropicProvider, OpenAIProvider, ProviderError
 from skills_agent.providers.base import tool_feedback_messages
-from skills_agent.providers.deepseek import DeepSeekCounter
 from tests.test_providers import anthropic_response, openai_response, response_events
 
 
@@ -193,43 +190,17 @@ class FeedbackProviderTests(unittest.TestCase):
                 self.assertIn(encoded, json.dumps(count.call_args.args[1]))
 
         provider = OpenAIProvider("deepseek-flash", "key", "https://api.deepseek.com")
-        counter = Mock()
-        counter.count_request.return_value = 210
-        with patch.object(provider, "_counter", return_value=counter), patch(
-            "skills_agent.providers.openai.post_stream", return_value=response_events(openai_response()),
+        events = list(response_events(openai_response()))
+        events.insert(-1, {"choices": [], "usage": {"total_tokens": 210}})
+        with patch("skills_agent.providers.openai.post_json") as count, patch(
+            "skills_agent.providers.openai.post_stream", return_value=(event for event in events),
         ) as send:
-            self.assertEqual(provider.count_tokens("system", self.messages, []), 210)
-            provider.complete("system", self.messages, [])
-        self.assertEqual(counter.count_request.call_args.args[0], {
-            key: value for key, value in send.call_args.args[1].items()
-            if key not in {"stream", "stream_options", "max_tokens"}
-        })
+            self.assertIsNone(provider.count_tokens("system", self.messages, []))
+            reply = provider.complete("system", self.messages, [])
+            self.assertEqual(provider.count_tokens("system", self.messages + [reply], []), 210)
+        count.assert_not_called()
         for encoded in self.encoded:
-            self.assertIn(encoded, json.dumps(counter.count_request.call_args.args[0]))
-
-    def test_deepseek_counter_includes_projected_images_in_media_adjustment(self):
-        provider = OpenAIProvider("deepseek-flash", "key", "https://api.deepseek.com")
-        payload = provider._chat_payload("", self.messages, [])
-        encoder = Mock()
-        encoder.with_tokenizer.return_value = encoder
-        encoder.encode.return_value = list(range(10))
-        encoder.render_conversation.return_value.image_sources = self.encoded
-        converted = types.SimpleNamespace(conversation="converted conversation")
-        recipe = types.SimpleNamespace(
-            Tokenizer=Mock(), DeepseekV41Encoding=Mock(return_value=encoder),
-            ChatCompletionRequest=Mock(), ConversionOptions=Mock(),
-            ImageResolver=Mock(), ReqwestImageFetcher=Mock(), OpenCvImagePreprocessor=Mock(), ImageQuota=Mock(),
-        )
-        recipe.ChatCompletionRequest.return_value.convert.return_value = converted
-        resolver = recipe.ImageResolver.return_value
-        resolver.resolve.return_value.image_token_adjustment.return_value = 200
-        path = Path(self.directory.name) / "tokenizer.json"
-        path.write_text("{}")
-        with patch.dict(sys.modules, deepseek_recipe=recipe):
-            counter = DeepSeekCounter(str(path), "v41")
-            self.assertEqual(counter.count_request(payload), 210)
-        recipe.ChatCompletionRequest.assert_called_once_with(payload)
-        self.assertEqual(resolver.resolve.call_args.args[0], self.encoded)
+            self.assertIn(encoded, json.dumps(send.call_args.args[1]))
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from skills_agent.benchmark import parser as benchmark_parser
 from skills_agent.cli import parser as cli_parser
@@ -20,6 +20,7 @@ TOOLS = [{"name": "shell", "description": "Run a command", "parameters": {
 
 def chat_stream(*args, **kwargs):
     yield chunk({"content": "done"}, "stop")
+    yield {"choices": [], "usage": {"total_tokens": 42}}
     yield None
 
 
@@ -59,19 +60,17 @@ class DeepSeekEffortTests(unittest.TestCase):
         self.assertEqual(controls, expected)
 
     def count_and_complete(self, model, *, disable_thinking=False):
-        counter = Mock()
-        counter.count_request.return_value = 42
-        with patch.object(model, "_counter", return_value=counter), patch(
+        with patch("skills_agent.providers.openai.post_json") as count, patch(
             "skills_agent.providers.openai.post_stream", side_effect=chat_stream,
         ) as send:
-            self.assertEqual(model.count_tokens("system", MESSAGES, TOOLS,
+            self.assertIsNone(model.count_tokens("system", MESSAGES, TOOLS,
+                                                 disable_thinking=disable_thinking))
+            reply = model.complete("system", MESSAGES, TOOLS, disable_thinking=disable_thinking)
+            self.assertEqual(model.count_tokens("system", MESSAGES + [reply], TOOLS,
                                                 disable_thinking=disable_thinking), 42)
-            model.complete("system", MESSAGES, TOOLS, disable_thinking=disable_thinking)
+        count.assert_not_called()
         payload = send.call_args.args[1]
-        self.assertEqual(counter.count_request.call_args.args[0], {
-            key: value for key, value in payload.items()
-            if key not in {"stream", "stream_options", "max_tokens"}
-        })
+        self.assertEqual(payload["max_tokens"], model.max_output_tokens)
         self.assertEqual(send.call_args.args[0], "https://api.deepseek.com/v1/chat/completions")
         return payload
 
@@ -109,7 +108,7 @@ class DeepSeekEffortTests(unittest.TestCase):
              "anthropic", lambda *args, **kwargs: response_events(anthropic_response())),
             ("openai-responses", ["--base-url", "https://api.openai.com/v1"],
              "responses", responses_stream),
-            ("other-chat", ["--base-url", "https://gateway.invalid/v1", "--token-counter", "deepseek"],
+            ("other-chat", ["--base-url", "https://gateway.invalid/v1", "--token-counter", "usage"],
              "openai", chat_stream),
             ("deepseek-responses", ["--api-format", "responses", "--token-counter", "official"],
              "responses", responses_stream),

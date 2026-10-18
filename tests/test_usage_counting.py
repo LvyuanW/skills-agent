@@ -16,6 +16,7 @@ from skills_agent.processes import CALL_ENV, CONTEXT_ENV, SCOPE_ENV
 from skills_agent.providers import OpenAIProvider
 from skills_agent.session import Session
 from skills_agent.skills import SkillRegistry
+from tests.test_stream_openai import chunk, tool
 
 
 TOOLS = [{"name": "shell", "description": "Execute a script", "parameters": {
@@ -331,6 +332,184 @@ class UsageCountingTests(unittest.TestCase):
                     context.sync()
                     context.prepare("system", [])
                     self.assertEqual(auxiliary.compress.call_count, int(should_compact))
+
+
+class ChatUsageCountingTests(unittest.TestCase):
+    def provider(self, **options):
+        return OpenAIProvider("deepseek-flash", "test-key", "https://api.deepseek.com",
+                              max_output_tokens=options.pop("max_output_tokens", 1024), **options)
+
+    def events(self, usage=_MISSING, *, arguments=None, text="done", thinking=None):
+        if thinking is not None:
+            yield chunk({"reasoning_content": thinking})
+        if arguments is None:
+            yield chunk({"content": text}, "stop")
+        else:
+            yield chunk(tool(id="call-1", type="function", function={
+                "name": "shell", "arguments": arguments}), "tool_calls")
+        if usage is not _MISSING:
+            yield {"choices": [], "usage": deepcopy(usage)}
+        yield None
+
+    def complete(self, provider, messages=(), usage=_MISSING, **options):
+        with patch("skills_agent.providers.openai.post_stream", return_value=self.events(usage, **options)):
+            return provider.complete("system", list(messages), TOOLS)
+
+    def test_chat_uses_total_tokens_instead_of_recomputing_or_adding_reasoning(self):
+        provider = self.provider()
+        reply = self.complete(provider, usage={"total_tokens": 1050, "prompt_tokens": 4000,
+                                              "completion_tokens": 50,
+                                              "completion_tokens_details": {"reasoning_tokens": 40}})
+        self.assertEqual(reply["_token_usage"], {"version": 2, "model": provider.model, "tokens": 1050})
+        self.assertEqual(provider.count_tokens("system", [reply], TOOLS), 1050)
+        self.assertEqual(provider.count_tokens("changed header", [reply, {
+            "role": "user", "content": "new message" * 100000}], []), 1050)
+
+    def test_missing_and_invalid_total_tokens_do_not_fall_back_to_other_fields(self):
+        invalid = [_MISSING, None, {}, {"prompt_tokens": 100, "completion_tokens": 20},
+                   *[{"total_tokens": value, "prompt_tokens": 100, "completion_tokens": 20}
+                     for value in (None, -1, True, False, "120", 120.0)]]
+        for usage in invalid:
+            with self.subTest(usage=usage):
+                provider = self.provider()
+                reply = self.complete(provider, usage=usage)
+                self.assertNotIn("_token_usage", reply)
+                self.assertIsNone(provider.count_tokens("system", [reply], TOOLS))
+        reply = self.complete(self.provider(), usage={"total_tokens": 0})
+        self.assertEqual(self.provider().count_tokens("system", [reply], TOOLS), 0)
+
+    def test_later_missing_or_invalid_usage_retains_last_valid_gateway_snapshot(self):
+        provider = self.provider()
+        first = self.complete(provider, usage={"total_tokens": 1000})
+        for usage in (_MISSING, None, {}, {"prompt_tokens": 100, "completion_tokens": 20},
+                      {"total_tokens": None}, {"total_tokens": -1}, {"total_tokens": True},
+                      {"total_tokens": "9000"}, {"total_tokens": 9000.0}):
+            with self.subTest(usage=usage):
+                latest = self.complete(provider, [first], usage=usage)
+                self.assertNotIn("_token_usage", latest)
+                self.assertIsNone(provider.count_tokens("system", [latest], TOOLS))
+                self.assertEqual(provider.count_tokens("system", [first, latest], TOOLS), 1000)
+
+    def test_unknown_usage_reads_neither_new_images_nor_any_count_endpoint(self):
+        messages = [{"role": "user", "content": [
+            {"type": "image", "path": "/not-a-real-image.png", "mime_type": "image/png"},
+            {"type": "text", "text": "large content" * 100000}]}]
+        with patch("skills_agent.providers.openai.post_json") as count, patch.object(Path, "read_bytes") as read:
+            provider = self.provider()
+            self.assertEqual(provider.token_counter, "usage")
+            self.assertIsNone(provider.count_tokens("large system" * 100000, messages, TOOLS))
+            self.assertIsNone(provider.count_text("large text" * 100000))
+        count.assert_not_called()
+        read.assert_not_called()
+
+    def test_reasoning_and_tool_result_roundtrip_preserves_snapshot_after_restart(self):
+        provider = self.provider()
+        messages = [{"role": "user", "content": "inspect"}]
+        reply = self.complete(provider, messages, {"total_tokens": 2040},
+                              arguments='{"command":"status"}', thinking="private reasoning")
+        result = {"role": "tool", "tool_call_id": "call-1", "content": "large result" * 100000}
+        restored = json.loads(json.dumps(working_message(reply)))
+        self.assertNotIn("_raw", restored)
+        self.assertEqual(self.provider().count_tokens("system", messages + [restored, result], TOOLS), 2040)
+        next_payload = provider._chat_payload("system", messages + [restored, result], TOOLS)
+        self.assertEqual(next_payload["messages"][2]["reasoning_content"], "private reasoning")
+        self.assertNotIn("_token_usage", json.dumps(next_payload))
+        self.assertNotIn("private reasoning", json.dumps(restored["_token_usage"]))
+
+    def test_subagent_and_auxiliary_requests_do_not_replace_main_usage(self):
+        provider = self.provider()
+        main = self.complete(provider, usage={"total_tokens": 1000})
+        child = self.complete(provider, usage={"total_tokens": 5000})
+        summary = self.complete(provider, usage={"total_tokens": 200})
+        self.assertEqual(provider.count_tokens("main", [main], TOOLS), 1000)
+        self.assertEqual(provider.count_tokens("child", [child], TOOLS), 5000)
+        self.assertEqual(provider.count_tokens("summary", [summary], []), 200)
+        self.assertIsNone(provider.count_tokens("new conversation", [], TOOLS))
+        latest = self.complete(provider, [main], {"total_tokens": 900})
+        self.assertEqual(provider.count_tokens("main", [main, latest], TOOLS), 900)
+
+    def test_7999_with_new_content_waits_for_9000_then_compacts_at_eighty_percent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            session = Session(Path(directory), "chat-usage-compression")
+            provider = self.provider(model_context_window=10000)
+            messages = [{"role": "user", "content": "original task"},
+                        *[{"role": "assistant", "content": f"finding {index}"} for index in range(11)]]
+            for message in messages:
+                session.append(message)
+            reply = self.complete(provider, messages, {"total_tokens": 7999},
+                                  arguments='{"command":"status"}')
+            session.append(reply)
+            session.append({"role": "tool", "tool_call_id": "call-1", "content": "result" * 100000})
+            session.append({"role": "user", "content": "x" * 2000})
+            auxiliary = Mock(output_tokens=512)
+            auxiliary.compress.return_value = "Prior findings retained."
+            context = WorkingContext(session, provider, auxiliary, max_tokens=10000, keep_calls=1)
+            context.sync()
+            with patch("skills_agent.providers.openai.post_json") as count:
+                context.prepare("system", TOOLS)
+                auxiliary.compress.assert_not_called()
+                self.assertEqual(context.state["token_count"], 7999)
+                session.append(self.complete(provider, usage={"total_tokens": 9000}))
+                context.sync()
+                context.prepare("system", TOOLS)
+                context.prepare("system", TOOLS)
+            count.assert_not_called()
+            auxiliary.compress.assert_called_once()
+            self.assertIsNone(context.state["token_count"])
+            self.assertIsNone(context.state["last_usage"])
+            reopened = WorkingContext(Session(Path(directory), "chat-usage-compression"), self.provider(), auxiliary,
+                                      max_tokens=10000, keep_calls=1)
+            self.assertIsNone(reopened._count("system", TOOLS))
+
+    def test_chat_threshold_is_exactly_eighty_percent_without_output_reserve(self):
+        for tokens, expected in ((7999, False), (8000, True), (9000, True)):
+            with self.subTest(tokens=tokens), tempfile.TemporaryDirectory() as directory:
+                session = Session(Path(directory), "chat-boundary")
+                provider = self.provider(model_context_window=10000, max_output_tokens=5000)
+                session.append({"role": "user", "content": "task"})
+                session.append({"role": "assistant", "content": "finding"})
+                session.append(self.complete(provider, usage={"total_tokens": tokens}))
+                auxiliary = Mock(output_tokens=512)
+                auxiliary.compress.return_value = "summary"
+                context = WorkingContext(session, provider, auxiliary, max_tokens=10000, keep_calls=1)
+                context.sync()
+                context.prepare("system", [])
+                self.assertEqual(auxiliary.compress.call_count, int(expected))
+
+    def test_actual_agent_chat_tool_loop_and_restart_never_call_count_endpoint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            session = Session(root, "chat-usage-loop")
+            arguments = json.dumps({"name": "Write evidence", "command": "printf observed > proof.txt; printf observed",
+                                    "run_in_background": False, "result_mode": "report"})
+            streams = [self.events({"total_tokens": 6040}, arguments=arguments),
+                       self.events({"total_tokens": 20100}, text="Observed proof.txt was written."),
+                       self.events({"total_tokens": 6110}, text="completed"),
+                       self.events({"total_tokens": 6210}, text="continued")]
+            environment = {key: value for key, value in os.environ.items()
+                           if key not in {SCOPE_ENV, CONTEXT_ENV, CALL_ENV}}
+            with patch.dict(os.environ, environment, clear=True), patch(
+                "skills_agent.providers.openai.post_stream", side_effect=streams,
+            ) as send, patch("skills_agent.providers.openai.post_json",
+                             side_effect=AssertionError("Counting endpoint must not be called")) as count:
+                agent = Agent(self.provider(), session, SkillRegistry([]), root, allow_subagent=False)
+                try:
+                    self.assertIsNone(agent.context._count("system", []))
+                    self.assertEqual(agent.run(session.make_user_message("write proof", [])), "completed")
+                    self.assertEqual(agent.context._count("system", []), 6110)
+                finally:
+                    agent.close()
+                self.assertEqual((root / "proof.txt").read_text(), "observed")
+                reopened = Agent(self.provider(), Session(root, "chat-usage-loop"), SkillRegistry([]), root,
+                                 allow_subagent=False)
+                try:
+                    self.assertEqual(reopened.context._count("system", []), 6110)
+                    self.assertEqual(reopened.run(session.make_user_message("continue", [])), "continued")
+                    self.assertEqual(reopened.context._count("system", []), 6210)
+                finally:
+                    reopened.close()
+                count.assert_not_called()
+            self.assertEqual(send.call_count, 4)
 
 
 if __name__ == "__main__":

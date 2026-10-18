@@ -80,10 +80,8 @@ class SkillsAgentDeployer(BaseAgentDeployer):
         ]
         if cfg.base_url:
             argv.extend(["--base-url", cfg.base_url])
-        for field in ("tokenizer_path", "tokenizer_encoding", "model_context_window"):
-            value = getattr(cfg, field)
-            if value is not None:
-                argv.extend(["--" + field.replace("_", "-"), str(value)])
+        if cfg.model_context_window is not None:
+            argv.extend(["--model-context-window", str(cfg.model_context_window)])
         for directory in cfg.skill_dirs:
             argv.extend(["--skill-dir", directory])
         return argv

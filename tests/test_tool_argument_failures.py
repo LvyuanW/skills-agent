@@ -168,21 +168,19 @@ class ToolArgumentFailureTests(unittest.TestCase):
                 self.assertRaises(ProviderConnectionError):
             AnthropicProvider("model", "key").complete("", [], [])
 
-    def test_deepseek_recipe_can_render_rejected_argument_history(self):
-        try:
-            import deepseek_recipe as recipe
-        except ImportError:
-            self.skipTest("DeepSeek tokenizer extra is not installed")
+    def test_deepseek_rejected_argument_history_needs_no_native_conversion(self):
+        provider = OpenAIProvider("deepseek-flash", "key", "https://api.deepseek.com")
         for value in ("{", '{"command":"pwd"}<｜DSML｜tool_calls>', "[]"):
-            messages = [{"role": "assistant", "content": None, "tool_calls": [{
-                "id": "bad", "type": "function", "function": {"name": "shell", "arguments": value},
-            }]}, {"role": "tool", "tool_call_id": "bad", "content":
-                   '{"executed":false,"error":"Invalid arguments"}'}]
-            converted = recipe.ChatCompletionRequest({"model": "deepseek-flash", "messages": messages}).convert(
-                recipe.ConversionOptions())
-            for encoding in (recipe.DeepseekV4Encoding(), recipe.DeepseekV41Encoding()):
-                with self.subTest(arguments=value, encoding=type(encoding).__name__):
-                    encoding.render_conversation(converted.conversation)
+            messages = [{"role": "assistant", "content": None,
+                         "tool_calls": [call("bad", value)]},
+                        {"role": "tool", "tool_call_id": "bad", "content":
+                         '{"executed":false,"error":"Invalid arguments"}'}]
+            with self.subTest(arguments=value), patch("skills_agent.providers.openai.post_json") as count:
+                self.assertIsNone(provider.count_tokens("", messages, []))
+                payload = provider._chat_payload("", messages, [])
+            count.assert_not_called()
+            self.assertEqual(payload["messages"][0]["tool_calls"][0]["function"]["arguments"], value)
+            self.assertEqual(payload["messages"][1]["content"], messages[1]["content"])
 
 
 if __name__ == "__main__":

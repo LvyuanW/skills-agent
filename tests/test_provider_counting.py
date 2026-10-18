@@ -1,19 +1,16 @@
 import io
 import json
-import sys
 import tempfile
-import types
 import unittest
 from copy import deepcopy
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from urllib.error import URLError
 
 from skills_agent.providers import (
     AnthropicProvider, OpenAIProvider, ProviderError, ProviderConnectionError,
     ProviderOutputLimitError, create_provider,
 )
-from skills_agent.providers.deepseek import DeepSeekCounter
 from tests.test_providers import anthropic_response, response_events
 from tests.test_stream_openai import chunk
 
@@ -87,21 +84,20 @@ class CounterTests(unittest.TestCase):
                 key: value for key, value in payload.items() if key not in output_fields
             })
 
-    def test_deepseek_counts_the_disabled_thinking_request_it_generates(self):
+    def test_deepseek_disabled_thinking_generation_needs_no_local_counter(self):
         provider = OpenAIProvider('deepseek-flash', 'key', 'https://api.deepseek.com')
-        counter = Mock()
-        counter.count_request.return_value = 42
-        with patch.object(provider, '_counter', return_value=counter), patch(
+        with patch('skills_agent.providers.openai.post_json') as count, patch(
             'skills_agent.providers.openai.post_stream',
-            return_value=(event for event in [chunk({'content': 'summary'}, 'stop'), None]),
+            return_value=(event for event in [chunk({'content': 'summary'}, 'stop'),
+                                             {'choices': [], 'usage': {'total_tokens': 42}}, None]),
         ) as send:
-            self.assertEqual(provider.count_tokens('sys', [], [], disable_thinking=True), 42)
-            provider.complete('sys', [], [], disable_thinking=True)
+            self.assertIsNone(provider.count_tokens('sys', [], [], disable_thinking=True))
+            reply = provider.complete('sys', [], [], disable_thinking=True)
+            self.assertEqual(provider.count_tokens('sys', [reply], [], disable_thinking=True), 42)
+        count.assert_not_called()
         payload = send.call_args.args[1]
         self.assertEqual(payload['thinking'], {'type': 'disabled'})
-        self.assertEqual(counter.count_request.call_args.args[0], {
-            key: value for key, value in payload.items() if key not in {'stream', 'stream_options', 'max_tokens'}
-        })
+        self.assertEqual(payload['max_tokens'], provider.max_output_tokens)
 
     def test_official_text_count_uses_valid_request_and_keeps_envelope(self):
         for cls, module in [(OpenAIProvider, 'openai'), (AnthropicProvider, 'anthropic')]:
@@ -113,11 +109,12 @@ class CounterTests(unittest.TestCase):
                 self.assertEqual(count.call_count, 1)
                 self.assertIn('report正文', json.dumps(count.call_args.args[1], ensure_ascii=False))
 
-    def test_missing_gateway_counter_does_not_estimate_characters(self):
+    def test_chat_gateway_uses_reported_usage_without_counting_or_estimation(self):
         provider = OpenAIProvider('custom', 'key', 'http://gateway/v1')
-        with patch('skills_agent.providers.base.request.urlopen') as send, \
-                self.assertRaisesRegex(ProviderError, 'matching token counter'):
-            provider.count_tokens('', [{'role': 'user', 'content': 'hello'}], [])
+        with patch('skills_agent.providers.base.request.urlopen') as send:
+            self.assertIsNone(provider.count_tokens('', [{'role': 'user', 'content': 'hello' * 100000}], []))
+            self.assertIsNone(provider.count_text('hello'))
+        self.assertEqual(provider.token_counter, 'usage')
         send.assert_not_called()
 
     def test_counter_rejects_non_integer_and_negative_counts(self):
@@ -145,37 +142,13 @@ class CounterTests(unittest.TestCase):
                     self.assertEqual(cls('model', 'secret').count_tokens('', messages, []), 100)
                     self.assertIn('cG5nIGJ5dGVz', json.dumps(count.call_args.args[1]))
 
-    def test_deepseek_configuration_is_explicit_and_lazy(self):
+    def test_deepseek_default_needs_no_tokenizer(self):
         provider = OpenAIProvider('deepseek-flash', 'key', 'https://api.deepseek.com')
         self.assertEqual(provider.api_format, 'chat')
-        self.assertEqual(provider.token_counter, 'deepseek')
-        with self.assertRaisesRegex(ProviderError, 'tokenizer_path'):
-            provider.count_text('hello')
+        self.assertEqual(provider.token_counter, 'usage')
+        self.assertIsNone(provider.count_text('hello'))
+        self.assertIsNone(provider.count_tokens('', [], []))
 
-    def test_deepseek_uses_full_request_encoder_and_image_adjustment(self):
-        encoder = Mock()
-        encoder.with_tokenizer.return_value = encoder
-        encoder.encode.return_value = list(range(10))
-        encoder.render_conversation.return_value.image_sources = ['image']
-        converted = types.SimpleNamespace(conversation='converted conversation')
-        recipe = types.SimpleNamespace(
-            Tokenizer=Mock(), DeepseekV41Encoding=Mock(return_value=encoder),
-            ChatCompletionRequest=Mock(), ConversionOptions=Mock(return_value='options'),
-            ImageResolver=Mock(), ReqwestImageFetcher=Mock(), OpenCvImagePreprocessor=Mock(), ImageQuota=Mock(),
-        )
-        recipe.Tokenizer.from_file.return_value.encode.return_value = [1, 2, 3]
-        recipe.ChatCompletionRequest.return_value.convert.return_value = converted
-        recipe.ImageResolver.return_value.resolve.return_value.image_token_adjustment.return_value = 200
-        payload = {'model': 'deepseek-flash', 'messages': [{'role': 'assistant', 'content': None,
-                   'reasoning_content': 'reason', 'tool_calls': []}], 'tools': TOOLS}
-        with tempfile.TemporaryDirectory() as directory, patch.dict(sys.modules, deepseek_recipe=recipe):
-            path = Path(directory) / 'tokenizer.json'
-            path.write_text('{}')
-            counter = DeepSeekCounter(str(path), 'v41')
-            self.assertEqual(counter.count_request(payload), 210)
-            self.assertEqual(counter.count_text('body'), 3)
-        recipe.ChatCompletionRequest.assert_called_once_with(payload)
-        encoder.encode.assert_called_once_with(converted.conversation)
 
 
 class ResponsesTests(unittest.TestCase):

@@ -42,11 +42,9 @@ export OPENAI_API_KEY='你的密钥'
 | 字段 | 默认值 / 用途 |
 | --- | --- |
 | `workspace` | ALE 的 `sandbox.task_data_root`，作为脚本当前目录 |
-| `context_tokens` | `1000000`；完整工作上下文的 token 预算，可设为任意正整数，达到 90% 时压缩；有效输入预算更小时提前触发 |
+| `context_tokens` | `1000000`；完整工作上下文的 token 预算，可设为任意正整数，达到预算与模型窗口较小值的 80% 时压缩 |
 | `api_format` | `auto`；OpenAI 协议可选择 `responses` 或 `chat` |
-| `token_counter` | `auto`；使用官方接口 `official` 或 DeepSeek 本地计量 `deepseek` |
-| `tokenizer_path` | 未设置；DeepSeek tokenizer 文件的容器内路径 |
-| `tokenizer_encoding` | 未设置；匹配实际 DeepSeek 模型的 `v4` 或 `v41` 编码器 |
+| `token_counter` | `auto`；可显式使用官方请求前接口 `official` 或响应返回用量 `usage` |
 | `model_context_window` | 未设置；实际模型窗口上限，用于校验输入与输出额度之和 |
 | `max_output_tokens` | `32768`；单次输出额度，包含思考与回答 |
 | `summary_output_tokens` | `8192`；辅助生成额度，压缩摘要关闭思考并以此限制单次生成长度 |
@@ -54,9 +52,9 @@ export OPENAI_API_KEY='你的密钥'
 
 ALE 继续通过 `skills_agent.yaml` 的 `config` 字段配置，由适配器传给 benchmark 入口；无需依赖宿主机的 `skills-agent.toml`。
 
-`context_tokens` 与实际模型能力分开配置。设置 `model_context_window` 后，有效输入预算为 `min(context_tokens, model_context_window - max_output_tokens)`；未设置时使用 `context_tokens`，仍需确认服务端限制。普通子任务和历史检索子任务继承上下文预算；辅助调用跟随该配置，同时受实际模型窗口约束并预留辅助输出空间。调整上下文预算不会改变默认的 `max_output_tokens: 32768`。
+`context_tokens` 与实际模型能力分开配置。设置 `model_context_window` 后，压缩阈值为 `min(context_tokens, model_context_window) * 80%`；未设置时使用 `context_tokens * 80%`，仍需确认服务端限制。普通子任务和历史检索子任务继承上下文预算；辅助调用跟随该配置，同时受实际模型窗口约束并预留辅助输出空间。调整上下文预算不会改变默认的 `max_output_tokens: 32768`。
 
-OpenAI 和 Anthropic 使用官方请求前计量接口；OpenAI 网关需要支持 Responses 及其计量接口，并设置 `api_format: responses`。DeepSeek 使用匹配实际模型的本地 tokenizer 和消息模板。使用 DeepSeek 时，在配置中设置 `api_format: chat`、`token_counter: deepseek`、`tokenizer_path` 和对应的 `tokenizer_encoding`；安装包需要包含 `deepseek` 可选依赖，tokenizer 文件必须已在任务容器内可用，宿主机路径不会自动传入。
+OpenAI 官方 Responses 和 Anthropic 默认使用官方请求前计量接口。DeepSeek Chat 默认使用最近一次主模型响应的 `usage.total_tokens`，OpenRouter Responses 使用 `usage.input_tokens + usage.output_tokens`；不对新增消息或工具结果做本地估算，未有响应用量时也不预测长度。其他 Responses 网关可显式设置 `token_counter: usage`。达到 80% 阈值后压缩；未达到时，即使新增内容较长也继续发送，等下次响应用量再判断。DeepSeek 不再需要本地 tokenizer 文件或额外编码库依赖。
 
 ## 运行一题
 

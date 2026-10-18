@@ -37,7 +37,7 @@ class AnthropicProvider(HTTPProvider):
 
     def __init__(self, model: str, api_key: str, base_url: str | None = None,
                  max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS, *, api_format: str = "auto",
-                 token_counter: str = "auto", tokenizer_path=None, tokenizer_encoding=None,
+                 token_counter: str = "auto",
                  model_context_window: int | None = None):
         super().__init__(model, api_key, base_url, max_output_tokens,
                          model_context_window=model_context_window)

@@ -16,14 +16,12 @@ DEFAULTS = {
     "max_output_tokens": DEFAULT_MAX_OUTPUT_TOKENS,
     "summary_output_tokens": 8192,
     "api_format": "auto", "token_counter": "auto",
-    "tokenizer_path": None, "tokenizer_encoding": None,
     "skill_dirs": [], "sandbox_image": None,
 }
 CHOICES = {
     "provider": {"openai", "anthropic"},
     "api_format": {"auto", "responses", "chat"},
-    "token_counter": {"auto", "official", "deepseek", "usage"},
-    "tokenizer_encoding": {"v4", "v41"},
+    "token_counter": {"auto", "official", "usage"},
 }
 
 
@@ -55,22 +53,19 @@ def load_agent_config(args):
             settings = tomllib.load(stream)
         _validate(settings)
         # File-relative paths stay usable when the config is selected from another cwd.
-        for key in ("tokenizer_path", "skill_dirs"):
-            if key not in settings:
-                continue
-            paths = settings[key] if key == "skill_dirs" else [settings[key]]
+        if "skill_dirs" in settings:
             resolved = []
-            for item in paths:
+            for item in settings["skill_dirs"]:
                 item = Path(item).expanduser()
                 resolved.append(str((path.parent / item).resolve()))
-            settings[key] = resolved if key == "skill_dirs" else resolved[0]
+            settings["skill_dirs"] = resolved
     supplied = {key: getattr(args, key) for key in DEFAULTS if getattr(args, key, None) is not None}
     provider = supplied.get("provider", settings.get("provider", DEFAULTS["provider"]))
     environment = {
         "model": os.environ.get(f"{provider.upper()}_MODEL"),
         "base_url": os.environ.get(f"{provider.upper()}_BASE_URL"),
         **{key: os.environ.get(f"SKILLS_AGENT_{key.upper()}") for key in (
-            "api_format", "token_counter", "tokenizer_path", "tokenizer_encoding",
+            "api_format", "token_counter",
         )},
     }
     values = {**DEFAULTS, **{key: value for key, value in environment.items() if value},

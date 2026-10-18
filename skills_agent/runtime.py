@@ -21,9 +21,7 @@ def add_agent_arguments(parser):
     parser.add_argument("--summary-output-tokens", type=int,
                         help="辅助生成的输出上限，默认8192 tokens；摘要调用关闭思考")
     parser.add_argument("--api-format", choices=["auto", "responses", "chat"])
-    parser.add_argument("--token-counter", choices=["auto", "official", "deepseek", "usage"])
-    parser.add_argument("--tokenizer-path")
-    parser.add_argument("--tokenizer-encoding", choices=["v4", "v41"])
+    parser.add_argument("--token-counter", choices=["auto", "official", "usage"])
     parser.add_argument("--model-context-window", type=int,
                         help="模型实际窗口；发送输入加输出额度必须装得下")
     parser.add_argument("--sandbox-image", help="提供 sandbox 工具，使用指定 Docker 镜像")
@@ -43,7 +41,6 @@ def create_agent(args, session, *, on_event=None, allow_persistent_processes=Fal
         base_url=args.base_url,
         max_output_tokens=args.max_output_tokens,
         api_format=args.api_format, token_counter=args.token_counter,
-        tokenizer_path=args.tokenizer_path, tokenizer_encoding=args.tokenizer_encoding,
         model_context_window=args.model_context_window,
         deepseek_effort=os.environ.get("effort") or None,
     )

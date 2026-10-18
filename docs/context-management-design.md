@@ -26,7 +26,7 @@
 
 用户提出的要求：
 
-- 长度按 token 计量，达到配置预算与模型窗口中较小者的 80% 或以上时触发压缩。`usage` 模式只依据最近一次主模型返回用量；请求前计数模式在有效输入上限更小时提前触发。
+- 长度按 token 计量，达到配置预算与模型窗口中较小者的 80% 或以上时触发压缩。`usage` 模式只依据最近一次有效的主模型返回用量；请求前计数模式在有效输入上限更小时提前触发。
 - 保留最近一段工作记录不压缩，更早的内容由模型生成历史摘要；保留单位见 2.4。
 - 工作上下文持续增量更新并落盘，不在每次调用前从全部历史重新挑选和压缩。
 - 系统提示词、用户原话和主 Agent 正文进入主上下文。
@@ -84,7 +84,7 @@
 
 ### 3.1 调研结论
 
-计量必须明确依据。OpenAI 和 Anthropic 官方接入使用官方计数接口；DeepSeek 使用模型匹配的官方请求编码器及 tokenizer，见 3.4。OpenRouter Responses 仅使用服务端返回用量，不做本地长度估算，也不依赖独立计数接口。
+计量必须明确依据。OpenAI 和 Anthropic 官方接入使用官方计数接口；DeepSeek Chat Completions 直接使用服务端返回的 `usage.total_tokens`，见 3.4。OpenRouter Responses 使用服务端返回的输入与输出之和。后两者均不做本地长度估算，也不依赖独立计数接口。
 
 不存在一个适用于所有 OpenAI、Anthropic 兼容网关的统一精确 tokenizer。API 协议兼容不代表分词器、模型版本、工具包装或媒体处理方式相同。
 
@@ -92,17 +92,17 @@
 | --- | --- | --- |
 | OpenAI 官方 Responses | `POST /v1/responses/input_tokens`，传入准备发送的请求内容 | 官方说明覆盖文本、消息、工具、图片、文件和消息结构的输入 token |
 | Anthropic 官方 Messages | `POST /v1/messages/count_tokens` | 官方明确称其为估计值，实际输入量可能略有差异；图片、PDF 计数需要使用其支持的输入形式 |
-| DeepSeek | 官方文档目前未查到独立的请求前计数接口；使用对应模型的官方 tokenizer，实际响应的 `usage` 用于核对 | 离线计数不能无条件等同于含消息包装和媒体的完整请求用量，官方说明实际数量以 API 返回为准 |
-| OpenRouter Responses | 仅取最近一次主模型返回的 `usage.input_tokens + usage.output_tokens` | 首次请求或快照失效时长度未知；新增内容不改变判定，不做本地估算，不访问 `/responses/input_tokens` |
-| 其他兼容网关 | 网关计数接口、匹配的 tokenizer，或 Responses 显式配置 `token_counter = "usage"` | 必须明确计量依据，不能根据协议名称推断 tokenizer |
+| DeepSeek Chat Completions | 仅取最近一次有效的主模型返回的 `usage.total_tokens` | 本轮缺少有效字段时沿用已有有效快照；尚无有效快照时长度未知，不自行合计其他字段替代；新增内容不改变判定，不做本地计数或估算 |
+| OpenRouter Responses | 仅取最近一次有效的主模型返回的 `usage.input_tokens + usage.output_tokens` | 首次请求或快照失效时长度未知；新增内容不改变判定，不做本地估算，不访问 `/responses/input_tokens` |
+| 其他兼容网关 | Chat 在 `auto` 下选择 `usage`，同样读取 `usage.total_tokens`；Responses 可显式配置 `token_counter = "usage"` | 必须明确网关返回的用量字段；本轮缺少有效用量时沿用已有有效快照，尚无有效快照时不作本地长度判定 |
 
 依据：[OpenAI token counting](https://developers.openai.com/api/docs/guides/token-counting)、[Anthropic token counting](https://platform.claude.com/docs/en/build-with-claude/token-counting)、[DeepSeek token usage](https://api-docs.deepseek.com/quick_start/token_usage/)。
 
-因此“三家都有官方 token 计量接口”并不成立：OpenAI 与 Anthropic 有公开的请求前接口；DeepSeek 提供官方离线计量资料及请求后的用量。网关即使支持生成协议，也不一定实现相应计数接口。核查日期为 2026-10-10。
+因此“三家都有官方请求前 token 计量接口”并不成立：OpenAI 与 Anthropic 有公开的请求前接口；DeepSeek 在请求完成后返回用量，本项目直接使用它。网关即使支持生成协议，也不一定实现相应计数接口。
 
-当前项目的 OpenAI 官方接入使用原生 Responses，让官方计数与生成使用同一份输入；DeepSeek 官方接入使用 Chat Completions。OpenRouter 需显式设置 `api_format = "responses"`，此时 `token_counter = "auto"` 选择 `usage`。不能将 Responses 的计数冒充 Chat Completions 的精确计数。
+当前项目的 OpenAI 官方接入使用原生 Responses，让官方计数与生成使用同一份输入；DeepSeek 官方接入使用 Chat Completions。所有 Chat 接口在 `token_counter = "auto"` 时选择 `usage`。OpenRouter 需显式设置 `api_format = "responses"` 来使用 Responses，此时 `token_counter = "auto"` 同样选择 `usage`。两种协议分别从实际生成响应读取自己的用量字段。
 
-`usage` 模式下，最近一次主模型回复的服务端用量作为独立快照保存，重启后恢复同一主会话最近的有效快照；辅助生成和子 Agent 的用量不会替换主会话快照。首次请求、缺少有效用量或快照失效时，长度为未知，不以 0 冒充已知值，也不作本地阈值判定。文本、图片、其他媒体和消息结构均不在本地计数或估算。
+`usage` 模式下，最近一次有效的主模型返回用量作为独立快照保存，重启后恢复同一主会话最近的有效快照；辅助生成和子 Agent 的用量不会替换主会话快照。本轮缺少或返回无效用量时沿用已有有效快照；首次请求或快照失效后尚无新有效快照时，长度为未知，不以 0 冒充已知值，也不作本地阈值判定。文本、图片、其他媒体和消息结构均不在本地计数或估算。
 
 新增用户消息、工具结果等不会增加快照数值。上次主模型返回用量为窗口的 79.999%，随后新增相当于窗口 5% 的消息，仍不触发压缩；等下一次主模型回复返回 90% 的用量时，才按 80% 阈值触发。压缩采用后旧快照失效，等待下一次主模型返回新用量，不估算新上下文，也不以旧快照重复触发压缩。服务端返回用量说明的是上次请求及回复，而不是尚未发送的新内容长度。
 
@@ -111,7 +111,7 @@
 ```text
 正在使用的全量工作上下文默认预算：1000000 tokens
 历史压缩触发阈值：配置预算与模型窗口中较小者的 80%，默认 800000 tokens
-usage 模式：只比较最近一次主模型返回的输入加输出 token，不预留输出额度而提前触发
+usage 模式：只比较最近一次有效的主模型返回用量，不预留输出额度而提前触发
 请求前计数模式：有效输入上限更小时提前触发
 保留的主模型调用组数：10（D03，已确认）
 ```
@@ -120,12 +120,13 @@ usage 模式：只比较最近一次主模型返回的输入加输出 token，�
 
 `run` 与 `benchmark` 默认读取所选工作目录中的 `skills-agent.toml`，或用 `--config` 指定单份配置文件。`context_tokens`、`model_context_window`、`max_output_tokens` 与 `summary_output_tokens` 分别配置工作预算、模型总窗口、单次输出额度与辅助输出额度；相应命令行参数可覆盖文件值。优先级为显式命令行参数 > 文件 > 已支持的环境变量 > 内置默认值，不合并多份文件。
 
-请求前计数包括系统提示词、工具定义、实际加载的技能说明、历史摘要、保留消息、工具及检索报告、需要回传的协议状态，以及实际发送的图片、PDF 等媒体。`usage` 模式不预测这些内容的长度，只采用网关返回的输入加输出用量。缓存命中的输入仍占上下文。
+请求前计数包括系统提示词、工具定义、实际加载的技能说明、历史摘要、保留消息、工具及检索报告、需要回传的协议状态，以及实际发送的图片、PDF 等媒体。`usage` 模式不预测这些内容的长度，只采用网关返回用量。缓存命中的输入仍占上下文。
 
 `usage` 模式的判定为：
 
 ```text
-最近主模型返回用量 = usage.input_tokens + usage.output_tokens
+Chat 最近一次有效的主模型返回用量 = usage.total_tokens
+Responses 最近一次有效的主模型返回用量 = usage.input_tokens + usage.output_tokens
 压缩触发阈值 = min(context_tokens, model_context_window) × 80%
 仅当有效返回用量达到阈值时触发；没有有效快照时不作长度判定
 ```
@@ -148,38 +149,17 @@ Agent 配置不能扩大模型本身的窗口。模型实际窗口小于配置�
 
 工作上下文增量维护，不代表 token 数可以通过每条文本的计数严格相加。消息边界、工具定义和媒体处理都会影响实际请求计数。
 
-在调用前读取计量值；这一步不重新挑选历史，也不重新生成摘要。请求前计数器对完整请求计数；`usage` 模式只读取最近一次主模型返回用量，不因新增内容改变这个值。切换模型后不能沿用旧模型快照；上下文长度与跨请求累计消耗分开。
+在调用前读取计量值；这一步不重新挑选历史，也不重新生成摘要。请求前计数器对完整请求计数；`usage` 模式只读取最近一次有效的主模型返回用量，不因新增内容改变这个值。切换模型后不能沿用旧模型快照；上下文长度与跨请求累计消耗分开。
 
-### 3.4 DeepSeek tokenizer 的用法与接入方案（已确认）
+### 3.4 DeepSeek Chat 的返回用量（已确认）
 
-Tokenizer 在本地把文本变成 token ID 数组，取数组长度即可，不需要 API key，也不运行语言模型。官方计量页提供 [V4 tokenizer 文件包](https://cdn.deepseek.com/api-docs/deepseek_v4_tokenizer.zip)，解压后可用 `transformers.AutoTokenizer.from_pretrained(本地目录)` 加载，再调用 `encode(text, add_special_tokens=False)` 计算纯文本长度。
+DeepSeek Chat 链路移除本地请求编码器与 tokenizer，直接使用最近一次有效的主模型返回的 `usage.total_tokens`。该字段表示该次请求的输入与本次生成合计，不是历次请求的累计消耗。思考 token 已包含在生成用量内，不重复累加；缓存命中的输入同样属于这次上下文。
 
-但本项目需要计量整份请求。核查上述包内的聊天模板发现，它没有完整覆盖工具定义、回传思考和多模态内容；不能仅对各条 `content` 分词或对请求 JSON 字符串分词，就声称得到了实际输入量。
+运行时严格读取 `total_tokens`，本轮缺失或无效时沿用已有有效快照，尚无有效快照时将长度视为未知，不自行用 `prompt_tokens + completion_tokens`、文本字节数、图片数量或其他规则计算替代值。首次请求前、追加用户消息或工具结果之后，均不在本地预测长度。最近一次已知返回用量低于阈值时，即使新内容很长，也等待下一次主模型返回的新有效用量才重新判定。
 
-采用官方 [deepseek-recipe](https://github.com/deepseek-ai/deepseek-recipe)：先把协议请求转换为模型对话，再通过对应模型的模板和 tokenizer 编码。以下按官方 V4.1 示例说明纯文本请求计数，实际接入必须匹配所用模型版本；`payload` 直接使用准备发送的完整请求，包含工具定义、调用结果及需要回传的 `reasoning_content`。
+Chat 与 Responses 共用返回用量模式的持久化、隔离和失效规则：只采用当前主模型的有效快照，重启可恢复；辅助生成与子 Agent 不替换主快照，切换模型或采用压缩摘要后旧快照失效。下一次主请求前，若有效 `usage.total_tokens` 达到 `min(context_tokens, model_context_window) × 80%`，才按保护最近调用组等规则压缩；不因预留输出空间提前触发。
 
-```python
-# 安装依赖：python -m pip install deepseek-recipe
-from deepseek_recipe import (
-    ChatCompletionRequest, ConversionOptions, DeepseekV41Encoding, Tokenizer,
-)
-
-# 路径指向官方仓库 static/tokenizers/v41/tokenizer.json 的本地副本。
-tokenizer = Tokenizer.from_file("/path/to/v41/tokenizer.json")
-encoding = DeepseekV41Encoding().with_tokenizer(tokenizer)
-
-payload = {
-    "model": "deepseek-flash",
-    "messages": [{"role": "user", "content": "检查当前工作目录"}],
-    "thinking": {"type": "enabled"},
-}
-conversation = ChatCompletionRequest(payload).convert(ConversionOptions()).conversation
-input_tokens = len(encoding.encode(conversation))
-```
-
-依据：[官方 Python tokenizer 示例](https://github.com/deepseek-ai/deepseek-recipe/blob/main/docs/tokenizer.md)、[配套 tokenizer 文件](https://github.com/deepseek-ai/deepseek-recipe/blob/main/static/tokenizers/README.md)。以上已核对官方示例与接口，尚未在本项目安装或运行。
-
-该库的 `encode()` 只计量已渲染提示词中的 token；图片在此仍是占位符，视觉 token 需要按官方预处理规则另算，不能对图片 URL 或 base64 文本分词冒充视觉计量。[官方视觉计量说明](https://api-docs.deepseek.com/guides/vision/)。本地模板计数仍需用响应的 `usage.prompt_tokens` 核对，不能保证与托管服务内部处理永远完全一致。
+无需安装 `deepseek-recipe` 或准备 tokenizer 文件，也不再接受旧本地计数器选项。DeepSeek 的思考协议和历史 `reasoning_content` 续接方式保持不变。返回字段定义见 [DeepSeek token usage](https://api-docs.deepseek.com/quick_start/token_usage/)。
 
 ## 4. 增量落盘
 
@@ -209,7 +189,7 @@ sessions/demo/
 ### 5.1 触发与替换流程
 
 1. 原始会话记录的新增内容经过挑选后追加到主工作上下文并落盘。
-2. 调用主模型前，请求前计数器计量准备发送的请求；`usage` 模式读取最近一次主模型返回的输入加输出用量。
+2. 调用主模型前，请求前计数器计量准备发送的请求；`usage` 模式读取最近一次有效的主模型返回用量（Chat 的 `total_tokens` 或 Responses 的输入与输出之和）。
 3. 未达到阈值时直接继续，不生成历史摘要。
 4. 达到阈值时，在当前工作上下文中按 2.4 保留最近 10 个完整调用组及最新用户任务，确定可压缩的较早工作记录，并检查 5.4 的协议边界。
 5. 把“工作上下文中的上次摘要＋此次从保留范围移出的已挑选工作记录”交给关闭思考的独立模型调用，并指定摘要生成额度；请求前计数模式发现材料过长时按完整记录组分批，逐批合并为一个新摘要。
@@ -583,8 +563,8 @@ FTS5 提供全文检索和 BM25 排序。中文需要一致的分词处理，不
 
 | 编号 | 事项 | 已确认决定及适用边界 |
 | --- | --- | --- |
-| D01 | 工作上下文预算的含义及数值 | 默认预算为 1M（1000000 tokens），可在 TOML 或命令行覆盖为任意正整数；配置预算与模型窗口中较小者的 80% 即默认 800000 为阈值。`usage` 模式只比较最近一次主模型返回的输入加输出 token；其他计数模式在有效输入上限更小时提前触发，见 3.2 |
-| D02 | 各 provider 的计量方式 | OpenAI、Anthropic 官方接入使用官方计数接口；DeepSeek 采用官方 deepseek-recipe 请求编码器与匹配 tokenizer；OpenRouter Responses 仅使用最近一次主模型返回用量，不做本地计数或新增内容估算，其他 Responses 网关可显式选择 `usage`，边界见 3.1 |
+| D01 | 工作上下文预算的含义及数值 | 默认预算为 1M（1000000 tokens），可在 TOML 或命令行覆盖为任意正整数；配置预算与模型窗口中较小者的 80% 即默认 800000 为阈值。`usage` 模式只比较最近一次有效的主模型返回用量；其他计数模式在有效输入上限更小时提前触发，见 3.2 |
+| D02 | 各 provider 的计量方式 | OpenAI、Anthropic 官方接入使用官方计数接口；DeepSeek 等 Chat 链路只读取最近一次有效的主模型返回的 `usage.total_tokens`；OpenRouter Responses 读取返回的输入与输出之和。两者不做本地计数或新增内容估算，其他 Responses 网关可显式选择 `usage`，边界见 3.1 |
 | D03 | 近期记录的保留单位 | 已确认最近 10 次主模型调用的完整记录组，另保留最新用户任务原文；独立辅助调用不计入 |
 | D04 | 摘要格式、预算与输入 | 压缩输入为工作上下文中的旧摘要和较早已挑选记录；关闭思考，默认生成上限8192 tokens；保留七类信息，提示词以 JSON 分开正文与引用，旧 Markdown 可继续使用。按完整组分批合并，不设格式、引用或引文失败门槛，不调用独立模型核验 |
 | D05 | 压缩接收及超限 | 正常得到非空摘要即采用，达到输出上限的正常结束亦可采用现有文本。请求前计数模式发现候选超限时继续缩短摘要；`usage` 模式不估算候选长度，采用后等待新主模型用量。不要求严格减少 token；断流、取消、空返回或程序异常不写回，保持受保护记录范围 |
