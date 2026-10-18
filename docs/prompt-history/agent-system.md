@@ -775,7 +775,7 @@ Available skills:
 
 ## v14 · 2026-10-18 · 未知长度不推测工具结果大小
 
-来源：当前工作区（未提交）；`skills_agent/agent.py:Agent._system()`。
+来源：提交 `e40f7f31fc67ffccd2d045e574b6aec9c4622b28`；`skills_agent/agent.py:Agent._system()`。
 
 - 发现的问题：usage 模式不再进行本地 token 估算，但系统提示仍承诺 auto 一定按 8192 tokens 切换报告、direct 一定预判能否装入上下文。
 - 本版本目标：将这些行为限定为计数可用时；未知长度的 auto 保留原文，direct 只在能够预先计数时按空间返回引用。

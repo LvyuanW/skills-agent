@@ -171,7 +171,7 @@
 
 ## v2 · 2026-10-18 · 结果模式区分已知与未知长度
 
-来源：当前工作区（未提交）；`skills_agent/tools/__init__.py:ToolRegistry`。
+来源：提交 `e40f7f31fc67ffccd2d045e574b6aec9c4622b28`；`skills_agent/tools/__init__.py:ToolRegistry`。
 
 - 发现的问题：sandbox 与 shell 共用 result_mode 描述，原说明未覆盖 usage 模式下没有新结果长度的情况。
 - 本版本目标：与 shell 同步明确未知长度保留原文以及 direct 预先计数的适用条件，不引入本地估算。

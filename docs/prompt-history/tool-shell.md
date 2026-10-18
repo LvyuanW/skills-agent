@@ -505,7 +505,7 @@
 
 ## v6 · 2026-10-18 · 结果模式区分已知与未知长度
 
-来源：当前工作区（未提交）；`skills_agent/tools/__init__.py:ToolRegistry`。
+来源：提交 `e40f7f31fc67ffccd2d045e574b6aec9c4622b28`；`skills_agent/tools/__init__.py:ToolRegistry`。
 
 - 发现的问题：shell 的 result_mode 参数说明仍假定所有接入都有请求前 token 计数，与仅采用网关返回用量的 usage 模式不一致。
 - 本版本目标：说明未知长度的 auto 保留原文，direct 只有在预先计数确认装不下时才返回来源引用，不引入本地估算。
