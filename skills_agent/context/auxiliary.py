@@ -267,7 +267,7 @@ class Auxiliary:
             log=log, operation="count_tokens",
         )
         reserve = self.reserve if output_tokens is None else min(output_tokens, self.reserve)
-        return count + reserve <= self.window
+        return count is None or count + reserve <= self.window
 
     def _call(self, log, system, payload, *, on_progress=None, output_tokens=None,
               disable_thinking=False, accept_summary_text=False):
@@ -280,12 +280,12 @@ class Auxiliary:
             if on_progress:
                 on_progress()
             count = self.model.count_tokens(system, deepcopy(messages), tools, **options)
-            if count >= self.window:
+            if count is not None and count >= self.window:
                 raise ProviderError("Auxiliary input exceeds the model context window")
             return count
 
         count = self._with_retries(count_request, log=log, operation="count_tokens")
-        available = self.window - count
+        available = self.window if count is None else self.window - count
         budget = min(self.output_tokens, output_tokens or self.output_tokens, available)
         first_attempt = True
 
@@ -372,12 +372,15 @@ class Auxiliary:
         return self._with_retries(lambda: self.model.count_text(text), log=log, operation="count_text")
 
     def _report(self, log, payload):
-        report = self._call(log, _REPORT, payload, disable_thinking=True)
-        if self._count_text(log, report) > 2048:
+        options = {"output_tokens": 2048} if getattr(self.model, "token_counter", None) == "usage" else {}
+        report = self._call(log, _REPORT, payload, disable_thinking=True, **options)
+        count = self._count_text(log, report)
+        if count is not None and count > 2048:
             report = self._call(log, _REPORT + "\nRewrite this draft within 2048 tokens; preserve all material evidence.",
                                 {"draft": report, "task": payload.get("task"), "source": payload.get("source")},
                                 disable_thinking=True)
-            if self._count_text(log, report) > 2048:
+            count = self._count_text(log, report)
+            if count is not None and count > 2048:
                 raise ProviderError("Tool report still exceeds 2048 tokens after rewriting")
         return report
 
@@ -457,7 +460,9 @@ class Auxiliary:
                 return self._report(log, {**payload(combined), "input_kind": "partial_reports"})
             smaller = [self._report(log, {**payload(part, start, end), "input_kind": "partial_reports"})
                        for part, start, end in self._text_chunks(combined, payload, log=log)]
-            if self._count_text(log, "\n\n".join(smaller)) >= self._count_text(log, combined):
+            smaller_count = self._count_text(log, "\n\n".join(smaller))
+            combined_count = self._count_text(log, combined)
+            if smaller_count is not None and combined_count is not None and smaller_count >= combined_count:
                 raise ProviderError("Tool report chunks could not be combined within the model context window")
             reports = smaller
         return reports[0]

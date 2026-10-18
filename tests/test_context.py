@@ -171,14 +171,14 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(len(self.summary.calls), 1)
         self.assertEqual(self.context(max_tokens=1800).state, context.state)
 
-    def test_exact_ninety_percent_threshold_uses_provider_count(self):
+    def test_exact_eighty_percent_threshold_uses_provider_count(self):
         self.append({"role": "user", "content": "u"})
         for index in range(11):
             self.append({"role": "assistant", "content": str(index)})
         activity = []
         context = self.context(max_tokens=1000, on_activity=activity.append)
         context.sync()
-        counts = iter([899, 900, 100, 120, 200])
+        counts = iter([799, 800, 100, 120, 200])
         self.counter.count_tokens = lambda *args: next(counts)
         context.prepare("large system", [{"name": "tool"}])
         self.assertFalse(self.summary.calls)
@@ -192,6 +192,38 @@ class ContextTests(unittest.TestCase):
         context.sync()
         self.assertIsNone(context.state["token_count"])
         self.assertEqual(self.context().state["last_usage"], {"tokens": 200, "limit": 1000})
+
+    def test_hard_input_budget_below_eighty_percent_triggers_compression_earlier(self):
+        self.append({"role": "user", "content": "u"})
+        for index in range(11):
+            self.append({"role": "assistant", "content": str(index)})
+        self.counter.model_context_window = 700
+        self.counter.max_output_tokens = 200
+        context = self.context(max_tokens=1000)
+        context.sync()
+        counts = iter([499, 500, 100, 120, 200])
+        self.counter.count_tokens = lambda *args: next(counts)
+        context.prepare("system", [])
+        self.assertFalse(self.summary.calls)
+        context.prepare("system", [])
+        self.assertEqual(len(self.summary.calls), 1)
+        self.assertEqual(context.state["last_usage"], {"tokens": 200, "limit": 500})
+
+    def test_smaller_model_window_sets_eighty_percent_threshold(self):
+        self.append({"role": "user", "content": "u"})
+        for index in range(11):
+            self.append({"role": "assistant", "content": str(index)})
+        self.counter.model_context_window = 500
+        self.counter.max_output_tokens = 50
+        context = self.context(max_tokens=1000)
+        context.sync()
+        counts = iter([399, 400, 100, 120, 200])
+        self.counter.count_tokens = lambda *args: next(counts)
+        context.prepare("system", [])
+        self.assertFalse(self.summary.calls)
+        context.prepare("system", [])
+        self.assertEqual(len(self.summary.calls), 1)
+        self.assertEqual(context.state["last_usage"], {"tokens": 200, "limit": 450})
 
     def test_compression_activity_covers_summary_and_clears_on_failure_or_interrupt(self):
         self.append({"role": "user", "content": "task"})

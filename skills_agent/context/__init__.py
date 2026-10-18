@@ -184,6 +184,9 @@ class WorkingContext:
         if self.state.get("version") != 1:
             raise ValueError("Unsupported working context version")
         self._update_images()
+        if getattr(self.model, "token_counter", None) == "usage":
+            self._record_reported_usage()
+            self.save()
 
     @property
     def records(self):
@@ -198,7 +201,8 @@ class WorkingContext:
         selected = image_records(self.records)
         if selected != self.records:
             self.state["records"] = selected
-            self.state["token_count"] = None
+            if getattr(self.model, "token_counter", None) != "usage":
+                self.state["token_count"] = None
             if save:
                 self.save()
 
@@ -232,7 +236,10 @@ class WorkingContext:
                 # request. Expire them before a following tool's report can
                 # read the current task or background from this context.
                 self._update_images(save=False)
-                self.state["token_count"] = None
+                if getattr(self.model, "token_counter", None) == "usage":
+                    self._record_reported_usage()
+                else:
+                    self.state["token_count"] = None
                 self.state["cursor"] = cursor
                 self.save()
                 saved_cursor = cursor
@@ -284,6 +291,50 @@ class WorkingContext:
         kept = [item for item in self.records if item["event_id"] in protected]
         return older, kept
 
+    def _record_reported_usage(self):
+        count = self.model.count_tokens("", [record["message"] for record in self.records], [])
+        window = getattr(self.model, "model_context_window", None)
+        window = min(self.max_tokens, window) if window is not None else self.max_tokens
+        self.state["token_count"] = count
+        self.state["last_usage"] = None if count is None else {"tokens": count, "limit": window}
+        return count, window
+
+    def _prepare_reported(self, system, tools):
+        """Only a gateway response can cross the compression threshold."""
+        count, window = self._record_reported_usage()
+        can_compact = getattr(self.model, "can_compact", lambda messages: True)
+        if (count is not None and count * 5 >= window * 4
+                and can_compact([record["message"] for record in self.records])):
+            older, kept = self._protected()
+            if older or self.state["summary"]:
+                try:
+                    self.on_activity({"kind": "compression"})
+                    compacted = self.model.compact_messages([deepcopy(record["message"]) for record in kept])
+                    if len(compacted) != len(kept):
+                        raise ContextBudgetError(
+                            "Provider compaction changed the message count; kept records cannot be paired")
+                    candidate = [{**record, "message": message} for record, message in zip(kept, compacted)]
+                    record_groups(candidate)
+                    summary = self.auxiliary.compress(
+                        self.state["summary"], older, self.latest_user(),
+                        output_tokens=min(getattr(self.auxiliary, "output_tokens", 8192), window))
+                    # The gateway has not measured the newly compressed request.
+                    # Retained old snapshots must not trigger compression again.
+                    for record in candidate:
+                        record["message"].pop("_token_usage", None)
+                    self.state["summary"] = summary
+                    self.state["covered_event_ids"].extend(record["event_id"] for record in older)
+                    self.state["records"] = candidate
+                    self._record_reported_usage()
+                finally:
+                    self.on_activity(None)
+        for record in self.records:
+            record.pop("pending_direct", None)
+        self.state["system"] = self._system(system)
+        self.state["tools"] = deepcopy(tools)
+        self.save()
+        return self._system(system), [deepcopy(record["message"]) for record in self.records]
+
     def prepare(self, system, tools):
         # A stopped run can leave a recorded call without its result. Recover
         # those results first so the next request has a sendable transcript;
@@ -291,6 +342,8 @@ class WorkingContext:
         recover_interrupted_calls(self.records)
         record_groups(self.records)  # Never compact while waiting for tool results.
         self._update_images()
+        if getattr(self.model, "token_counter", None) == "usage":
+            return self._prepare_reported(system, tools)
         limit = self.max_tokens
         window = getattr(self.model, "model_context_window", None)
         if window is not None:
@@ -324,7 +377,8 @@ class WorkingContext:
                 count = self._count(system, tools)
                 if count <= limit:
                     break
-        trigger = min(self.max_tokens * 0.9, limit)
+        context_window = min(self.max_tokens, window) if window is not None else self.max_tokens
+        trigger = min(context_window * 0.8, limit)
         can_compact = getattr(self.model, "can_compact", lambda messages: True)
         if count >= trigger and can_compact([record["message"] for record in self.records]):
             older, kept = self._protected()

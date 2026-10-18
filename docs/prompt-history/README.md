@@ -23,7 +23,7 @@
 
 | 文档 | 源位置或用途 | 当前版本 |
 | --- | --- | --- |
-| [主工作提示词](agent-system.md) | `Agent._system()`；含共用工作规则及 subagent 可用时的沟通、委派、review 段 | v13 |
+| [主工作提示词](agent-system.md) | `Agent._system()`；含共用工作规则及 subagent 可用时的沟通、委派、review 段 | v14 |
 | [子 Agent 最终报告](subagent-report.md) | `Agent._subagent()` 的公共角色追加指令 | v1 |
 | [历史检索子 Agent 角色](history-retrieval-role.md) | `history=True` 的专用角色追加指令 | v1 |
 | [子 Agent 任务输入](subagent-task-input.md) | 子任务名称、任务文本、只读快照和原生附件标签 | v1 |
@@ -34,8 +34,8 @@
 | [工具报告缩短指令](tool-report-rewrite.md) | 报告超出额度时追加的改写要求 | v1 |
 | [辅助调用附件包装](auxiliary-attachments.md) | 辅助摘要与工具报告中的只读原生附件标签 | v1 |
 | [普通二进制附件读取提示](attachment-read-guidance.md) | `Session.make_user_message()` 的脚本读取要求 | v1 |
-| [shell 工具说明](tool-shell.md) | 宿主机执行说明及参数描述 | v5 |
-| [sandbox 工具说明](tool-sandbox.md) | Docker 执行说明及参数描述 | v1 |
+| [shell 工具说明](tool-shell.md) | 宿主机执行说明及参数描述 | v6 |
+| [sandbox 工具说明](tool-sandbox.md) | Docker 执行说明及参数描述 | v2 |
 | [subagent 工具说明](tool-subagent.md) | 委派范围、输入、报告和历史模式说明 | v1 |
 | [workspace 技能](skill-workspace.md) | `builtin_skills/workspace/SKILL.md` | v4 |
 | [resource-management 技能](skill-resource-management.md) | `builtin_skills/resource-management/SKILL.md` | v1 |

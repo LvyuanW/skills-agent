@@ -28,8 +28,10 @@ class ToolRegistry:
                                                f"maximum {MAX_TIMEOUT_SECONDS}. Timeout stops this command. "
                                                "Use managed background processes for longer work."},
             "result_mode": {"type": "string", "enum": ["auto", "direct", "report"],
-                            "description": "auto: original up to 8192 tokens, otherwise report. "
-                            "direct: exact source (skills/code/data), or a source reference if it cannot fit. "
+                            "description": "auto: original up to 8192 tokens, otherwise report when token counts "
+                            "are available; preserve the original when length is unknown. "
+                            "direct: exact source (skills/code/data), or a source reference if advance "
+                            "counting shows it cannot fit. "
                             "report: concise conclusions with evidence. Default auto."},
         }
         shell_script = {**script,

@@ -501,3 +501,92 @@
   }
 }
 ````
+
+
+## v6 · 2026-10-18 · 结果模式区分已知与未知长度
+
+来源：当前工作区（未提交）；`skills_agent/tools/__init__.py:ToolRegistry`。
+
+- 发现的问题：shell 的 result_mode 参数说明仍假定所有接入都有请求前 token 计数，与仅采用网关返回用量的 usage 模式不一致。
+- 本版本目标：说明未知长度的 auto 保留原文，direct 只有在预先计数确认装不下时才返回来源引用，不引入本地估算。
+- 本版本效果：提示词与 reported-only 运行时保持一致：压缩仅依据网关主模型返回用量，新增内容不做本地计数或估算；89 项相关回归测试通过，实际模型遵循情况待观察。
+
+### 完整原文
+
+````json
+{
+  "name": "shell",
+  "description": "Run arbitrary scripts on the host in the workspace. Set required run_in_background=false for synchronous execution or true to return a job ID and continue working while the runtime supervises it. The entry process must wait for internal work; its exit triggers cleanup of remaining processes in the same group, recorded in the result. Read skills and reference source, write task-specific code, inspect results. Filter large data in your script and print relevant evidence.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "Short action and purpose, shown to the user."
+      },
+      "command": {
+        "type": "string",
+        "description": "Arbitrary shell command or multiline script."
+      },
+      "timeout_seconds": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "description": "Execution deadline. Foreground: default 120 seconds, maximum 600. Background task: default 3600 seconds. Service: no default deadline. Background durations may be any positive finite number, independent of the 10-second startup confirmation wait. Expiry stops the owned process group."
+      },
+      "result_mode": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "direct",
+          "report"
+        ],
+        "description": "auto: original up to 8192 tokens, otherwise report when token counts are available; preserve the original when length is unknown. direct: exact source (skills/code/data), or a source reference if advance counting shows it cannot fit. report: concise conclusions with evidence. Default auto."
+      },
+      "images": {
+        "type": "array",
+        "maxItems": 10,
+        "description": "Optional images to inspect after this command completes. Read the images skill first. Use at most 10 images, each at most 1 MB. Paths are absolute host paths or file:// URLs; they may be produced by the command. Background images are attached only on completion, never to the launch receipt. An explicit list, including [], takes precedence over image declarations in stdout.",
+        "items": {
+          "type": "object",
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Absolute host path or file:// URL."
+            },
+            "label": {
+              "type": "string",
+              "description": "Optional image label."
+            },
+            "source_url": {
+              "type": "string",
+              "description": "Optional original file:// or HTTP(S) URL."
+            }
+          }
+        }
+      },
+      "run_in_background": {
+        "type": "boolean",
+        "description": "Required. false: wait for the entry process, clean remaining processes in its group, then return its result. true: return a registered job receipt while the entry process continues; background_lifecycle determines whether it must finish before a final reply. Read the background-tasks skill before using true. Scripts must wait for their own child work and must not daemonize or detach from the process group."
+      },
+      "background_lifecycle": {
+        "type": "string",
+        "enum": [
+          "task",
+          "service"
+        ],
+        "description": "Background jobs only; default task. task: must finish before the Agent ends its work. service: intentionally stays online after delivery, does not block a final reply, and survives a successful CLI exit; failed or cancelled turns clean up new services. Verify service readiness before delivery. Persistent services are forbidden in benchmark runs. service requires run_in_background=true."
+      }
+    },
+    "required": [
+      "name",
+      "command",
+      "run_in_background"
+    ],
+    "additionalProperties": false
+  }
+}
+````

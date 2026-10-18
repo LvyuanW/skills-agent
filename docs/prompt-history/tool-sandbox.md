@@ -167,3 +167,54 @@
   }
 }
 ```
+
+
+## v2 · 2026-10-18 · 结果模式区分已知与未知长度
+
+来源：当前工作区（未提交）；`skills_agent/tools/__init__.py:ToolRegistry`。
+
+- 发现的问题：sandbox 与 shell 共用 result_mode 描述，原说明未覆盖 usage 模式下没有新结果长度的情况。
+- 本版本目标：与 shell 同步明确未知长度保留原文以及 direct 预先计数的适用条件，不引入本地估算。
+- 本版本效果：提示词与 reported-only 运行时保持一致：压缩仅依据网关主模型返回用量，新增内容不做本地计数或估算；89 项相关回归测试通过，实际模型遵循情况待观察。
+
+### 完整原文
+
+````json
+{
+  "name": "sandbox",
+  "description": "Run arbitrary scripts inside the configured Docker sandbox.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "Short action and purpose, shown to the user."
+      },
+      "command": {
+        "type": "string",
+        "description": "Arbitrary shell command or multiline script."
+      },
+      "timeout_seconds": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "maximum": 600,
+        "description": "Wall-clock limit; default 120 seconds, maximum 600. Timeout stops this command. Use managed background processes for longer work."
+      },
+      "result_mode": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "direct",
+          "report"
+        ],
+        "description": "auto: original up to 8192 tokens, otherwise report when token counts are available; preserve the original when length is unknown. direct: exact source (skills/code/data), or a source reference if advance counting shows it cannot fit. report: concise conclusions with evidence. Default auto."
+      }
+    },
+    "required": [
+      "name",
+      "command"
+    ],
+    "additionalProperties": false
+  }
+}
+````

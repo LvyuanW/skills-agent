@@ -9,6 +9,7 @@ from .base import (
     post_stream, stream_ended, stream_error, validate_calls, request_messages,
 )
 from .responses import ResponsesMixin
+from .usage import count_from_usage
 
 
 def _content(content) -> list[dict]:
@@ -55,17 +56,23 @@ class OpenAIProvider(ResponsesMixin, HTTPProvider):
             if deepseek_effort is not None and deepseek_effort not in {"none", "low", "high", "max"}:
                 raise ValueError("DeepSeek effort must be one of: none, low, high, max")
             self.deepseek_effort = deepseek_effort
-        if token_counter not in {"auto", "official", "deepseek"}:
-            raise ValueError("token_counter must be auto, official, or deepseek")
+        if token_counter not in {"auto", "official", "deepseek", "usage"}:
+            raise ValueError("token_counter must be auto, official, deepseek, or usage")
         self.token_counter = token_counter
         if token_counter == "auto":
-            self.token_counter = "deepseek" if host == "api.deepseek.com" else "official"
+            self.token_counter = ("deepseek" if host == "api.deepseek.com" else
+                                  "usage" if host == "openrouter.ai" and self.api_format == "responses" else
+                                  "official")
         self.tokenizer_path = tokenizer_path
         self.tokenizer_encoding = tokenizer_encoding
         self._deepseek_counter = None
 
     def count_tokens(self, system: str, messages: list[dict], tools: list[dict],
-                     *, disable_thinking: bool = False) -> int:
+                     *, disable_thinking: bool = False) -> int | None:
+        if self.token_counter == "usage":
+            if self.api_format != "responses":
+                raise ProviderError("Usage-based counting requires api_format=responses")
+            return count_from_usage(self.model, messages)
         if self.token_counter == "deepseek":
             if self.api_format != "chat":
                 raise ProviderError("DeepSeek counting requires api_format=chat")
@@ -84,7 +91,9 @@ class OpenAIProvider(ResponsesMixin, HTTPProvider):
             self._deepseek_counter = DeepSeekCounter(self.tokenizer_path, self.tokenizer_encoding)
         return self._deepseek_counter
 
-    def count_text(self, text: str) -> int:
+    def count_text(self, text: str) -> int | None:
+        if self.token_counter == "usage":
+            return None
         if self.token_counter == "deepseek":
             return self._counter().count_text(text)
         return super().count_text(text)

@@ -22,7 +22,7 @@ DEFAULTS = {
 CHOICES = {
     "provider": {"openai", "anthropic"},
     "api_format": {"auto", "responses", "chat"},
-    "token_counter": {"auto", "official", "deepseek"},
+    "token_counter": {"auto", "official", "deepseek", "usage"},
     "tokenizer_encoding": {"v4", "v41"},
 }
 

@@ -7,6 +7,7 @@ from .base import (
     ProviderError, ProviderConnectionError, ProviderOutputLimitError, blocks,
     encoded_file, post_stream, stream_ended, stream_error, received_text, validate_calls, request_messages,
 )
+from .usage import usage_snapshot
 
 
 def _input_content(content, role):
@@ -164,6 +165,10 @@ class ResponsesMixin:
             content, calls = _normalized(raw['output'])
             result = {'role': 'assistant', 'content': content, '_raw': raw,
                       '_responses_output': deepcopy(raw['output'])}
+            if getattr(self, 'token_counter', None) == 'usage':
+                snapshot = usage_snapshot(self.model, raw.get('usage'))
+                if snapshot is not None:
+                    result['_token_usage'] = snapshot
             if calls:
                 result['tool_calls'] = calls
             return result

@@ -15,13 +15,13 @@ def add_agent_arguments(parser):
     parser.add_argument("--base-url", help="兼容服务的 API base URL")
     parser.add_argument("--skill-dir", dest="skill_dirs", action="append")
     parser.add_argument("--context-tokens", type=int,
-                        help="工作上下文 token 预算（正整数），默认 1000000；达到 90%% 时压缩")
+                        help="工作上下文 token 预算（正整数），默认 1000000；达到预算与模型窗口较小值的 80%% 时压缩")
     parser.add_argument("--max-output-tokens", type=int,
                         help="单次输出额度（包含思考），默认 32768")
     parser.add_argument("--summary-output-tokens", type=int,
                         help="辅助生成的输出上限，默认8192 tokens；摘要调用关闭思考")
     parser.add_argument("--api-format", choices=["auto", "responses", "chat"])
-    parser.add_argument("--token-counter", choices=["auto", "official", "deepseek"])
+    parser.add_argument("--token-counter", choices=["auto", "official", "deepseek", "usage"])
     parser.add_argument("--tokenizer-path")
     parser.add_argument("--tokenizer-encoding", choices=["v4", "v41"])
     parser.add_argument("--model-context-window", type=int,

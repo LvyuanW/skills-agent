@@ -92,6 +92,17 @@ api_format = "responses"
         self.assertEqual(args.tokenizer_path, "relative-tokenizer")
         self.assertIsNone(args.model_context_window)
 
+    def test_usage_counter_is_accepted_from_cli_file_and_environment(self):
+        for benchmark in (False, True):
+            with self.subTest(source="cli", benchmark=benchmark):
+                args = load_agent_config(self.args("--token-counter", "usage", benchmark=benchmark))
+                self.assertEqual(args.token_counter, "usage")
+        self.write_config('token_counter = "usage"\n')
+        self.assertEqual(load_agent_config(self.args()).token_counter, "usage")
+        (self.root / "skills-agent.toml").unlink()
+        os.environ["SKILLS_AGENT_TOKEN_COUNTER"] = "usage"
+        self.assertEqual(load_agent_config(self.args()).token_counter, "usage")
+
     def test_explicit_file_replaces_automatic_file_and_resolves_its_paths(self):
         self.write_config('context_tokens = 12345\n')
         directory = self.root / "other config"
