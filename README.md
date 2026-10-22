@@ -34,6 +34,8 @@ Anthropic 接口使用 `--provider anthropic`，并设置 `ANTHROPIC_API_KEY` �
 
 工作目录默认是当前目录，会话默认写入 `<workspace>/.agent/sessions`。模型窗口、上下文预算和输出额度必须与实际模型匹配；完整配置、界面操作、图片附件、后台作业与中断恢复见 [使用说明](docs/usage.md)。
 
+运行时自动采集工作目录、是否位于 Git 仓库、平台、实际执行 shell 和操作系统版本，加入主 Agent 与子 Agent 的系统提示词；交互 CLI 与 `benchmark` 共用这套环境信息。系统提示引导模型按任务需要适度检查实际结果，并如实说明验证范围、未验证事项和剩余限制。
+
 ## 单次任务与测评
 
 ```sh

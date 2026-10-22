@@ -49,9 +49,11 @@ class OpenAIProvider(ResponsesMixin, HTTPProvider):
         if api_format not in {"auto", "responses", "chat"}:
             raise ValueError("api_format must be auto, responses, or chat")
         self.api_format = ("responses" if host == "api.openai.com" else "chat") if api_format == "auto" else api_format
-        # This setting currently applies only to DeepSeek's official Chat endpoint.
+        self._bailian_deepseek_chat = (self.api_format == "chat"
+                                      and (host or "").endswith(".maas.aliyuncs.com")
+                                      and model.lower().startswith("deepseek"))
         self.deepseek_effort = None
-        if host == "api.deepseek.com" and self.api_format == "chat":
+        if self.api_format == "chat" and (host == "api.deepseek.com" or self._bailian_deepseek_chat):
             if deepseek_effort is not None and deepseek_effort not in {"none", "low", "high", "max"}:
                 raise ValueError("DeepSeek effort must be one of: none, low, high, max")
             self.deepseek_effort = deepseek_effort
@@ -106,9 +108,14 @@ class OpenAIProvider(ResponsesMixin, HTTPProvider):
                 "parameters": tool["parameters"],
             }} for tool in tools]
         if disable_thinking or self.deepseek_effort == "none":
-            payload["thinking"] = {"type": "disabled"}
+            if self._bailian_deepseek_chat:
+                payload["enable_thinking"] = False
+            else:
+                payload["thinking"] = {"type": "disabled"}
         elif self.deepseek_effort is not None:
             payload["reasoning_effort"] = self.deepseek_effort
+            if self._bailian_deepseek_chat:
+                payload["enable_thinking"] = True
         return payload
 
     def complete(self, system: str, messages: list[dict], tools: list[dict],

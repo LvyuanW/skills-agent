@@ -75,6 +75,54 @@ class AgentContextTests(unittest.TestCase):
                     self.assertEqual(agent.auxiliary.window, min(expected, window or expected))
                     self.assertEqual(factory.call_args.kwargs["model_context_window"], window)
                     self.assertEqual(factory.call_args.kwargs["max_output_tokens"], 32768)
+                    self.assertIn(f"- Primary working directory: {self.root.resolve()}", agent._system())
+                    self.assertNotIn("- review:", agent.skills.catalog())
+
+    def test_environment_is_system_context_for_main_child_and_later_turns(self):
+        environment = "# Environment\n- Primary working directory: /runtime/workspace"
+        model = ScriptedModel([
+            call("subagent", {"name": "Inspect", "task": "Inspect supplied evidence"}),
+            final("Child findings"), final("done"), final("next answer"),
+        ])
+        with patch("skills_agent.agent.environment_info", return_value=environment) as collect:
+            agent = self.agent(model)
+            self.addCleanup(agent.close)
+            self.assertEqual(agent.run({"role": "user", "content": "inspect"}), "done")
+            self.assertEqual(agent.run({"role": "user", "content": "next"}), "next answer")
+            # One snapshot per Agent, never one Git probe per model request.
+            self.assertEqual(collect.call_count, 2)
+            self.assertTrue(all(call.args == (self.root.resolve(),) for call in collect.call_args_list))
+        self.assertEqual(len(model.calls), 4)
+        for system, messages, tools in model.calls:
+            self.assertIn(environment, system)
+            self.assertIn("Report outcomes faithfully", system)
+            self.assertNotIn("use the review skill", system)
+            self.assertNotIn("/runtime/workspace", json.dumps(messages))
+        self.assertNotIn("/runtime/workspace", json.dumps(self.session.messages()))
+
+    def test_environment_survives_context_compression_and_refreshes_on_resume(self):
+        self.session.append({"role": "user", "content": "original task"})
+        for index in range(12):
+            self.session.append(final(f"completed stage {index}"))
+        model = ScriptedModel([final("done")])
+        counts = iter([900, 100, 120, 200])
+        model.count_tokens = lambda *args: next(counts)
+        with patch("skills_agent.agent.environment_info", return_value="# Environment\nFirst host"):
+            agent = self.agent(model, context_tokens=1000)
+        self.addCleanup(agent.close)
+        with patch.object(agent.auxiliary, "compress", return_value="Past work summary") as compress:
+            self.assertEqual(agent.run({"role": "user", "content": "continue"}), "done")
+        compress.assert_called_once()
+        self.assertIn("First host", model.calls[0][0])
+        self.assertIn("Past work summary", model.calls[0][0])
+        resumed_model = ScriptedModel([final("resumed")])
+        with patch("skills_agent.agent.environment_info", return_value="# Environment\nCurrent host"):
+            resumed = self.agent(resumed_model)
+        self.addCleanup(resumed.close)
+        self.assertEqual(resumed.run({"role": "user", "content": "next"}), "resumed")
+        self.assertIn("Current host", resumed_model.calls[0][0])
+        self.assertNotIn("First host", resumed_model.calls[0][0])
+        self.assertIn("Past work summary", resumed_model.calls[0][0])
 
     def test_turn_after_killed_run_recovers_missing_tool_result(self):
         self.session.append({"role": "user", "content": "old task"})

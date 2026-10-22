@@ -4,7 +4,7 @@ description: >-
   Use when the next decision needs actual execution or artifact evidence, including
   bounded command runs with full logs, exact text/JSON checks, or rendering
   HTML/SVG. All image attachments also require the images skill. Skip pure planning or lookups that
-  require no execution or artifact verification; this does not replace final review.
+  require no execution or artifact verification.
 ---
 
 Choose the observation needed for the next decision: actual execution for behavior, saved text or values for content, and pixels for appearance. A successful write, file path or screenshot command alone does not establish the contents or visual result.

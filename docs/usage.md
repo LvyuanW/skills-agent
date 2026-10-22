@@ -135,6 +135,8 @@ macOS 下在输入行按 **Ctrl-V** 粘贴剪贴板中的图片或已复制的�
 
 `--workspace` 指定 shell 工作目录，默认当前目录。附件的相对路径按工作目录解析。`--sessions-dir` 指定会话存储位置，默认 `<workspace>/.agent/sessions`。
 
+运行时在 Agent 初始化时自动采集工作目录、是否位于 Git 仓库、运行平台、实际执行 shell 和操作系统版本，并加入系统提示词，供模型选择适合当前环境的命令。主 Agent 与子 Agent、交互 CLI 与 `benchmark` 共用这套环境信息；执行 shell 以运行时实际使用的 shell 为准（POSIX 通常为 `/bin/sh`，不直接采用登录环境的 `$SHELL`），无法确定的字段为 `unknown`。系统提示还包含下载文件和解压资料的隔离处理、读取它们时使用 Python `-I` 的指导；用户要求制作或运行的代码不受这条资料处理规则限制。
+
 ## 单次任务与 ALE
 
 ```sh
@@ -168,7 +170,7 @@ skills_agent/
   tools/             shell、subagent、sandbox
   skills/            技能发现与系统提示词中的技能目录
   sandbox/           Docker 命令执行
-  builtin_skills/    通用读取、编辑、反馈、调查、修复、后台任务、进程管理、验收标准和交付审查技能
+  builtin_skills/    通用读取、编辑、反馈、调查、修复、后台任务、进程管理和验收标准技能
 tests/
 adapters/ale/        ALE Deployer 与运行配置
 ```
@@ -286,7 +288,7 @@ API 错误的脱敏诊断保存在对应会话 `events.jsonl` 的 `error.diagnos
 
 内置 [acceptance-criteria skill](../skills_agent/builtin_skills/acceptance-criteria/SKILL.md) 要求在执行复杂任务前使用：读取理解需求所需的输入，在实质制作或修改前将原始需求、已接受的修正、模型列出的验收标准及验证方式保存为任务项目内的 Markdown 文档，例如 `docs/acceptance/<task>.md`。复杂性来自步骤依赖、相互影响的约束或需要多种证据的不确定性；简单问答、直接查找和局部明确修改无需建立文档。继续同一任务时复用文档，新增要求或发现遗漏时更新，不能为了迁就已有结果而降低标准。
 
-内置 [review skill](../skills_agent/builtin_skills/review/SKILL.md) 要求在复杂任务交付前使用，通过现有 `subagent` 独立核对原始需求、项目内的验收标准文档及实际产物。主 Agent 提供文档与附件的实际路径、需求来源和验证证据；需求不完整时先委派 `history=true` 检索。审查者既检查成果，也检查验收标准是否遗漏或曲解需求，返回有依据的缺陷和未验证事项，主 Agent 据此修正并按需定向复查。简单任务适度自检，明确要求审查时也可使用此技能；已受派的审查者不再建文档或委派。上述要求通过技能描述与正文引导，不增加运行时关卡。
+系统提示引导模型根据原始需求和已接受的修正，按任务需要适度检查实际结果，并依据观察修正问题。最终回答如实说明结果、相关验证和剩余限制，只对已经取得证据的范围作出结论。这些检查由模型结合当前任务选择，不要求独立 reviewer、额外交接或专门报告。
 
 内置 [file-editing skill](../skills_agent/builtin_skills/file-editing/SKILL.md) 提供新建、精确替换、锚点前后插入、删除内容和删除文件的 Python 脚本，通过现有 shell 调用，不新增 tools。替换和插入要求原文或锚点唯一匹配，失败不写入；成功返回改动位置与有限行号片段。它还提供[跨回合渐进编辑示例](../skills_agent/builtin_skills/file-editing/references/incremental-editing.md)：先保存有用产物，读取操作结果，再选择下一段扩展。
 
@@ -351,7 +353,7 @@ shell 可选 `images` 参数的元素为 `{"path":"/absolute/host/image.png","la
 
 ## 提示词版本
 
-[提示词版本时间线](prompt-history/README.md) 按独立提示词维护 Git 历史、当前工作区基线和后续版本，每个版本记录发现的问题、目标、效果及原文。主工作提示词的 v1、v2 保留增量执行规范更新前后的文本，v3 增加文件编辑引导，v4 增加实际反馈获取引导，v5 增加通用跨回合进程管理引导，v6 明确按当前任务组合基础能力，移除固定的产物开发和故障验证路线，v7 调整技能选择时机并加入交付前独立审查。新增技能与参考说明各自从 v1 建档，后续实际修改沿各自版本继续追加。
+[提示词版本时间线](prompt-history/README.md) 按独立提示词保存历史版本、变更目的和当时的完整文本。历史记录可能包含已经移除的流程；当前行为以运行时代码和现有技能为准。
 
 ## 验证
 
