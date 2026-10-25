@@ -9,7 +9,6 @@ from ..execution import DEFAULT_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS, ToolCleanu
 from ..feedback import validate_images
 from ..images import MAX_REQUEST_IMAGES
 from ..processes import CALL_ENV, CONTEXT_ENV, SCOPE_ENV
-from .. import verification
 
 
 class ToolRegistry:
@@ -36,7 +35,6 @@ class ToolRegistry:
                             "report: concise conclusions with evidence. Default auto."},
         }
         shell_script = {**script,
-            "evidence": verification.schema(),
             "images": {"type": "array", "maxItems": MAX_REQUEST_IMAGES, "description":
                 "Optional images to inspect after this command completes. Read the images skill first. "
                 f"Use at most {MAX_REQUEST_IMAGES} images, each at most 1 MB. Paths are absolute host paths or file:// URLs; "
@@ -126,9 +124,6 @@ class ToolRegistry:
                 if key == "images":
                     values[key] = validate_images(value)
                     continue
-                if key == "evidence":
-                    values[key] = verification.validate_declaration(value)
-                    continue
                 if key == "timeout_seconds":
                     if name == "shell" and values.get("run_in_background") is True:
                         try:
@@ -153,7 +148,31 @@ class ToolRegistry:
                 self.on_activity({"kind": "tool", "name": name, "task_name": values["name"]})
                 executed = True
                 if name == "shell":
-                    result = self._shell(values)
+                    environment = None
+                    if self.process_scope is not None:
+                        environment = {**os.environ, SCOPE_ENV: str(self.process_scope.path)}
+                        for key, value in ((CONTEXT_ENV, self.process_context),
+                                           (CALL_ENV, self.tool_call_id)):
+                            if value is not None:
+                                environment[key] = value
+                    if values["run_in_background"]:
+                        if self.process_scope is None:
+                            raise ValueError("Background shell execution requires an active agent process scope")
+                        result = self.process_scope.start_background(
+                            values["command"], values["name"], cwd=self.workspace,
+                            env=environment, timeout_seconds=values.get("timeout_seconds"),
+                            background_lifecycle=values.get("background_lifecycle", "task"),
+                            images=values.get("images"),
+                        )
+                    else:
+                        result = run_command(
+                            values["command"], shell=True, cwd=self.workspace,
+                            env=environment,
+                            timeout_seconds=values.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS),
+                            log_dir=self.log_dir,
+                        )
+                        if "images" in values:
+                            result["images"] = values["images"]
                 elif name == "sandbox":
                     result = self.sandbox.run(
                         values["command"], timeout_seconds=values.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS),
@@ -170,52 +189,3 @@ class ToolRegistry:
             if not executed:
                 result["executed"] = False
         return json.dumps(result, ensure_ascii=False)
-
-    def _shell(self, values):
-        environment = None
-        if self.process_scope is not None:
-            environment = {**os.environ, SCOPE_ENV: str(self.process_scope.path)}
-            for key, value in ((CONTEXT_ENV, self.process_context), (CALL_ENV, self.tool_call_id)):
-                if value is not None:
-                    environment[key] = value
-        if values["run_in_background"] and self.process_scope is None:
-            raise ValueError("Background shell execution requires an active agent process scope")
-        handle = None
-        if "evidence" in values:
-            record_root = self.log_dir or (self.process_scope.path if self.process_scope is not None else None)
-            handle = verification.begin(values["evidence"], ["/bin/sh", "-c", values["command"]],
-                                        self.workspace, log_dir=record_root, environment=environment)
-        try:
-            if values["run_in_background"]:
-                extra = {"evidence_record": str(handle["path"])} if handle else {}
-                result = self.process_scope.start_background(
-                    values["command"], values["name"], cwd=self.workspace, env=environment,
-                    timeout_seconds=values.get("timeout_seconds"),
-                    background_lifecycle=values.get("background_lifecycle", "task"),
-                    images=values.get("images"), **extra)
-                if handle:
-                    # A receipt never asserts completed verification, even for a fast job.
-                    result["evidence"] = verification.summary(handle, pending=True)
-                return result
-            extra = {"include_log_paths": True} if handle else {}
-            result = run_command(values["command"], shell=True, cwd=self.workspace, env=environment,
-                                 timeout_seconds=values.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS),
-                                 log_dir=self.log_dir, **extra)
-            if "images" in values:
-                result["images"] = values["images"]
-        except ToolCleanupError:
-            # Ownership is uncertain. Retain a started record, never capture a false completion.
-            raise
-        except Exception as exc:
-            if handle is None:
-                raise
-            # An exception without a terminal execution result does not prove
-            # that all command activity stopped. Preserve the pre-run record.
-            return {"error": str(exc), "evidence": verification.summary(handle)}
-        if handle:
-            try:
-                result["evidence"] = verification.finish(handle, result)
-            except (OSError, ValueError, TypeError, KeyError) as exc:
-                result["evidence"] = {"record": str(handle["path"]), "record_state": "record_error",
-                                      "error": str(exc), "verdict": "not_reported"}
-        return result

@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import heapq
-import importlib.util
 import json
 import math
 import mimetypes
@@ -26,13 +25,6 @@ from urllib.parse import urlsplit
 
 MAX_IMAGES = 10
 MAX_IMAGE_BYTES = 1_000_000
-
-
-def evidence_module():
-    spec = importlib.util.spec_from_file_location("_feedback_evidence", Path(__file__).with_name("_evidence.py"))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 class FeedbackError(Exception):
@@ -162,15 +154,14 @@ def terminate_tree(process: subprocess.Popen) -> None:
     process.wait()
 
 
-def run_process(command: list[str], stdout_log: Path, stderr_log: Path, timeout: float,
-                cwd: str | Path | None = None) -> dict:
+def run_process(command: list[str], stdout_log: Path, stderr_log: Path, timeout: float) -> dict:
     started = time.monotonic()
     result = {"command": command, "exit_code": None, "timed_out": False,
               "stdout_log": str(stdout_log), "stderr_log": str(stderr_log)}
     with stdout_log.open("wb") as stdout, stderr_log.open("wb") as stderr:
         try:
             # No new session/group: interruption of the outer shell includes all children.
-            process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, cwd=cwd)
+            process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr)
         except OSError as exc:
             result["startup_error"] = str(exc)
             stderr.write((str(exc) + "\n").encode("utf-8"))
@@ -205,26 +196,8 @@ def run_feedback(args: argparse.Namespace) -> tuple[dict, int]:
     log_dir = absolute(args.log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
     run_dir = Path(tempfile.mkdtemp(prefix="run-", dir=log_dir))
-    cwd = absolute(args.cwd) if args.cwd else Path.cwd()
-    if (args.manifest or args.scope) and not args.record_dir:
-        raise FeedbackError("--manifest and --scope require --record-dir")
-    handle = None
-    if args.record_dir:
-        evidence = evidence_module()
-        manifest = json.loads(absolute(args.manifest).read_text(encoding="utf-8")) if args.manifest else {}
-        manifest = evidence.normalize_manifest(manifest, cwd)
-        handle = evidence.start_record(args.record_dir, "run", manifest, command, args.scope,
-                                       cwd, helper_paths=[__file__])
-    observations = run_process(command, run_dir / "stdout.log", run_dir / "stderr.log", args.timeout, cwd=cwd)
-    status = process_status(observations)
-    if handle:
-        observations["record"] = handle["path"]
-        try:
-            evidence.finish_record(handle, observations, {"verdict": "not_reported"})
-        except (OSError, ValueError) as exc:
-            observations["record_error"] = str(exc)
-            status = status or 1
-    return envelope("run", shlex.join(command), observations), status
+    observations = run_process(command, run_dir / "stdout.log", run_dir / "stderr.log", args.timeout)
+    return envelope("run", shlex.join(command), observations), process_status(observations)
 
 
 def image_format(path: Path) -> str:
@@ -388,13 +361,7 @@ def parser() -> argparse.ArgumentParser:
     run = commands.add_parser("run", help="run a command; save complete stdout/stderr and return bounded tails")
     run.add_argument("--log-dir", required=True)
     run.add_argument("--timeout", type=positive_seconds, default=120)
-    run.add_argument("--cwd", help="command working directory; defaults to current directory")
-    run.add_argument("--record-dir", help="optionally save a version-associated execution record")
-    run.add_argument("--manifest", help="JSON declaration of subjects, dependencies, outputs and selected environment")
-    run.add_argument("--scope", help="the particular question this run addresses")
     run.add_argument("command", nargs=argparse.REMAINDER)
-    status = commands.add_parser("status", help="compare current declared versions with an existing record; never rerun")
-    status.add_argument("--record", required=True)
     image = commands.add_parser("image", help="legacy image feedback metadata; prefer shell.images")
     image.add_argument("paths", nargs="+")
     image.add_argument("--label")
@@ -419,19 +386,16 @@ def main() -> int:
             result, status = run_feedback(args)
         elif args.kind == "render":
             result, status = render_feedback(args)
-        elif args.kind == "status":
-            result = envelope("status", str(absolute(args.record)), evidence_module().status_record(args.record))
         else:
             result = {"file": file_feedback, "text": text_feedback, "image": image_feedback}[args.kind](args)
-    except (FeedbackError, OSError, UnicodeError, ValueError) as exc:
+    except (FeedbackError, OSError, UnicodeError) as exc:
         print(f"feedback.py: {exc}", file=sys.stderr)
-        value = (getattr(args, "path", None) or getattr(args, "record", None)
-                 or (args.paths[0] if hasattr(args, "paths") else getattr(args, "command", [])))
+        value = getattr(args, "path", None) or (args.paths[0] if hasattr(args, "paths") else args.command)
         source = str(absolute(value)) if isinstance(value, str) else shlex.join(value)
         result = envelope(args.kind, source, {"error": str(exc)})
         status = 1
     if status and "error" not in result["observations"]:
-        reason = result["observations"].get("record_error") or result["observations"].get("startup_error") or (
+        reason = result["observations"].get("startup_error") or (
             "command timed out" if result["observations"].get("timed_out")
             else f"command exited with {result['observations'].get('exit_code')}")
         print(f"feedback.py: {reason}; inspect observations and saved logs", file=sys.stderr)

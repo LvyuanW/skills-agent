@@ -88,27 +88,10 @@ def scope_lock(value):
 
 
 def save_record(path, record):
-    if record.get("evidence_record") and record.get("state") in TERMINAL and record.get("cleanup_confirmed") is True:
-        # Bind output bytes before completion becomes visible, not when a later
-        # observer happens to read the job. No hook is loaded for ordinary jobs.
-        try:
-            verification_module().finish_background(record)
-        except (OSError, ValueError, TypeError, ImportError, AttributeError) as exc:
-            record["evidence"] = {"record": record["evidence_record"], "record_state": "record_error",
-                                  "error": str(exc), "verdict": "not_reported"}
     # A separate copy per ownership token survives reuse of the public name.
     if record.get("process_scope"):
         atomic_json(Path(record["process_scope"]) / "runs" / f"{record['token']}.json", record)
     atomic_json(path, record)
-
-
-def verification_module():
-    import importlib.util
-    path = Path(__file__).resolve().parents[3] / "verification.py"
-    spec = importlib.util.spec_from_file_location("_process_verification", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def pid_identity(pid: int) -> dict | None:
@@ -255,15 +238,6 @@ def start(args: argparse.Namespace) -> int:
             "cleanup_process_count": 0, "cleanup_message": None,
             "exit_code": None, "stop_reason": None,
         }
-        evidence_record = getattr(args, "evidence_record", None)
-        if evidence_record is not None:
-            if not Path(evidence_record).is_absolute():
-                raise ValueError("Evidence record path must be absolute")
-            handle = verification_module().load_handle(evidence_record)
-            if (handle["record"].get("record_state") != "started"
-                    or handle["record"].get("command") != {"argv": command, "cwd": str(cwd)}):
-                raise ValueError("Evidence record does not match this pending command")
-            record["evidence_record"] = evidence_record
         if images is not None:
             # Save launch metadata with the ownership token before any payload
             # can finish; never patch a supervisor's live record after launch.
@@ -746,7 +720,6 @@ def parser() -> argparse.ArgumentParser:
             child.add_argument("--persistent", action="store_true", help="After its CLI turn succeeds, keep an ongoing service across session exit; forbidden in benchmark runs")
             child.add_argument("--startup-timeout", type=positive, default=10)
             child.add_argument("--images-json", help=argparse.SUPPRESS)
-            child.add_argument("--evidence-record", help=argparse.SUPPRESS)
             child.add_argument("command", nargs=argparse.REMAINDER, help="Arguments after -- execute directly, without a shell")
         elif operation == "wait":
             child.add_argument("--timeout", type=positive, default=30)

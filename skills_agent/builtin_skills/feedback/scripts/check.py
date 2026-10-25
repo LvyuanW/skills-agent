@@ -3,18 +3,10 @@
 
 import argparse
 from decimal import Decimal
-import importlib.util
 import json
 from pathlib import Path
 import re
 import sys
-
-
-def evidence_module():
-    spec = importlib.util.spec_from_file_location("_check_evidence", Path(__file__).with_name("_evidence.py"))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def strict_json(text):
@@ -109,10 +101,6 @@ def parser():
     value.add_argument("path")
     value.add_argument("--pointer", default="")
     value.add_argument("--equals-json", required=True, help="expected JSON value; strings need JSON quotes")
-    for command in (file, text, value):
-        command.add_argument("--record-dir", help="optionally save content versions and this check's result")
-        command.add_argument("--manifest", help="optional declared dependencies, outputs and environment JSON")
-        command.add_argument("--scope", help="the particular property checked")
     return cli
 
 
@@ -123,36 +111,7 @@ def main():
     checks = []
     observations = {"checks": checks, "scope": "Only the supplied acceptance conditions."}
     status = 0
-    handle, consumed = None, []
     try:
-        if (args.manifest or args.scope) and not args.record_dir:
-            raise ValueError("--manifest and --scope require --record-dir")
-        if args.record_dir:
-            evidence = evidence_module()
-            manifest = json.loads(Path(args.manifest).expanduser().read_text(encoding="utf-8")) if args.manifest else {}
-            # Keep the declared path (including symlinks) instead of watching only a former target.
-            declared = [str(evidence.absolute(value)) for value in (
-                args.paths if args.kind == "file" else [args.path])]
-            manifest = evidence.normalize_manifest(manifest, Path.cwd())
-            manifest = {**manifest, "subjects": [*manifest.get("subjects", []), *declared]}
-            handle = evidence.start_record(args.record_dir, "check", manifest, [sys.executable, __file__, *sys.argv[1:]],
-                                           args.scope or observations["scope"], helper_paths=[__file__])
-            handle["record"]["check_spec"] = {key: value for key, value in vars(args).items()
-                                              if key not in {"record_dir", "manifest"}}
-
-        def read_content():
-            # Hash the same raw byte buffer used by the parser, never a second path read.
-            raw = Path(source[0]).read_bytes()
-            if handle:
-                item = evidence.bytes_fingerprint(declared[0], raw)
-                item["resolved_path"] = source[0]
-                for before in handle["record"]["capture"]["before"]:
-                    if before["path"] == declared[0] and "symlink_target" in before:
-                        item["symlink_target"] = before["symlink_target"]
-                        break
-                consumed.append(item)
-            return raw.decode("utf-8")
-
         if args.kind == "file":
             for value in source:
                 path = Path(value)
@@ -167,7 +126,8 @@ def main():
                 raise ValueError("text requires at least one --contains or --absent condition")
             if any(value == "" for value in [*args.contains, *args.absent]):
                 raise ValueError("Text conditions must be nonempty")
-            actual = read_content()
+            with Path(source[0]).open(encoding="utf-8", newline="") as stream:
+                actual = stream.read()
             if "\0" in actual:
                 raise ValueError("NUL bytes found; acquire content through an appropriate binary reader")
             for expected in args.contains:
@@ -185,7 +145,7 @@ def main():
                 checks.append(condition("absent", unwanted not in actual, expected=excerpt(unwanted)))
         else:
             expected = strict_json(args.equals_json)
-            actual = strict_json(read_content())
+            actual = strict_json(Path(source[0]).read_text(encoding="utf-8"))
             try:
                 selected = pointer(actual, args.pointer)
             except KeyError as exc:
@@ -199,15 +159,6 @@ def main():
     except (OSError, UnicodeError, ValueError) as exc:
         observations.update(error=str(exc), passed=False)
         status = 2
-    if handle:
-        observations["record"] = handle["path"]
-        try:
-            evidence.finish_record(handle, {"state": "exited", "exit_code": status},
-                                   {**observations, "verdict": "pass" if status == 0 else
-                                    "mismatch" if status == 1 else "acquisition_error"}, consumed)
-        except (OSError, ValueError) as exc:
-            observations.update(record_error=str(exc), error=f"Could not finalize evidence: {exc}")
-            status = 2
     if status:
         print("check.py: " + (observations.get("error") or "a supplied condition failed; inspect checks"), file=sys.stderr)
     print(json.dumps({"skills_agent_feedback": 1, "kind": "check", "source": source,
