@@ -52,6 +52,7 @@ _ERROR_CATEGORIES = {
     "server_overloaded": "service_unavailable",
     "service_unavailable": "service_unavailable",
     "service_unavailable_error": "service_unavailable",
+    "gatewaytimeout": "gateway_timeout",
     "upstream_stream_read_error": "connection",
     "upstream_error": "server_error",
     "context_length_exceeded": "output_limit",

@@ -13,6 +13,18 @@ def failure(headers=None, status=502):
 
 
 class RetryBudgetTests(unittest.TestCase):
+    def test_stream_gateway_timeout_obeys_attempt_limit(self):
+        error = ProviderError("[Deadline Exceeded]", diagnostics={"response": {"status": 200}},
+                              provider_error={"code": "GatewayTimeout", "type": "GatewayTimeout"})
+        operation = Mock(side_effect=error)
+        with patch("skills_agent.providers.retry.time.sleep") as sleep:
+            with self.assertRaises(ProviderError) as caught:
+                retry_call(operation, max_attempts=2)
+        self.assertIs(caught.exception, error)
+        self.assertEqual(operation.call_count, 2)
+        sleep.assert_called_once_with(5)
+        self.assertEqual(error.diagnostics["retry"]["reason"], "attempt_limit")
+
     def test_default_interactive_policy_still_recovers_after_many_failures(self):
         operation = Mock(side_effect=[*[failure() for _ in range(9)], "ok"])
         with patch.dict("os.environ", {}, clear=True), patch("skills_agent.providers.retry.time.sleep"):

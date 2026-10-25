@@ -1,4 +1,5 @@
 import io
+import json
 import unittest
 from unittest.mock import Mock, call, patch
 from urllib.error import HTTPError
@@ -10,6 +11,30 @@ from tests.sse import stream_response
 
 
 class ProviderRetryTests(unittest.TestCase):
+    def test_http_200_gateway_timeout_stream_retries_the_same_request(self):
+        interrupted = io.BytesIO(b"data: " + json.dumps({"error": {
+            "code": "GatewayTimeout", "type": "GatewayTimeout", "message": "[Deadline Exceeded]",
+        }}).encode() + b"\n\n")
+        response = io.BytesIO(stream_response({"choices": [{
+            "message": {"role": "assistant", "content": "Recovered"}, "finish_reason": "stop",
+        }]}))
+        for stream in (interrupted, response):
+            stream.status, stream.headers = 200, {}
+        provider = OpenAIProvider("test", "test-key", "https://api.example.test", api_format="chat")
+        observed = Mock()
+        with patch("skills_agent.providers.base.request.urlopen", side_effect=[interrupted, response]) as send, \
+                patch("skills_agent.providers.retry.time.sleep") as sleep:
+            result = retry_call(lambda: provider.complete("", [{"role": "user", "content": "Continue"}], []),
+                                on_retry=observed, max_attempts=2)
+        self.assertEqual(result["content"], [{"type": "text", "text": "Recovered"}])
+        self.assertEqual(send.call_count, 2)
+        self.assertEqual(send.call_args_list[0].args[0].data, send.call_args_list[1].args[0].data)
+        failure = observed.call_args.args[0]
+        self.assertEqual((failure.http_status, failure.provider_code, failure.provider_type, failure.category),
+                         (200, "GatewayTimeout", "GatewayTimeout", "gateway_timeout"))
+        sleep.assert_called_once_with(5)
+        self.assertTrue(interrupted.closed and response.closed)
+
     def test_real_http_error_path_recovers_to_a_complete_sse_response(self):
         url = "https://api.example.test/chat/completions"
         failures = [HTTPError(url, status, "Request failed", {}, io.BytesIO(b"unparseable error body"))

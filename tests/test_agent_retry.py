@@ -103,7 +103,12 @@ class AgentRetryTests(unittest.TestCase):
         ])
 
     def test_retry_after_completed_shell_does_not_reexecute_the_tool(self):
-        model = ScriptedModel([shell_call(), *[unavailable() for _ in range(4)], answer("Done")])
+        gateway_timeout = ProviderError("[Deadline Exceeded]", diagnostics={
+            "kind": "stream", "response": {"status": 200, "body": {"error": {
+                "code": "GatewayTimeout", "type": "GatewayTimeout",
+            }}},
+        })
+        model = ScriptedModel([shell_call(), gateway_timeout, *[unavailable() for _ in range(3)], answer("Done")])
         agent = self.agent(model)
         result = json.dumps({"exit_code": 0, "stdout": "SAVED_TOOL_RESULT", "stderr": ""})
         with patch.object(agent.tools, "execute", return_value=result) as execute:

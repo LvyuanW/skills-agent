@@ -92,6 +92,8 @@ class ProviderClassificationTests(unittest.TestCase):
             ("code", "503", "service_unavailable"),
             ("code", 504, "gateway_timeout"), ("code", "504", "gateway_timeout"),
             ("code", 524, "gateway_timeout"), ("code", "524", "gateway_timeout"),
+            ("code", "GatewayTimeout", "gateway_timeout"),
+            ("type", "GatewayTimeout", "gateway_timeout"),
             ("type", "overloaded_error", "service_unavailable"),
             ("code", "service_unavailable", "service_unavailable"),
             ("code", "service_unavailable_error", "service_unavailable"),
@@ -111,16 +113,18 @@ class ProviderClassificationTests(unittest.TestCase):
                                ("insufficient_quota", "insufficient_balance"),
                                ("context_length_exceeded", "output_limit")):
             with self.subTest(code=code):
-                failure = self.error(status=200, error={"code": code, "type": "server_error"})
-                self.assertEqual(failure.category, category)
-                self.assertFalse(failure.retryable)
+                for kind in ("server_error", "GatewayTimeout"):
+                    failure = self.error(status=200, error={"code": code, "type": kind})
+                    self.assertEqual(failure.category, category)
+                    self.assertFalse(failure.retryable)
 
     def test_unknown_errors_never_use_message_substrings(self):
-        prose = "HTTP 502 503 504 524 rate_limit_error server_error overloaded_error 服务繁忙 retry soon"
+        prose = "HTTP 502 503 504 524 GatewayTimeout rate_limit_error server_error overloaded_error 服务繁忙 retry soon"
         failures = (
             ProviderError(prose), self.error(body=prose),
             self.error(error={"code": "new_code", "type": "new_type", "message": prose}),
             self.error(error={"code": "prefix_service_unavailable_suffix", "message": prose}),
+            self.error(error={"code": "prefix_GatewayTimeout_suffix", "message": prose}),
             self.error(body=json.dumps({"message": prose, "status": 503})),
         )
         for failure in failures:
