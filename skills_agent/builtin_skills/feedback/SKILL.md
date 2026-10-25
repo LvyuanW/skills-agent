@@ -2,7 +2,7 @@
 name: feedback
 description: >-
   Use when the next decision needs actual execution or artifact evidence, including
-  bounded command runs with full logs, exact text/JSON checks, or rendering
+  bounded command runs with full logs, focused input/output experiments, saved-data checks, or rendering
   HTML/SVG. All image attachments also require the images skill. Skip pure planning or lookups that
   require no execution or artifact verification.
 ---
@@ -31,3 +31,5 @@ Before a substantial computation with unknown cost, try a small representative i
 `render` uses a fresh screenshot and isolated browser profile. Its wait value is a virtual-time budget, not an exact animation timestamp. A screenshot covers only the captured viewport and state. PDF/office files need an appropriate reader or page rendering first; text extraction is not visual inspection.
 
 For explicit saved-data conditions, [scripts/check.py](scripts/check.py) supports `file PATH... [--min-bytes N]`, `text PATH --contains TEXT [--absent TEXT]`, and `json PATH [--pointer /path] --equals-json VALUE`. It distinguishes missing from null and booleans from numbers; exit codes are 0 for supplied conditions passing, 1 for a mismatch and 2 for acquisition/input failure. Derive expected values from the task rather than the produced answer. Read [references/acceptance-checks.md](references/acceptance-checks.md) for condition-specific examples, or [references/feedback-loop.md](references/feedback-loop.md) for connecting returned observations to the next action. Neither prescribes a fixed checklist.
+
+For a decision that needs a controlled input case or a comparison between outputs, [scripts/experiment.py](scripts/experiment.py) can run the real entry point with fresh fixture/output directories, or compare existing artifacts using explicit exact, numeric, set, multiset or paired conditions. Read [references/experiments.md](references/experiments.md) for the small specs and comparison premises. Supply an independent basis for expectations; the helper does not invent an oracle, certify declared premises or replace the existing execution/sandbox boundary. Use these capabilities when useful, without making them a required workflow.
