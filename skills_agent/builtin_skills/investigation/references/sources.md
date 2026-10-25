@@ -2,6 +2,43 @@
 
 Use only the operation needed for the current question. Simple lookups can remain ordinary reads. The scripts use the standard library, accept absolute paths and run from any working directory. They do not create a task plan, require a separate evidence document or decide whether a conclusion is true.
 
+## Direct lookup and batches
+
+Locate a quotation in an existing local file without preparing a capture or request document:
+
+```sh
+python3 /absolute/investigation/scripts/source.py locate \
+  --file /project/input/deployment.yaml --quote 'initialDelaySeconds: 5'
+```
+
+This is read-only. It returns the consumed file's SHA-256, precise positions, neighboring text and ambiguity status. `retention.snapshot_saved:false` means the original bytes were **not** retained; no replayable `binding` is created. A hash identifies the observation but cannot recover an edited file. Add `--store /project/evidence` when later replay is useful: the same consumed bytes are captured, and the returned `saved_result` can be passed directly to `verify --bindings`. Existing snapshots also accept the shortcut `locate --source source.json --quote '...'`.
+
+For a more precise selector, use `--request -` and pipe the existing selection JSON. This works with either `--file` or `--source`; a request file still works. For example:
+
+```sh
+python3 /absolute/investigation/scripts/source.py locate --file /project/input/report.json --request - <<'JSON'
+{"format":"json","pointer":"/summary/count"}
+JSON
+```
+
+For many quotations or several sources, one batch shares acquisition and the preview budget:
+
+```sh
+python3 /absolute/investigation/scripts/source.py locate --batch - --store /project/evidence <<'JSON'
+[
+  {"file":"/project/input/deployment.yaml","quote":"initialDelaySeconds: 5","claim_id":"probe-delay"},
+  {"file":"/project/input/pod.log","quote":"cache warm-up complete","claim_id":"warm-up"},
+  {"file":"/project/input/pod.log","quote":"OOMKilled","context":1}
+]
+JSON
+```
+
+Each item supplies exactly one `file` (current local bytes) or `source` (an existing `source.json`), followed by the same selector fields used for a single lookup. CSV/JSON/JSONL selectors work here too. Relative paths in `--batch FILE` are relative to that JSON file; stdin paths are relative to the invoking working directory. No directory scan or source inference occurs. Omit `--store` when saving snapshots adds no value.
+
+A batch accepts up to 100 items and 2 MiB of request JSON. Each distinct local file is read once, so its quotations share one consumed version; with `--store`, it is also captured only once. Existing captured views are reused after their integrity check. This does not make several sources one atomic snapshot. `--max-bytes` still bounds a file/view; `--max-total-bytes` bounds the unique selected views retained by the batch and defaults to `--max-bytes` (64 MiB). A request that exceeds the remaining budget reports an error instead of returning partial file contents. `--max-chars` is shared across all excerpt/context previews, not multiplied by the number of requests.
+
+Results retain input order and include `index`, per-item status and source identity. Missing or ambiguous matches keep the overall status unresolved; input/acquisition errors return exit 2 while preserving other results. Multiple matches and whitespace candidates never become exact bindings automatically. A saved batch result can be passed directly to `verify`; any unresolved member keeps verification unresolved. `verify --bindings -` also accepts piped JSON. A one-off selection request is bounded to 64 KiB whether supplied as a file or stdin.
+
 ## Capture and reuse
 
 For a known URL, keep the existing acquisition interface:
@@ -40,7 +77,7 @@ All positions are interpreted in a particular hash-identified snapshot/view. A l
 
 ## Locate selected content
 
-Write a small JSON selection request, then call:
+For an already captured source, an existing JSON request file remains supported:
 
 ```sh
 python3 /absolute/investigation/scripts/source.py locate --source /absolute/evidence/source-ID/source.json --request /absolute/selection.json

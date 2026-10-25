@@ -7,6 +7,14 @@ description: >-
   change. Simple lookups need no capture workflow; conversation history uses the history skill.
 ---
 
+For source-location work, [source.py](scripts/source.py) accepts a direct file and quote; no capture or selector document is needed first:
+
+```sh
+python3 /absolute/skill/investigation/scripts/source.py locate --file /work/service.log --quote 'startup complete'
+```
+
+For several quotes, use `locate --batch -` with a JSON array on stdin. Each entry names its `file` (or an existing captured `source`) and a selector, for example `{"file":"/work/service.log","quote":"startup complete"}`. One invocation reads each source version once and returns exact locations or unresolved matches. Add `--store /work/evidence` only when snapshots and replayable bindings are useful; the returned saved-result path can be passed to `verify --bindings PATH --check-origin`. Without `--store`, direct file lookup is read-only and identifies consumed bytes but saves no historical snapshot. Existing `--source` / `--request` calls remain available; `--request -` reads stdin too.
+
 Choose an observation that can distinguish the plausible explanations, including that the suspected problem is absent. Check that an experiment reaches its intended condition. For a custom measurement, identify the object, unit, denominator and method; check a known-answer input or inspect a sample before relying on it. A proxy measurement alone does not establish the inferred cause.
 
 Useful distinctions include the configured runtime versus the library actually executing, a method for the same dataset/version versus a merely similar example, and two explanations that fit the same aggregate metric but predict different individual observations. A second implementation can share the first one's mistaken measurement definition. Source matching and targeted execution can be more informative than another agreement check; neither guarantees that one explanation is uniquely correct.

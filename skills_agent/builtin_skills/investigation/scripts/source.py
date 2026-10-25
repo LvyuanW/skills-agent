@@ -108,6 +108,16 @@ def read_json(path, limit=MAX_REQUEST_BYTES):
     return strict_json(raw.decode("utf-8-sig"))
 
 
+def read_request(path, limit=MAX_REQUEST_BYTES):
+    """A request may be piped without creating a separate selection document."""
+    if str(path) != "-":
+        return read_json(path, limit)
+    raw = sys.stdin.buffer.read(limit + 1)
+    if len(raw) > limit:
+        raise SourceError(f"Request exceeds byte budget ({limit})")
+    return strict_json(raw.decode("utf-8-sig"))
+
+
 def object_value(value, label):
     if not isinstance(value, dict):
         raise SourceError(f"{label} must be an object")
@@ -145,7 +155,12 @@ def save_source(directory, origin, acquisition, objects):
 def capture(args):
     original = COMMON.absolute(args.path)
     raw, observation = read_stable(original, args.max_bytes, args.prefix_bytes)
-    directory = new_directory(args.store)
+    return capture_bytes(original, raw, observation, args.store)
+
+
+def capture_bytes(original, raw, observation, store):
+    """Persist the same buffer selected by a direct lookup, never reread its origin."""
+    directory = new_directory(store)
     obj = save_object(directory, "raw.bin", raw, "raw_bytes")
     complete = len(raw) == observation["size"]
     return save_source(directory,
@@ -525,7 +540,13 @@ def validate_request(request):
 
 def locate(source_path, request, budget, max_matches=20, max_bytes=MAX_BYTES):
     request = validate_request(request)
-    manifest, identity, raw = source_object(source_path, request.get("view"), max_bytes)
+    _, identity, raw = source_object(source_path, request.get("view"), max_bytes)
+    return locate_content(identity, raw, request, budget, max_matches)
+
+
+def locate_content(identity, raw, request, budget, max_matches=20):
+    """Select from the identified consumed bytes, with optional snapshot retention."""
+    request = validate_request(request)
     encoding = request.get("encoding", "utf-8-sig")
     text = decode(raw, encoding)
     if request["format"] == "text":
@@ -558,7 +579,12 @@ def locate(source_path, request, budget, max_matches=20, max_bytes=MAX_BYTES):
                                   "content_sha256": record["content_sha256"],
                                   "excerpt": budget.excerpt(record["content"]),
                                   "context": budget.excerpt(record["context"])})
-    if status == "resolved":
+    saved = "manifest" in identity
+    result["retention"] = {
+        "snapshot_saved": saved, "replayable": saved and status == "resolved",
+        "note": ("Exact bindings replay the saved snapshot, not a later origin version." if saved else
+                 "Consumed bytes are identified but no snapshot or replayable binding was saved.")}
+    if status == "resolved" and saved:
         record = records[0]
         selector = {"view": identity["view"], "encoding": encoding, "context": 0,
                     "format": record["locator"]["format"]}
@@ -580,8 +606,122 @@ def locate(source_path, request, budget, max_matches=20, max_bytes=MAX_BYTES):
     return result
 
 
+class LocationSources:
+    """Reuse one version per explicitly named source within a bounded batch."""
+    def __init__(self, max_bytes, max_total_bytes, store=None):
+        self.max_bytes, self.max_total_bytes, self.store = max_bytes, max_total_bytes, store
+        self.cache = {}
+        self.aliases = {}
+        self.retained_bytes = 0
+
+    def get(self, kind, path, request):
+        path = COMMON.absolute(path)
+        view = request.get("view")
+        key = (kind, str(path), view if kind == "source" else "raw")
+        key = self.aliases.get(key, key)
+        if kind == "file" and view not in {None, "raw"}:
+            raise SourceError("Direct files have only the raw view; use a captured derived source for text views")
+        if key not in self.cache:
+            remaining = self.max_total_bytes - self.retained_bytes
+            if remaining < 0:
+                raise SourceError("Batch source byte budget exceeded")
+            if kind == "file":
+                raw, observation = read_stable(path, min(self.max_bytes, remaining))
+                identity = {"path": str(path), "resolved_path": observation["resolved_path"],
+                            "view": "raw", "sha256": digest(raw), "raw_sha256": digest(raw),
+                            "bytes": len(raw), "representation": "raw_bytes",
+                            "acquisition": {"complete": True, "scope": "full_file",
+                                            "consistency": observation["consistency"]}}
+                if self.store:
+                    captured = capture_bytes(path, raw, observation, self.store)
+                    # Only the new small manifest is reread. Selection still uses the consumed buffer.
+                    manifest_path = Path(captured["source"])
+                    manifest_raw, _ = read_stable(manifest_path, 1024 * 1024)
+                    identity.update(manifest=str(manifest_path), manifest_sha256=digest(manifest_raw),
+                                    source_id=captured["source_id"])
+            else:
+                manifest, identity, raw = source_object(path, view, min(self.max_bytes, remaining))
+                canonical = (kind, str(path), identity["view"])
+                self.aliases[key] = canonical
+                default_view = "text" if "text" in manifest["objects"] else "raw"
+                if identity["view"] == default_view:
+                    self.aliases[(kind, str(path), None)] = canonical
+                key = canonical
+            if len(raw) > remaining:
+                raise SourceError("Batch source byte budget exceeded")
+            self.cache[key] = identity, raw
+            self.retained_bytes += len(raw)
+        return self.cache[key]
+
+
+def save_locations(result, store):
+    if store:
+        root = COMMON.absolute(store)
+        root.mkdir(parents=True, exist_ok=True)
+        path = root / f"locations-{uuid.uuid4().hex}.json"
+        result["saved_result"] = str(path)
+        COMMON.atomic_json(path, result)
+    return result
+
+
+def locate_cli(args):
+    if args.max_matches > 100:
+        raise SourceError("max-matches cannot exceed 100")
+    budget = Budget(args.max_chars)
+    sources = LocationSources(args.max_bytes, args.max_total_bytes or args.max_bytes, args.store)
+    if args.batch:
+        if any(value is not None for value in (args.source, args.file, args.request, args.quote,
+                                               args.context, args.match)):
+            raise SourceError("--batch supplies its own sources and selectors; do not combine single-query options")
+        requests = read_request(args.batch, 2 * 1024 * 1024)
+        if not isinstance(requests, list) or not 1 <= len(requests) <= MAX_BINDINGS:
+            raise SourceError(f"Batch must contain between 1 and {MAX_BINDINGS} location requests")
+        base = Path.cwd() if args.batch == "-" else COMMON.absolute(args.batch).parent
+        results = []
+        for index, entry in enumerate(requests):
+            try:
+                object_value(entry, "batch request")
+                kinds = [kind for kind in ("file", "source") if kind in entry]
+                if len(kinds) != 1 or not isinstance(entry[kinds[0]], str) or not entry[kinds[0]]:
+                    raise SourceError("Each batch request needs exactly one nonempty file or source path")
+                kind = kinds[0]
+                request = validate_request({k: v for k, v in entry.items() if k != kind})
+                identity, raw = sources.get(kind, COMMON.absolute(entry[kind], base), request)
+                result = locate_content(identity, raw, request, budget, args.max_matches)
+                result["index"] = index
+            except (OSError, ValueError, KeyError, TypeError, csv.Error, RecursionError) as error:
+                result = {"index": index, "status": "error", "error": str(error)[:1000],
+                          "semantic_support": "not_evaluated"}
+            results.append(result)
+        status = ("error" if any(row["status"] == "error" for row in results) else
+                  "resolved" if all(row["status"] == "resolved" for row in results) else "unresolved")
+        result = {"source_evidence": 1, "operation": "locate-batch", "status": status,
+                  "results": results, "source_views": len(sources.cache),
+                  "source_bytes": sources.retained_bytes,
+                  "semantic_support": "not_evaluated",
+                  "preview": {"character_budget": budget.limit, "truncated": budget.truncated}}
+    else:
+        if (args.source is None) == (args.file is None):
+            raise SourceError("Supply exactly one of --source or --file, or use --batch")
+        if (args.request is None) == (args.quote is None):
+            raise SourceError("Supply --request (a file or - for stdin) or --quote")
+        if args.request is not None:
+            if args.context is not None or args.match is not None:
+                raise SourceError("Set context/match inside --request, or use them with --quote")
+            request = validate_request(read_request(args.request))
+        else:
+            request = validate_request({"quote": args.quote, "context": args.context if args.context is not None else 2,
+                                        "match": args.match or "exact"})
+        kind, path = ("source", args.source) if args.source is not None else ("file", args.file)
+        identity, raw = sources.get(kind, path, request)
+        result = locate_content(identity, raw, request, budget, args.max_matches)
+    return save_locations(result, args.store)
+
+
 def verify(args, budget):
-    value = read_json(args.bindings, 2 * 1024 * 1024)
+    value = read_request(args.bindings, 2 * 1024 * 1024)
+    if isinstance(value, dict) and value.get("operation") == "locate-batch":
+        value = value.get("results")
     values = value if isinstance(value, list) else [value]
     if not values or len(values) > MAX_BINDINGS:
         raise SourceError(f"Supply between 1 and {MAX_BINDINGS} bindings/locate results")
@@ -654,11 +794,21 @@ def parser():
         else:
             sub.add_argument("--max-view-bytes", type=positive, default=5 * 1024 * 1024)
     sub = commands.add_parser("locate")
-    sub.add_argument("--source", required=True)
-    sub.add_argument("--request", required=True)
+    source = sub.add_mutually_exclusive_group()
+    source.add_argument("--source", help="Existing captured source.json")
+    source.add_argument("--file", help="Read a local file directly; no snapshot is saved unless --store is set")
+    selection = sub.add_mutually_exclusive_group()
+    selection.add_argument("--request", help="Selection JSON file, or - for stdin")
+    selection.add_argument("--quote", help="Literal text to locate without a selection JSON")
+    sub.add_argument("--context", type=int, help="Neighboring lines with --quote (default 2)")
+    sub.add_argument("--match", choices=["exact", "whitespace"], help="Text discovery mode with --quote")
+    sub.add_argument("--batch", help="JSON array of requests, each with file/source plus selector fields; - reads stdin")
+    sub.add_argument("--store", help="Optionally save file snapshots and this result for later verification")
     sub.add_argument("--max-matches", type=positive, default=20)
     sub.add_argument("--max-chars", type=positive, default=12000)
     sub.add_argument("--max-bytes", type=positive, default=MAX_BYTES)
+    sub.add_argument("--max-total-bytes", type=positive,
+                     help="Budget for unique source views retained during this invocation (default: --max-bytes)")
     sub = commands.add_parser("verify")
     sub.add_argument("--bindings", required=True)
     sub.add_argument("--check-origin", action="store_true")
@@ -675,13 +825,10 @@ def main():
         elif args.operation == "import-fetch":
             result = import_fetch(args)
         elif args.operation == "locate":
-            if args.max_matches > 100:
-                raise SourceError("max-matches cannot exceed 100")
-            result = locate(args.source, read_json(args.request), Budget(args.max_chars),
-                            args.max_matches, args.max_bytes)
+            result = locate_cli(args)
         else:
             result = verify(args, Budget(args.max_chars))
-        status = 0 if result["status"] in {"captured", "resolved"} else 1
+        status = 0 if result["status"] in {"captured", "resolved"} else 2 if result["status"] == "error" else 1
     except (OSError, ValueError, KeyError, TypeError, csv.Error, RecursionError) as error:
         result = {"source_evidence": 1, "operation": args.operation, "status": "error",
                   "error": str(error)[:1000], "semantic_support": "not_evaluated"}
