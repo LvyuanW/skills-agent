@@ -258,6 +258,10 @@ def compare_experiment(spec, source, raw_spec, root=None, base=None, spec_captur
                 or execution.get("timed_out") or type(execution.get("exit_code")) is not int
                 or execution["exit_code"] not in expected_codes):
             raise ValueError(f"Execution did not finish with the expected exit status: {path}")
+        if (execution.get("cleanup_required") is True or execution.get("cleanup_forced") is True
+                or execution.get("cleanup_confirmed") is False):
+            raise ValueError(f"Producer completion is unproven: residual work needed cleanup "
+                             f"or cleanup was unconfirmed: {path}")
         capture = record.get("capture")
         observations = record.get("observations")
         if not isinstance(capture, dict) or not isinstance(observations, dict):

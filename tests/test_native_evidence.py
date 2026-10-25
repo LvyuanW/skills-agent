@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import subprocess
 import sys
 import tempfile
 import time
@@ -183,6 +184,21 @@ class NativeEvidenceTests(unittest.TestCase):
                 self.assertTrue(record["execution"]["cleanup_confirmed"])
                 after = next(row for row in record["capture"]["after"] if row["role"] == "outputs")
                 self.assertEqual(after["sha256"], hashlib.sha256(b"cleaned").hexdigest())
+                # Capturing the final bytes does not prove that this producer
+                # completed its intended work before its child was terminated.
+                expected = self.root / "expected.txt"
+                expected.write_text("cleaned")
+                helper = Path(verification.__file__).parent / "builtin_skills/feedback/scripts/experiment.py"
+                command = [sys.executable, "-I", str(helper), "compare", str(self.output), str(expected),
+                           "--format", "text", "--basis", "Known cleanup fixture"]
+                plain = subprocess.run(command, capture_output=True, text=True, timeout=10)
+                self.assertEqual(plain.returncode, 0, plain.stdout)
+                recorded = subprocess.run(command + ["--left-record", result["evidence"]["record"]],
+                                          capture_output=True, text=True, timeout=10)
+                self.assertEqual(recorded.returncode, 2, recorded.stdout)
+                observation = json.loads(recorded.stdout)["observations"]
+                self.assertEqual(observation["status"], "inconclusive")
+                self.assertIn("Producer completion is unproven", observation["checks"][0]["error"])
 
     def test_background_start_failure_finalizes_without_claiming_a_check_ran(self):
         spec = importlib.util.spec_from_file_location("evidence_process_helper_tests", HELPER)

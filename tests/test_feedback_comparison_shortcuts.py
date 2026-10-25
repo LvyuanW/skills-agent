@@ -140,6 +140,20 @@ class ComparisonShortcutTests(ShortcutCase):
         record = json.loads(run.stdout)["observations"]["record"]
         code, result = self.compare(actual, expected, "--left-record", record)
         self.assertEqual(code, 0, result)
+        original = json.loads(Path(record).read_text())
+        for field, value in (("cleanup_required", True), ("cleanup_forced", True),
+                             ("cleanup_confirmed", False)):
+            with self.subTest(field=field):
+                modified = {**original, "execution": {**original["execution"], field: value}}
+                uncertain = self.write("uncertain-record.json", json.dumps(modified))
+                code, result = self.compare(actual, expected, "--left-record", str(uncertain))
+                self.assertEqual(code, 2, result)
+                self.assertIn("Producer completion is unproven", result["checks"][0]["error"])
+        legacy = {**original, "execution": {key: value for key, value in original["execution"].items()
+                                            if not key.startswith("cleanup_")}}
+        legacy_record = self.write("legacy-record.json", json.dumps(legacy))
+        code, result = self.compare(actual, expected, "--left-record", str(legacy_record))
+        self.assertEqual(code, 0, result)
         actual.write_text('{"count":3}')
         code, result = self.compare(actual, expected, "--left-record", record)
         self.assertEqual(code, 2, result)
