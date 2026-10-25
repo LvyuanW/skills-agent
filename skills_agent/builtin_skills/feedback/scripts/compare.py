@@ -1,10 +1,28 @@
-"""Read-only comparisons for explicitly supplied experiment conditions (stdlib only)."""
+"""Read-only comparisons; NumPy file readers are optional and never install packages."""
 
+import csv
 from decimal import Decimal, localcontext
 import importlib.util
+import io
 import json
+import math
 import os
 from pathlib import Path
+import re
+import zipfile
+
+
+MAX_ARRAY_ELEMENTS = 250000
+MAX_ARRAY_BYTES = 256 * 1024 * 1024
+MAX_ARRAY_DIMENSIONS = 16
+
+
+class SelectedArray:
+    """Retain array shape even where tolist loses dimensions beyond an empty axis."""
+
+    def __init__(self, value, shape):
+        self.value = value
+        self.shape = shape
 
 
 def sibling(name):
@@ -66,7 +84,8 @@ def number(value, label):
 
 
 def validate_selector(value, label):
-    fields(value, ("path", "value", "format", "pointer", "run_record", "expected_exit_codes"), (), label)
+    fields(value, ("path", "value", "format", "pointer", "run_record", "expected_exit_codes",
+                   "column", "key", "value_type", "array", "slice"), (), label)
     if ("path" in value) == ("value" in value):
         raise ValueError(f"{label} requires exactly one of path or value")
     if "value" in value:
@@ -81,13 +100,29 @@ def validate_selector(value, label):
         if ("run_record" not in value or not isinstance(codes, list) or not codes
                 or any(type(code) is not int or code < 0 or code > 255 for code in codes)):
             raise ValueError("expected_exit_codes needs run_record and a nonempty list of exit codes")
-    if value.get("format", "json") not in ("json", "text"):
-        raise ValueError(f"{label}.format must be json or text")
+    fmt = value.get("format", "json")
+    if fmt not in ("json", "text", "csv", "npy", "npz"):
+        raise ValueError(f"{label}.format must be json, text, csv, npy or npz")
+    extras = set(value) & {"column", "key", "value_type", "array", "slice"}
+    permitted = {"csv": {"column", "key", "value_type"},
+                 "npy": {"slice"}, "npz": {"array", "slice"}}.get(fmt, set())
+    if extras - permitted:
+        raise ValueError(f"{label}: selection fields do not apply to {fmt}")
+    if fmt == "csv":
+        text(value.get("column"), f"{label}.column")
+        if "key" in value:
+            text(value["key"], f"{label}.key")
+        if value.get("value_type", "text") not in ("text", "number"):
+            raise ValueError(f"{label}.value_type must be text or number")
+    if fmt == "npz":
+        text(value.get("array"), f"{label}.array")
+    if "slice" in value:
+        array_slice(value["slice"])
     pointer = value.get("pointer", "")
     if not isinstance(pointer, str):
         raise ValueError(f"{label}.pointer must be text")
-    if value.get("format") == "text" and pointer:
-        raise ValueError(f"{label}: text cannot use a JSON pointer")
+    if fmt != "json" and pointer:
+        raise ValueError(f"{label}: only json can use a JSON pointer")
     # Validate syntax even if the eventual input is missing or a scalar.
     if pointer:
         if not pointer.startswith("/"):
@@ -100,6 +135,124 @@ def validate_selector(value, label):
                         raise ValueError("JSON Pointer accepts only ~0 and ~1 escapes")
                     index += 1
                 index += 1
+
+
+def array_slice(value):
+    """Basic integer/slice indexing only; no eval, expressions or advanced indexing."""
+    text(value, "slice")
+    result = []
+    for part in value.split(","):
+        part = part.strip()
+        if re.fullmatch(r"-?\d+", part):
+            result.append(int(part))
+            continue
+        if ":" not in part:
+            raise ValueError("slice accepts comma-separated integers or start:stop[:step]")
+        pieces = part.split(":")
+        if len(pieces) not in (2, 3) or any(x and not re.fullmatch(r"-?\d+", x) for x in pieces):
+            raise ValueError("slice accepts comma-separated integers or start:stop[:step]")
+        args = [int(x) if x else None for x in pieces]
+        if len(args) == 3 and args[2] == 0:
+            raise ValueError("slice step must not be zero")
+        result.append(slice(*args))
+    return tuple(result)
+
+
+def csv_column(contents, selector):
+    reader = csv.reader(io.StringIO(contents, newline=""), strict=True)
+    try:
+        header = next(reader)
+    except StopIteration:
+        raise ValueError("CSV has no header") from None
+    if not header or any(not name for name in header) or len(set(header)) != len(header):
+        raise ValueError("CSV needs nonempty, unique column names")
+    names = [selector["column"], *([selector["key"]] if "key" in selector else [])]
+    for name in names:
+        if name not in header:
+            raise ValueError(f"Missing CSV column: {name}")
+    column = header.index(selector["column"])
+    key = header.index(selector["key"]) if "key" in selector else None
+    values, keys = [], set()
+    for line, row in enumerate(reader, 2):
+        if len(row) != len(header):
+            raise ValueError(f"CSV row {line} has {len(row)} fields; expected {len(header)}")
+        value = row[column]
+        if selector.get("value_type", "text") == "number":
+            try:
+                value = Decimal(value)
+            except ArithmeticError:
+                raise ValueError(f"CSV row {line} column {selector['column']} is not numeric") from None
+            if not value.is_finite():
+                raise ValueError(f"CSV row {line} column {selector['column']} is not finite")
+        if key is not None:
+            if not row[key]:
+                raise ValueError(f"CSV row {line} has an empty alignment key")
+            if row[key] in keys:
+                raise ValueError(f"Duplicate CSV alignment key: {row[key]}")
+            keys.add(row[key])
+            value = {"key": row[key], "value": value}
+        values.append(value)
+    return values
+
+
+def numpy_value(data, selector):
+    try:
+        import numpy as np
+    except ImportError:
+        raise ValueError("NumPy is not installed in this interpreter; use an existing task interpreter "
+                         "with NumPy, or export the selected values as JSON/CSV") from None
+    def inspect_header(stream):
+        version = np.lib.format.read_magic(stream)
+        read_header = {(1, 0): np.lib.format.read_array_header_1_0,
+                       (2, 0): np.lib.format.read_array_header_2_0}.get(version)
+        if read_header is None:
+            raise ValueError(f"Unsupported NPY header version: {version}")
+        shape, _, dtype = read_header(stream)
+        if len(shape) > MAX_ARRAY_DIMENSIONS:
+            raise ValueError(f"Array exceeds {MAX_ARRAY_DIMENSIONS} dimensions")
+        if dtype.kind not in "biuf" or dtype.itemsize > 8:
+            raise ValueError("Only boolean, integer and real NumPy dtypes of at most 64 bits are supported")
+        if math.prod(shape) * dtype.itemsize > MAX_ARRAY_BYTES:
+            raise ValueError("Array exceeds the 256 MiB acquisition budget; export a smaller array")
+
+    stream = io.BytesIO(data)
+    if selector["format"] == "npz":
+        # Bound decompression before NumPy loads the chosen member.
+        with zipfile.ZipFile(stream) as archive:
+            members = archive.infolist()
+            wanted = selector["array"] + ".npy"
+            matches = [item for item in members if item.filename == wanted]
+            if len(matches) != 1:
+                raise ValueError(f"NPZ array must identify one member: {selector['array']}")
+            if matches[0].file_size > MAX_ARRAY_BYTES:
+                raise ValueError("NPZ member exceeds the 256 MiB acquisition budget; export a smaller array")
+            with archive.open(matches[0]) as member:
+                inspect_header(member)
+                member.seek(0)
+                array = np.load(member, allow_pickle=False)
+    else:
+        inspect_header(stream)
+        stream.seek(0)
+        array = np.load(stream, allow_pickle=False)
+        if not isinstance(array, np.ndarray):
+            if hasattr(array, "close"):
+                array.close()
+            raise ValueError("Expected an NPY array, not an archive")
+    if "slice" in selector:
+        try:
+            array = array[array_slice(selector["slice"])]
+        except (IndexError, TypeError) as exc:
+            raise ValueError(f"Invalid array selection: {exc}") from None
+    if array.size > MAX_ARRAY_ELEMENTS:
+        raise ValueError(f"Selected array exceeds {MAX_ARRAY_ELEMENTS} elements; use an explicit slice")
+    if not np.isfinite(array).all():
+        raise ValueError("Selected array contains non-finite values")
+    # Keep integer precision and the exact represented binary float, not a rounded JSON dump.
+    def convert(value):
+        if isinstance(value, list):
+            return [convert(item) for item in value]
+        return Decimal.from_float(value) if isinstance(value, float) else value
+    return SelectedArray(convert(array.tolist()), tuple(array.shape))
 
 
 def validate_spec(spec):
@@ -178,11 +331,15 @@ def selected(selector, base, read_bytes, validate_record=None):
             raise ValueError("run_record needs an execution-record validator")
         validate_record(record, path, selector.get("expected_exit_codes", [0]))
     data = read_bytes(path)
+    if selector.get("format") in ("npy", "npz"):
+        return numpy_value(data, selector)
     contents = data.decode("utf-8")
     if "\0" in contents:
         raise ValueError(f"NUL bytes in text input: {path}")
     if selector.get("format", "json") == "text":
         return contents
+    if selector.get("format") == "csv":
+        return csv_column(contents, selector)
     return _check.pointer(strict_json(contents), selector.get("pointer", ""))
 
 
@@ -197,6 +354,15 @@ def canonical(value):
     return (type(value).__name__, value)
 
 
+def shape(value):
+    if not isinstance(value, list):
+        return ()
+    children = [shape(item) for item in value]
+    if children and any(item != children[0] for item in children):
+        raise ValueError("Positional numeric comparison needs rectangular arrays")
+    return (len(value), *(children[0] if children else ()))
+
+
 def pairs(left, right, alignment):
     kind = alignment["kind"]
     if kind == "scalar":
@@ -204,9 +370,16 @@ def pairs(left, right, alignment):
     if not isinstance(left, list) or not isinstance(right, list) or not left or not right:
         raise ValueError("Array alignment requires nonempty arrays on both sides")
     if kind == "position":
-        if len(left) != len(right):
-            raise ValueError(f"Cannot align arrays of lengths {len(left)} and {len(right)}")
-        return [(index, a, b) for index, (a, b) in enumerate(zip(left, right))]
+        a_shape, b_shape = shape(left), shape(right)
+        if a_shape != b_shape or 0 in a_shape:
+            raise ValueError(f"Cannot align array shapes {a_shape} and {b_shape}")
+        def walk(a, b, indices=()):
+            if not isinstance(a, list):
+                yield (indices[0] if len(indices) == 1 else list(indices), a, b)
+            else:
+                for index, (av, bv) in enumerate(zip(a, b)):
+                    yield from walk(av, bv, (*indices, index))
+        return list(walk(left, right))
     def keyed(values):
         result = {}
         for item in values:
@@ -269,6 +442,20 @@ def numeric_check(left, right, check):
 
 
 def compare_values(left, right, check):
+    if isinstance(left, SelectedArray) or isinstance(right, SelectedArray):
+        a_shape = left.shape if isinstance(left, SelectedArray) else shape(left)
+        b_shape = right.shape if isinstance(right, SelectedArray) else shape(right)
+        left = left.value if isinstance(left, SelectedArray) else left
+        right = right.value if isinstance(right, SelectedArray) else right
+        dimensions = {"left_shape": list(a_shape), "right_shape": list(b_shape)}
+        if check["kind"] in ("set", "multiset"):
+            if len(a_shape) != 1 or len(b_shape) != 1:
+                raise ValueError("Set/multiset NumPy selections must be one-dimensional; use an explicit slice")
+        elif a_shape != b_shape:
+            if check["kind"] == "exact":
+                return {"passed": False, **dimensions, "reason": "Array shapes differ"}
+            raise ValueError(f"Cannot align array shapes {a_shape} and {b_shape}")
+        return {**compare_values(left, right, check), **dimensions}
     kind = check["kind"]
     if kind in ("numeric", "paired"):
         return numeric_check(left, right, check)
@@ -304,13 +491,16 @@ def evaluate(spec, base, read_bytes=None, validate_record=None):
     read_bytes = read_bytes or Path.read_bytes
     checks = []
     for check in spec["checks"]:
-        observation = {"id": check["id"], "kind": check["kind"]}
+        observation = {"id": check["id"], "kind": check["kind"],
+                       "inputs": {side: selector for side in ("left", "right")
+                                  if "path" in (selector := check[side])}}
         try:
             left = selected(check["left"], base, read_bytes, validate_record)
             right = selected(check["right"], base, read_bytes, validate_record)
             observation.update(compare_values(left, right, check))
             observation["status"] = "passed" if observation["passed"] else "mismatch"
-        except (OSError, UnicodeError, ValueError, KeyError, ArithmeticError) as exc:
+        except (OSError, UnicodeError, ValueError, KeyError, ArithmeticError, csv.Error,
+                zipfile.BadZipFile, EOFError) as exc:
             observation.update(passed=False, status="inconclusive", error=str(exc))
         checks.append(observation)
     inconclusive = any(check["status"] == "inconclusive" for check in checks)

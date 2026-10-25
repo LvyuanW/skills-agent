@@ -136,15 +136,13 @@ def run_experiment(spec, source, raw_spec, root, base=None, spec_capture=None):
     fixture, output, logs = (directory / name for name in ("fixture", "output", "logs"))
     for path in (fixture, output, logs):
         path.mkdir()
-    cwd = resolve(spec["cwd"], base)
+    cwd = resolve(spec["cwd"].replace("{fixture}", str(fixture)).replace("{output}", str(output)), base)
     command = [value.replace("{fixture}", str(fixture)).replace("{output}", str(output))
                for value in spec["command"]]
     copied, consumed = [], [spec_capture]
     phase = "fixture"
     setup_error = None
     try:
-        if not cwd.is_dir():
-            raise ValueError(f"cwd is not an existing directory: {cwd}")
         for item in spec["fixtures"]:
             target = fixture / item["path"]
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -166,6 +164,8 @@ def run_experiment(spec, source, raw_spec, root, base=None, spec_capture=None):
         # Output subdirectories exist, but output files are always fresh and absent.
         for item in spec["outputs"]:
             (output / item["path"]).parent.mkdir(parents=True, exist_ok=True)
+        if not cwd.is_dir():
+            raise ValueError(f"cwd is not an existing directory: {cwd}")
     except (OSError, ValueError) as exc:
         setup_error = str(exc)
     setup.update(setup_state="failed" if setup_error else "prepared", ended_at=evidence.utc_now())
@@ -217,7 +217,7 @@ def run_experiment(spec, source, raw_spec, root, base=None, spec_capture=None):
             "experiment": handle["record"]["experiment"]}, status
 
 
-def compare_experiment(spec, source, raw_spec, root, base=None, spec_capture=None):
+def compare_experiment(spec, source, raw_spec, root=None, base=None, spec_capture=None):
     comparison.validate_spec(spec)
     base = Path(base) if base is not None else source.parent
     subjects, dependencies = [], [str(source)]
@@ -228,24 +228,19 @@ def compare_experiment(spec, source, raw_spec, root, base=None, spec_capture=Non
             if "run_record" in selector:
                 dependencies.append(str(resolve(selector["run_record"], base)))
     manifest = {"subjects": list(dict.fromkeys(subjects)), "dependencies": list(dict.fromkeys(dependencies))}
-    handle = evidence.start_record(root, "experiment-compare", manifest,
-                                   scope=spec["basis"], cwd=base, helper_paths=helper_paths())
-    handle["record"]["experiment"] = {"comparison": comparison.plain(spec)}
-    evidence.atomic_json(handle["path"], handle["record"])
-    consumed = {str(source): spec_capture or evidence.bytes_fingerprint(source, raw_spec)}
+    handle = None
+    if root is not None:
+        handle = evidence.start_record(root, "experiment-compare", manifest,
+                                       scope=spec["basis"], cwd=base, helper_paths=helper_paths())
+        handle["record"]["experiment"] = {"comparison": comparison.plain(spec)}
+        evidence.atomic_json(handle["path"], handle["record"])
+    consumed = {str(source): spec_capture or evidence.bytes_fingerprint(source, raw_spec)} if handle else {}
     cache, required_hashes = {}, {}
 
     def observed(path):
         key = str(path)
         if key not in cache:
-            data = read_bytes(path)
-            capture = evidence.bytes_fingerprint(path, data)
-            for before in handle["record"]["capture"]["before"]:
-                if before["path"] == key:
-                    for field in ("symlink_target", "resolved_path"):
-                        if field in before:
-                            capture[field] = before[field]
-                    break
+            data, capture = read_input(path)
             if key in required_hashes and capture["sha256"] != required_hashes[key]:
                 raise ValueError(f"Artifact no longer matches its execution record: {path}")
             cache[key] = data
@@ -297,9 +292,61 @@ def compare_experiment(spec, source, raw_spec, root, base=None, spec_capture=Non
             raise ValueError(f"Artifact no longer matches its execution record: {artifact}")
 
     observations, status = comparison.evaluate(spec, base, observed, validate_record)
-    record = evidence.finish_record(handle, {"exit_code": status, "timed_out": False}, observations,
-                                    list(consumed.values()))
-    return {**observations, "record": str(record)}, status
+    if handle:
+        record = evidence.finish_record(handle, {"exit_code": status, "timed_out": False}, observations,
+                                        list(consumed.values()))
+        observations = {**observations, "record": str(record)}
+    else:
+        observations = {**observations, "recording": "not_requested",
+                        "consumed": list(consumed.values())}
+    return observations, status
+
+
+def direct_comparison(args):
+    """A small CLI for one existing-file comparison; advanced checks retain --spec."""
+    if len(args.paths) != 2:
+        raise ValueError("Direct compare needs LEFT RIGHT, or use --spec")
+    comparison.text(args.basis, "--basis")
+    left, right = ({"path": path, "format": args.format or "json"} for path in args.paths)
+    for side, selector in (("left", left), ("right", right)):
+        for name in ("pointer", "column", "key", "array", "slice"):
+            value = getattr(args, name)
+            if name == "pointer":
+                override = getattr(args, side + "_pointer")
+                value = override if override is not None else value
+            if value is not None:
+                selector[name] = value
+        record = getattr(args, side + "_record")
+        if record is not None:
+            selector["run_record"] = record
+        if selector["format"] == "csv" and args.check_kind == "numeric":
+            selector["value_type"] = "number"
+    kind = args.check_kind or "exact"
+    check = {"id": "comparison", "kind": kind, "left": left, "right": right}
+    numeric = {"alignment": args.alignment, "atol": args.atol, "rtol": args.rtol, "unit": args.unit}
+    if kind == "numeric":
+        if args.key:
+            if args.alignment is not None:
+                raise ValueError("CSV --key already specifies key alignment; omit --alignment")
+            check["alignment"] = {"kind": "key", "key": "/key", "value": "/value"}
+        elif args.alignment is not None:
+            check["alignment"] = {"kind": args.alignment}
+        for name in ("atol", "rtol", "unit"):
+            if numeric[name] is not None:
+                check[name] = numeric[name]
+    elif any(value is not None for value in numeric.values()):
+        raise ValueError("Numeric options require --kind numeric")
+    return comparison.validate_spec({"schema_version": 1, "basis": args.basis, "checks": [check]})
+
+
+def decimal_argument(value):
+    try:
+        number = comparison.Decimal(value)
+        if not number.is_finite() or number < 0:
+            raise ValueError()
+        return number
+    except (ArithmeticError, ValueError):
+        raise argparse.ArgumentTypeError("expected a finite nonnegative number") from None
 
 
 def main():
@@ -308,24 +355,57 @@ def main():
         "compare returns 0 for supplied conditions passing, 1 for mismatch, 2 for inconclusive. "
         "Neither operation certifies overall task completion."))
     commands = cli.add_subparsers(dest="kind", required=True)
-    for name in ("run", "compare"):
-        command = commands.add_parser(name)
-        command.add_argument("--spec", required=True, help="JSON spec file, or - to read stdin")
-        command.add_argument("--root", required=True, help="Directory for fresh run records and experiment files")
+    run = commands.add_parser("run")
+    run.add_argument("--spec", required=True, help="JSON spec file, or - to read stdin")
+    run.add_argument("--root", required=True, help="Directory for fresh run records and experiment files")
+    compare = commands.add_parser("compare", help="Compare existing files; no execution or recording unless requested")
+    compare.add_argument("paths", nargs="*", metavar="PATH", help="LEFT RIGHT for a direct comparison")
+    compare.add_argument("--spec", help="Existing JSON comparison spec, or - to read stdin")
+    compare.add_argument("--root", help="Optionally retain the comparison and consumed versions here")
+    compare.add_argument("--basis", help="Independent basis for this comparison, not an inferred oracle")
+    compare.add_argument("--kind", dest="check_kind", choices=("exact", "numeric", "set", "multiset"))
+    compare.add_argument("--format", choices=("json", "text", "csv", "npy", "npz"))
+    compare.add_argument("--pointer", help="JSON pointer on both sides")
+    compare.add_argument("--left-pointer")
+    compare.add_argument("--right-pointer")
+    compare.add_argument("--column", help="CSV value column on both sides")
+    compare.add_argument("--key", help="CSV row identifier column; numeric values align by this key")
+    compare.add_argument("--array", help="NPZ array name on both sides")
+    compare.add_argument("--slice", help="NPY/NPZ selection, e.g. 0:100,: (no expressions)")
+    compare.add_argument("--alignment", choices=("scalar", "position"))
+    compare.add_argument("--atol", type=decimal_argument)
+    compare.add_argument("--rtol", type=decimal_argument)
+    compare.add_argument("--unit")
+    compare.add_argument("--left-record", help="Require a successful producer record for LEFT")
+    compare.add_argument("--right-record", help="Require a successful producer record for RIGHT")
     args = cli.parse_args()
-    source = evidence.absolute(args.spec) if args.spec != "-" else "<stdin>"
+    source = evidence.absolute(args.spec) if args.spec and args.spec != "-" else "<stdin>" if args.spec else "<arguments>"
+    display_source = source
     try:
         base = None
-        if args.spec == "-":
-            raw = sys.stdin.buffer.read(MAX_BYTES + 1)
-            if len(raw) > MAX_BYTES:
-                raise ValueError(f"stdin spec exceeds {MAX_BYTES} bytes")
+        if args.kind == "compare" and args.spec:
+            short_options = ("basis", "check_kind", "format", "pointer", "left_pointer", "right_pointer",
+                             "column", "key", "array", "slice", "alignment", "atol", "rtol", "unit",
+                             "left_record", "right_record")
+            if args.paths or any(getattr(args, name) is not None for name in short_options):
+                raise ValueError("Do not mix --spec with direct comparison options")
+        if not args.spec or args.spec == "-":
             base = Path.cwd()
-            spec = comparison.strict_json(raw.decode("utf-8"))
-            root = Path(args.root).expanduser().resolve()
-            root.mkdir(parents=True, exist_ok=True)
-            source = Path(tempfile.mkdtemp(prefix="spec-", dir=root)) / "spec.json"
-            source.write_bytes(raw)
+            if args.spec == "-":
+                raw = sys.stdin.buffer.read(MAX_BYTES + 1)
+                if len(raw) > MAX_BYTES:
+                    raise ValueError(f"stdin spec exceeds {MAX_BYTES} bytes")
+                spec = comparison.strict_json(raw.decode("utf-8"))
+            else:
+                spec = direct_comparison(args)
+                raw = comparison._check.json_text(spec).encode("utf-8")
+            source = base / str(source)
+            if args.root:
+                root = Path(args.root).expanduser().resolve()
+                root.mkdir(parents=True, exist_ok=True)
+                source = Path(tempfile.mkdtemp(prefix="spec-", dir=root)) / "spec.json"
+                source.write_bytes(raw)
+                display_source = source
             spec_capture = evidence.bytes_fingerprint(source, raw)
         else:
             raw, spec_capture = read_input(source)
@@ -336,7 +416,7 @@ def main():
         observations, status = {"status": "inconclusive", "phase": "input", "error": str(exc)}, 2
     if status:
         print(f"experiment.py: {observations.get('error') or observations.get('status')}; inspect evidence", file=sys.stderr)
-    print(json.dumps({"skills_agent_feedback": 1, "kind": f"experiment-{args.kind}", "source": str(source),
+    print(json.dumps({"skills_agent_feedback": 1, "kind": f"experiment-{args.kind}", "source": str(display_source),
                       "observations": observations, "attachments": []}, ensure_ascii=False, allow_nan=False))
     return status
 
