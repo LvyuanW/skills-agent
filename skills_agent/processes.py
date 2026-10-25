@@ -260,15 +260,19 @@ def _observe_launch_expectations(scope_paths, records, jobs):
 
 def _matches_launch(record, expected):
     return (all(record.get(key) == value for key, value in expected.items())
-            and ("images" in record) == ("images" in expected))
+            and ("images" in record) == ("images" in expected)
+            and ("evidence_record" in record) == ("evidence_record" in expected))
 
 
 def _validate_launch_expectation(expected):
     required = {"name", "display_name", "record", "command", "cwd", "owner_session_id", "origin_tool_call_id",
                 "kind", "wait_on_exit", "background_lifecycle", "persistent",
                 "job_timeout_seconds", "startup_timeout_seconds"}
-    if not required <= set(expected) <= required | {"images"}:
+    if not required <= set(expected) <= required | {"images", "evidence_record"}:
         raise ValueError("Incomplete launch expectation")
+    if "evidence_record" in expected and (not isinstance(expected["evidence_record"], str)
+                                          or not Path(expected["evidence_record"]).is_absolute()):
+        raise ValueError("Invalid evidence record path")
     service = expected["background_lifecycle"] == "service"
     if (expected["background_lifecycle"] not in ("task", "service")
             or expected["kind"] != ("service" if service else "job")
@@ -334,6 +338,9 @@ def completion_result(job, max_bytes=16384) -> dict:
     result = {key: record.get(key) for key in ("name", "display_name", "command", "cwd", "owner_session_id", "origin_tool_call_id", "started_at", "ended_at", "stop_reason", "job_timeout_seconds", "deadline_at", "forced", "cleanup_reason", "cleanup_process_count", "cleanup_message")}
     if "images" in record:
         result["images"] = record["images"]
+    if "evidence_record" in record:
+        result["evidence"] = record.get("evidence", {"record": record["evidence_record"],
+                                                    "record_state": "unknown", "verdict": "not_reported"})
     started, ended = _timestamp(record.get("started_at")), _timestamp(record.get("ended_at"))
     result.update(id=expected, job_id=expected, state=record["state"],
                   kind=record.get("kind", "job"), wait_on_exit=record.get("wait_on_exit", record.get("kind", "job") == "job"),
@@ -645,7 +652,7 @@ class ProcessScope:
 
     def start_background(self, command: str, name: str, cwd: Path, env: dict,
                          timeout_seconds: float | None = None, *, background_lifecycle: str = "task",
-                         images: list[dict] | None = None) -> dict:
+                         images: list[dict] | None = None, evidence_record: str | None = None) -> dict:
         """Register a supervised shell and return its launch receipt, not its result.
 
         The independently owned supervisor keeps the payload's process-group
@@ -669,6 +676,9 @@ class ProcessScope:
         if background_lifecycle not in ("task", "service"):
             raise ValueError("background_lifecycle must be task or service")
         images = validate_images(images) if images is not None else None
+        if evidence_record is not None and (not isinstance(evidence_record, str)
+                                            or not Path(evidence_record).is_absolute()):
+            raise ValueError("evidence_record must be an absolute path")
         service = background_lifecycle == "service"
         scope_policy = json.loads(_regular_bytes(scope.path / "scope.json", maximum=65536)[0])
         if service and scope_policy.get("allow_persistent") is not True:
@@ -703,6 +713,8 @@ class ProcessScope:
             args.extend(["--service", "--persistent"])
         if images is not None:
             args.extend(["--images-json", json.dumps(images, ensure_ascii=False)])
+        if evidence_record is not None:
+            args.extend(["--evidence-record", evidence_record])
         args.extend(["--", "/bin/sh", "-c", command])
         environment = {**env, SCOPE_ENV: str(scope.path)}
         deadline = time.monotonic() + BACKGROUND_STARTUP_TIMEOUT_SECONDS
@@ -722,6 +734,8 @@ class ProcessScope:
         }
         if images is not None:
             expected["images"] = images
+        if evidence_record is not None:
+            expected["evidence_record"] = evidence_record
         try:
             registration = _confirmed_launch(scope.path, expected, deadline)
         except (BackgroundJobError, OSError) as exc:

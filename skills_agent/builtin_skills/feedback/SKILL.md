@@ -14,7 +14,7 @@ Use the shortest route that answers the current question. Existing tests and tas
 | Compare existing outputs without executing their producers again | `experiment.py compare --spec - --root DIR` accepts a JSON specification on stdin; see [experiments](references/experiments.md) for selectors and tolerances |
 | Try a small input through the actual program | `experiment.py run --spec - --root DIR` supplies fresh fixtures and outputs; reuse a suitable existing test instead when simpler |
 | See which versions an earlier check covered | `feedback.py status --record RECORD`; it reads versions, never reruns the check |
-| Keep a check or command attributable across later edits | Add `--record-dir DIR` and, for arbitrary commands, declare relevant files with `--manifest JSON`; see [versions](references/versions.md) |
+| Keep an existing shell check attributable across later edits | Add optional `shell.evidence` with absolute `subjects`, `dependencies` or `outputs`; the runtime returns a record without a manifest file. CLI helpers still accept `--record-dir` / `--manifest`; see [versions](references/versions.md) |
 
 An execution failure or unavailable reference is not an observed algorithmic difference. A record without declared task files is **unbound**, even when its helper files are unchanged. Recording does not discover dependencies, validate expectations, or decide whether another run is necessary.
 

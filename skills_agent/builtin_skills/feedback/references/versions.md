@@ -1,8 +1,31 @@
 # Associate evidence with content versions
 
-Use a record when later edits, expensive runs, or handoffs make it useful to know which content a check covered. Existing calls work without recording. Record directories belong inside the task's permitted writable locations; there is no required document or directory name.
+Use a record when later edits, expensive runs, or handoffs make it useful to know which content a check covered. Existing calls work without recording. CLI record directories belong inside the task's permitted writable locations; there is no required document or directory name.
 
 An arbitrary command recorded without task files is **unbound**. It can retain execution logs and helper identities, but does not say which task content was verified. Content checks add their actual subjects automatically; commands need explicit subjects, dependencies or outputs. Selected environment variables alone do not bind task files.
+
+## Keep the existing shell command
+
+When the native `shell` tool exposes `evidence`, add the relevant paths to that same call. No wrapper command or manifest file is needed:
+
+```json
+{
+  "name": "Check the saved numerical result",
+  "command": "python3 /work/check_result.py",
+  "run_in_background": false,
+  "evidence": {
+    "subjects": ["/work/result.npz"],
+    "dependencies": ["/work/check_result.py", "/work/reference.npz"],
+    "scope": "Run the existing independent array check on the saved result"
+  }
+}
+```
+
+`subjects`, `dependencies` and `outputs` are optional lists of **absolute** paths. This avoids silently resolving declarations relative to a `cd` inside the shell command. `outputs` identifies generated files at completion; use `dependencies` for a generator or reference whose version affects the interpretation. Optional `environment` lists nonsecret variable names observed at launch, not variables assigned later inside the shell. Optional `record_dir` selects an absolute directory; otherwise the runtime uses its log area and returns the record path (or a temporary record directory if no runtime log area exists).
+
+Foreground records are finalized after the native execution boundary confirms process-group cleanup. A background launch receipt reports pending evidence; its supervisor finalizes the record when the job actually ends, before delivering the completion result. Interrupted or uncertain execution must not be treated as completed verification. The same `feedback.py status --record RECORD` reads native and CLI records without rerunning work. Execution records retain `verdict: not_reported`; the existing check's stdout and exit status remain evidence about only what that check tested.
+
+Omitting `evidence` performs no added file hashing or recording. Existing task-specific checks need not be rewritten into the comparison helper.
 
 ## Existing checks and commands
 

@@ -200,7 +200,7 @@ def _read_output(path, *, limit=None):
 
 
 def run_command(command, *, cwd, shell=False, env=None,
-                timeout_seconds=DEFAULT_TIMEOUT_SECONDS, log_dir=None, cleanup=None):
+                timeout_seconds=DEFAULT_TIMEOUT_SECONDS, log_dir=None, cleanup=None, include_log_paths=False):
     """Wait for the entry process, then stop any same-group residual work.
 
     Timeout is a tool result, cancellation still propagates. Scripts must wait
@@ -242,6 +242,11 @@ def run_command(command, *, cwd, shell=False, env=None,
         "stderr": errors,
         **cleanup_result,
     }
+    if include_log_paths:
+        result.update(stdout_path=str(stdout_path), stderr_path=str(stderr_path),
+                      stdout_truncated=stdout_truncated, stderr_truncated=stderr_truncated,
+                      cleanup_confirmed=True,
+                      duration_seconds=round(time.monotonic() - started, 3))
     if not completed:
         result.update(
             process_returncode=process.returncode, timed_out=True,
