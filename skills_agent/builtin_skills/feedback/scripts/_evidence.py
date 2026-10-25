@@ -161,9 +161,12 @@ def start_record(root, kind, manifest=None, command=None, scope=None, cwd=None, 
     directory = Path(tempfile.mkdtemp(prefix="run-", dir=root))
     path = directory / "record.json"
     helpers = [{"path": str(absolute(item))} for item in dict.fromkeys([__file__, *helper_paths])]
+    task_file_count = sum(len(manifest[role]) for role in ("subjects", "dependencies", "outputs"))
     record = {"schema_version": 1, "record_id": directory.name, "kind": kind,
               "record_state": "started", "started_at": utc_now(),
               "scope": scope, "dependency_scope": "declared", "manifest": manifest,
+              "task_binding": "declared" if task_file_count else "unbound",
+              "task_file_count": task_file_count,
               "command": {"argv": command, "cwd": str(cwd)},
               "runtime": {"helper_python": sys.executable, "helper_python_version": sys.version,
                           "command_launcher": command_launcher(command, cwd),
@@ -256,11 +259,27 @@ def status_record(path):
                      "reference": baseline, "current": current})
     env = [{"name": name, "relation": "same" if os.environ.get(name) == value else "different"}
            for name, value in record.get("environment", {}).items()]
-    relations = [row["relation"] for row in [*rows, *env]]
-    relation = ("unknown" if not finalized or not rows else
+    def relation_of(items):
+        relations = [row["relation"] for row in items]
+        return ("unknown" if not finalized or not items else
                 "different" if any(item in ("different", "missing") for item in relations) else
                 "unknown" if "unknown" in relations else "same")
+
+    task_rows = [row for row in rows if row["role"] != "helpers"]
+    # Derive coverage from the declaration, including for older schema-v1 records.
+    # An unfinished record may not have completed its first boundary capture yet.
+    task_file_count = sum(len(manifest[role]) for role in ("subjects", "dependencies", "outputs"))
+    bound = task_file_count > 0
+    task_relation = relation_of(task_rows) if bound else "unbound"
+    relation = relation_of([*rows, *env]) if bound else "unknown"
     return {"record": str(path), "record_state": record.get("record_state"),
+            "task_binding": "declared" if bound else "unbound",
+            "task_file_count": task_file_count,
+            "task_relation": task_relation,
+            "helpers_relation": relation_of([row for row in rows if row["role"] == "helpers"]),
+            "summary": ("Only declared task files are covered; version equality is not a correctness verdict."
+                        if bound else "No task files were declared. This record does not bind verification "
+                        "to task content, even if helper files or selected environment values match."),
             "historical_execution": record.get("execution"),
             "historical_observations": record.get("observations"),
             "capture_mode": capture.get("mode"),

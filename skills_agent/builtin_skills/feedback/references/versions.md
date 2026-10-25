@@ -2,6 +2,8 @@
 
 Use a record when later edits, expensive runs, or handoffs make it useful to know which content a check covered. Existing calls work without recording. Record directories belong inside the task's permitted writable locations; there is no required document or directory name.
 
+An arbitrary command recorded without task files is **unbound**. It can retain execution logs and helper identities, but does not say which task content was verified. Content checks add their actual subjects automatically; commands need explicit subjects, dependencies or outputs. Selected environment variables alone do not bind task files.
+
 ## Existing checks and commands
 
 ```sh
@@ -48,6 +50,8 @@ For arbitrary commands, exit zero remains execution success with `verdict=not_re
 ## Reading current status
 
 `status` reads current versions and never runs the recorded command. It keeps the historical execution/check result alongside `current_relation` and per-file `same`, `different`, `missing` or `unknown` values. A started record remains unknown. Compare these with `boundary_relation` and `capture_mode`; matching current files does not strengthen a historically uncertain run.
+
+`task_binding` is `declared` or `unbound`, with `task_file_count` showing the coverage. `task_relation` compares only declared task files; `helpers_relation` reports helper versions separately. For an unbound record, `task_relation` is `unbound` and `current_relation` is `unknown`, even when the helpers match. With declared task files, `current_relation` retains the aggregate relation including helpers and selected environment. These fields also work for older schema-v1 records without rewriting them. They do not convert a historical failure into success or certify that declared files are the complete dependency set.
 
 For directly consumed subjects or dependencies, the reference is the consumed bytes. Otherwise command inputs use the pre-run version, with the boundary relation retained; outputs use the observed post-run version. This also distinguishes a copied fixture or parsed experiment specification from an original file that changed before execution began. Symlink declarations retain their link targets rather than silently watching only a former resolved file.
 

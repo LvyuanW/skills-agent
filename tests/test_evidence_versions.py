@@ -171,6 +171,46 @@ class EvidenceVersionsTests(unittest.TestCase):
         for handle in handles:
             evidence.finish_record(handle, {"exit_code": 0})
 
+    def test_unbound_command_does_not_claim_task_versions_unchanged(self):
+        result, output = self.cli("feedback.py", "run", "--log-dir", self.root / "logs",
+                                  "--record-dir", self.records, "--", sys.executable, "-c",
+                                  f"from pathlib import Path; print(Path({str(self.subject)!r}).read_text())")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.subject.write_text('{"x":99}')
+        record = Path(output["record"])
+        status = evidence.status_record(record)
+        self.assertEqual(status["task_binding"], "unbound")
+        self.assertEqual(status["task_file_count"], 0)
+        self.assertEqual(status["task_relation"], "unbound")
+        self.assertEqual(status["helpers_relation"], "same")
+        self.assertEqual(status["current_relation"], "unknown")
+        # Existing schema-v1 records, before the coverage fields were added, remain readable.
+        old = json.loads(record.read_text())
+        old.pop("task_binding")
+        old.pop("task_file_count")
+        record.write_text(json.dumps(old))
+        self.assertEqual(evidence.status_record(record)["task_binding"], "unbound")
+
+    def test_task_versions_are_separate_from_helper_or_environment_changes(self):
+        with patch.dict(os.environ, {"VERSION_TEST_SETTING": "before"}):
+            _, output = self.run_command("pass", subjects=[str(self.subject)],
+                                          environment=["VERSION_TEST_SETTING"])
+        with patch.dict(os.environ, {"VERSION_TEST_SETTING": "after"}):
+            status = evidence.status_record(output["record"])
+        self.assertEqual(status["task_binding"], "declared")
+        self.assertEqual(status["task_file_count"], 1)
+        self.assertEqual(status["task_relation"], "same")
+        self.assertEqual(status["helpers_relation"], "same")
+        self.assertEqual(status["current_relation"], "different")
+
+    def test_started_record_retains_declared_scope_before_capture(self):
+        handle = evidence.start_record(self.records, "run", {"subjects": [str(self.subject)]})
+        handle["record"]["capture"]["before"] = []
+        evidence.atomic_json(handle["path"], handle["record"])
+        status = evidence.status_record(handle["path"])
+        self.assertEqual(status["task_binding"], "declared")
+        self.assertEqual(status["task_relation"], "unknown")
+
     def test_cwd_and_standalone_installed_style_scripts(self):
         standalone = self.root / "copied scripts"
         standalone.mkdir()

@@ -1,13 +1,15 @@
 ---
 name: investigation
 description: >-
-  Use to resolve conflicting evidence or uncertain causes with discriminating
-  observations, or to capture and locate source evidence with version and completeness
-  records. Skip straightforward lookups needing no source capture or comparison,
-  routine edits, and conversation-history retrieval assigned to the history skill.
+  Resolve competing explanations with observations that distinguish them, or locate
+  exact source passages with ambiguous-match and version checks. Useful when choosing
+  a source or method that actually matches the input, or reusing citations after sources
+  change. Simple lookups need no capture workflow; conversation history uses the history skill.
 ---
 
 Choose an observation that can distinguish the plausible explanations, including that the suspected problem is absent. Check that an experiment reaches its intended condition. For a custom measurement, identify the object, unit, denominator and method; check a known-answer input or inspect a sample before relying on it. A proxy measurement alone does not establish the inferred cause.
+
+Useful distinctions include the configured runtime versus the library actually executing, a method for the same dataset/version versus a merely similar example, and two explanations that fit the same aggregate metric but predict different individual observations. A second implementation can share the first one's mistaken measurement definition. Source matching and targeted execution can be more informative than another agreement check; neither guarantees that one explanation is uniquely correct.
 
 Retain source locations and relevant versions with observations. Read enough context to assess contradictory evidence; a filtered sample or failed search does not prove absence. Keep observations, assumptions and conclusions distinct. A verified quotation establishes its source, not that it supports the attached conclusion: check the claim's scope, alternative explanations and any inference from correlation to cause. Obtain a discriminating observation or narrow the claim when support is insufficient. Stop when further checks would not change the decision. Ordinary source lookup needs no elaborate investigation. Conversation history follows its assigned delegated retrieval route.
 

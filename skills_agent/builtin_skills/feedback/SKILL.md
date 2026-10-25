@@ -1,13 +1,22 @@
 ---
 name: feedback
 description: >-
-  Use when the next decision needs actual execution or artifact evidence, including
-  bounded command runs with full logs, focused input/output experiments, saved-data checks, or rendering
-  HTML/SVG. All image attachments also require the images skill. Skip pure planning or lookups that
-  require no execution or artifact verification.
+  Compare saved results without rerunning work, test a real entry point on a small input,
+  or record which input, code and output versions a check covered before reusing it after edits.
+  Also acquire command logs and render HTML/SVG. Use when these helpers reduce work beyond an
+  existing test or simple shell command; image attachments use the images skill.
 ---
 
-Choose the observation needed for the next decision: actual execution for behavior, saved text or values for content, and pixels for appearance. A successful write, file path or screenshot command alone does not establish the contents or visual result.
+Use the shortest route that answers the current question. Existing tests and task-specific scripts remain appropriate; adopting these helpers is not a completion requirement. Comparisons need an independent expectation or a justified relationship, not merely a second copy of the produced answer.
+
+| Current need | Entry point |
+| --- | --- |
+| Compare existing outputs without executing their producers again | `experiment.py compare --spec - --root DIR` accepts a JSON specification on stdin; see [experiments](references/experiments.md) for selectors and tolerances |
+| Try a small input through the actual program | `experiment.py run --spec - --root DIR` supplies fresh fixtures and outputs; reuse a suitable existing test instead when simpler |
+| See which versions an earlier check covered | `feedback.py status --record RECORD`; it reads versions, never reruns the check |
+| Keep a check or command attributable across later edits | Add `--record-dir DIR` and, for arbitrary commands, declare relevant files with `--manifest JSON`; see [versions](references/versions.md) |
+
+An execution failure or unavailable reference is not an observed algorithmic difference. A record without declared task files is **unbound**, even when its helper files are unchanged. Recording does not discover dependencies, validate expectations, or decide whether another run is necessary.
 
 [scripts/feedback.py](scripts/feedback.py) supplies reference acquisition methods. Reuse them, read/adapt the source, or write task-specific checks when appropriate. Direct invocation requires Python 3.11 or newer and an absolute script path resolved from this SKILL.md; variables do not persist across shell calls.
 
@@ -20,7 +29,7 @@ Choose the observation needed for the next decision: actual execution for behavi
 
 `run` executes argument lists directly; use `sh -lc '...'` explicitly for shell syntax. `run` and `render` preserve failing status and return 124 on timeout. Inspect `timed_out`, actual `exit_code`, acquisition diagnostics and truncation. A tail may omit the cause; read the complete logs as needed. The helpers do not install dependencies.
 
-When a result needs to remain attributable across edits or later work, `run` and `check.py` accept optional `--record-dir DIR`, `--manifest JSON` and `--scope TEXT`. `feedback.py status --record RECORD` compares current declared versions without rerunning anything. Read [references/versions.md](references/versions.md) for the manifest and evidence limits. Recording is optional: a changed file is a reason to assess affected evidence, not an automatic failure or instruction to rerun.
+`run` and `check.py` accept optional `--record-dir DIR`, `--manifest JSON` and `--scope TEXT`. A content check binds the bytes it reads; an arbitrary command only covers declared files at execution boundaries. A changed file is a reason to assess affected evidence, not an automatic failure or instruction to rerun.
 
 Before a substantial computation with unknown cost, try a small representative input that reaches the expensive work. Check correctness and measure runtime or progress before scaling up; an extrapolation is an estimate, and a pilot does not replace the required full result. Choose the sample size and a meaningful stopping condition from the task, such as an execution deadline, iteration limit, convergence criterion or interval without progress. The `run --timeout` limit stops command execution; set it for the planned work rather than assuming one duration fits every task.
 
