@@ -1,14 +1,18 @@
 ---
 name: acceptance-criteria
 description: >-
-  Use when a persistent requirements-and-evidence record would help
-  coordination or later continuation, or when the user requests one.
-  Reuse existing task records. Skip when the requirements remain clear
-  without a separate document.
+  Keep requirements and supporting evidence in a task record when the user asks
+  for one, or when it would help delegation or later continuation. Reuse existing
+  records. Skip when the requirements are already clear and a separate record
+  would not help the work.
 ---
 
-Preserve original requirements, accepted corrections and source references in an existing task record, or create a concise document when useful. Keep necessary implications, assumptions, open questions and optional improvements distinguishable. Completion conditions should make the requirements observable, not expand the requested outcome.
+# Keep requirements and evidence available
 
-Record relevant checks and evidence without turning examples into a universal checklist. Update the record when requirements change or an interpretation is corrected, retaining the reason and source. Do not weaken a valid requirement to fit the output, or retain an unsupported criterion merely because it was written down.
+Use this skill when a shared or lasting record will help people or agents continue the same task. It records the requirements already available; it does not discover hidden evaluation rules or add new goals.
 
-Delegated work reuses the parent's record. Recover missing original requirements through the existing history-retrieval route rather than presenting a summary as an original quote. Respect file-creation restrictions; a separate document is not a prerequisite to authorized work.
+Save the original requirements, accepted corrections and source references in an existing task record. Create a concise document only when needed and allowed. Keep required work, necessary implications, assumptions, open questions and optional improvements distinct. Describe how a requirement can be observed without expanding what the user asked for.
+
+Add relevant checks and their evidence. Examples are not a checklist for every task. When a requirement changes or an interpretation is corrected, update the record and keep the reason and source. Do not weaken a valid requirement to fit the current output. Remove a condition that has no basis in the task, even if it was recorded earlier.
+
+Delegated work should reuse the parent's record. Recover missing original requirements through the assigned history-retrieval route; do not present a summary as an original quote. Respect restrictions on creating files. A separate requirements document is not a prerequisite to work that is already authorized.

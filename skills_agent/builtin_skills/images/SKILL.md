@@ -1,25 +1,33 @@
 ---
 name: images
 description: >-
-  Must use whenever attaching any image to a model request, including existing
-  files, downloaded images, generated images, screenshots and rendered pages.
-  Prepare at most ten images per request, each at most 1 MB; compose needed
-  images when there are more than ten, and retain URLs for later inspection.
+  Prepare and attach images for model inspection. Required whenever a model
+  request includes an image, whether existing, downloaded, generated, or rendered.
+  Keep each image within 1 MB and each request within ten images; preserve source
+  URLs. Does not handle PDF or other file attachments or provide an image-generation model.
 ---
 
-Use this skill for every image attachment. **Declare images in the shell tool's `images` parameter.** Saving a file, printing its path or printing helper metadata does not replace that declaration. [scripts/images.py](scripts/images.py) prepares bounded files and composition metadata; it is not a second attachment step. Resolve its absolute path from this SKILL.md. Python 3.11 or newer and Pillow are required for preparation, composition and in-memory generation.
+Use this skill whenever you attach an image to a model request, including a screenshot, rendered page, generated image, or existing file. Use its preparation helpers when those files need compression or composition. A task that merely mentions images does not require this workflow. This skill does not read PDFs as documents or provide an image-generation model.
 
-`images` is an array of `{ "path": "/absolute/host/image.png", "label": "optional description", "source_url": "optional original URL" }`. `path` also accepts a local `file://` URL, including a saved session snapshot URL. It refers to the **host filesystem**, not a container-only path; download HTTP(S) sources first. This parameter accepts images, not PDF or arbitrary file attachments.
+**Declare each attachment in the shell tool's `images` parameter.** Saving a file or printing its path or metadata does not attach it. [scripts/images.py](scripts/images.py) prepares files within the limits and supplies composition metadata. Running it is not a separate attachment step. Resolve its absolute path from this SKILL.md. Preparation, composition, and generation in memory require Python 3.11 or newer and Pillow.
 
-The runtime reads, validates and snapshots declared files **after the command finishes**. For a background `task`, it registers the declarations at launch and attaches the resulting images with the completion result, not the startup receipt. The files may therefore be created by the command. Explicit `images`, including `[]`, takes precedence over legacy stdout feedback. Stdout can contain progress logs, multiple JSON results or any other text without changing the declared images. Use `images: []` when preparing files without sending them.
+`images` is an array of `{ "path": "/absolute/host/image.png", "label": "optional description", "source_url": "optional original URL" }`. The `path` must point to a file on the host. It may be an absolute path or a local `file://` URL, including a saved session snapshot URL. A container-only path cannot be read from the host. Download HTTP(S) sources before declaring them. This parameter accepts image files; it does not accept PDFs or other file attachments.
 
-Each model request may contain **at most 10 images in total**, with **each encoded image file at most 1,000,000 bytes (1 MB)** before base64 encoding. Count all tool results and user attachments in that request; separate tool calls do not increase the allowance. Select only images needed for the current decision. **If more than ten are needed together, compose them into one or several labeled images within the same limits.**
+The runtime reads, validates, and snapshots the declared files **after the command finishes**, so the command may create them. For a background `task`, the runtime registers the paths at launch and attaches images to the completion result. The startup receipt has no image payload.
 
-**Do not produce new image files larger than 1 MB.** Generate pixels in memory and use `save_bounded` to verify encoded bytes before writing. For existing oversized images, create a compressed copy with `prepare`, preserving the original. The helpers try bounded compression and proportional resizing, write only a verified final encoding, and fail explicitly if they cannot fit. Prefer JPEG/WebP for photos and PNG for text/diagrams where useful; inspect whether important detail remains readable.
+An explicit `images` field takes precedence over legacy stdout feedback, including when it is `[]`. Progress logs, JSON results, or other stdout text do not change those declarations. Use `images: []` when preparing files without sending them.
+
+Each model request may contain **at most 10 images in total**. Each encoded image file must be **at most 1,000,000 bytes (1 MB)** before base64 encoding. Count both tool results and user attachments in the request. Splitting attachments across tool calls does not increase the limit.
+
+Select images that help with the current decision. **If more than ten source images are needed together, compose them into one or more labeled images that satisfy the same limits.**
+
+**Do not create new image files larger than 1 MB.** Generate pixels in memory and use `save_bounded` to check the encoded size before writing. If an existing image is oversized, use `prepare` to make a compressed copy and preserve the original.
+
+The helpers try compression and proportional resizing. They write the file only after checking its encoded size, and report failure if it cannot fit. JPEG or WebP often suit photos; PNG can suit text and diagrams. Check that the chosen format and size preserve the details you need.
 
 ## Existing or historical images
 
-For a file already within the limit, declare it directly. `true` is sufficient when there is no preparation to run:
+Declare a file directly if it already meets the limits. Use `true` as the command when no preparation is needed:
 
 ```json
 {
@@ -30,7 +38,9 @@ For a file already within the limit, declare it directly. `true` is sufficient w
 }
 ```
 
-The runtime supplies the pixels and immutable snapshot URL in the same model request, retaining an optional original `source_url`. Save these references with visual findings. Every assistant response consumes that round's images, including a response that requests more tools; later requests retain their references, not their pixels. To inspect an older image again, declare its saved snapshot URL/path in a new `images` array. No upload or public hosting is required.
+The runtime supplies the pixels and an immutable snapshot URL in the same model request. It also keeps the original `source_url` when provided. Save these references with the visual findings so the image can be retrieved later.
+
+Images are visible for one assistant response, including a response that requests more tools. Later requests retain the references but not the pixels. To inspect an older image again, declare its saved snapshot URL or path in a new `images` array. No upload or public hosting is required.
 
 ## Generate an image while printing logs
 
@@ -64,7 +74,7 @@ Run it and declare the output once; do not invoke `images.py attach` afterward:
 
 ## Prepare several files, then declare the selected images
 
-`prepare` accepts a local path or `file://` URL. It preserves the original, applies EXIF orientation and uses the first frame of animated inputs. Output extension selects JPEG, PNG or WebP. Keep source/sent dimensions, scale and byte counts when interpreting coordinates.
+`prepare` accepts a local path or `file://` URL. It preserves the original, applies EXIF orientation, and uses the first frame of an animated image. The output extension selects JPEG, PNG, or WebP. Retain the original and sent dimensions, scale, and byte counts when interpreting coordinates.
 
 ```json
 {
@@ -91,13 +101,13 @@ For more than ten needed sources, compose a numbered grid and declare its single
 }
 ```
 
-Composition metadata maps panel numbers to source URLs, dimensions, panel/image boxes and coordinate scales. Boxes are `[left, top, right, bottom]` pixel edges. Subtract the image-box origin and multiply by `scale_to_source` to recover EXIF-oriented source coordinates. A grid is an overview: if details are too small, crop the source and declare that view next.
+Composition metadata records each panel's source URL, dimensions, panel and image boxes, and coordinate scale. Boxes use `[left, top, right, bottom]` pixel edges. To recover EXIF-oriented source coordinates, subtract the image-box origin and multiply by `scale_to_source`. If a grid makes important details too small, crop the source and attach that view next.
 
-For HTTP(S) images, use the [investigation fetch helper](../investigation/scripts/fetch.py), check successful status and `response_body_complete`, then prepare its actual returned `body_path`. Set the image declaration's `source_url` to the original HTTP(S) URL. The helpers do not upload images or install dependencies.
+For an HTTP(S) image, use the [investigation fetch helper](../investigation/scripts/fetch.py). Check the response status and `response_body_complete`, then prepare the file at the returned `body_path`. Set `source_url` to the original HTTP(S) URL. These helpers do not upload images or install dependencies.
 
 ## Render or wait for an image
 
-For local HTML/SVG, the [feedback render helper](../feedback/SKILL.md) creates a bounded screenshot; declare that output in the same shell call:
+To inspect local HTML or SVG, use the [feedback render helper](../feedback/SKILL.md) to create a screenshot within the size limit. Declare the output in the same shell call:
 
 ```json
 {
@@ -108,7 +118,7 @@ For local HTML/SVG, the [feedback render helper](../feedback/SKILL.md) creates a
 }
 ```
 
-For a long computation, read the [background-tasks skill](../background-tasks/SKILL.md), then register the future image with the job:
+If a computation needs to continue after its shell call returns, read the [background-tasks skill](../background-tasks/SKILL.md). Register the future image with the job:
 
 ```json
 {
@@ -121,4 +131,4 @@ For a long computation, read the [background-tasks skill](../background-tasks/SK
 }
 ```
 
-The script must save its final bounded image before exiting. Wait for the actual completion result and check image-acquisition errors; launch success does not prove that the image exists or was attached. Saving or attaching an image also does not establish visual correctness: inspect the supplied pixels before making visual claims.
+The script must save its final image within the size limit before exiting. Read the actual completion result and check for image acquisition errors. A successful launch does not prove that the image exists or was attached. Inspect the supplied pixels before making claims about appearance; saving or attaching the file alone does not verify it.

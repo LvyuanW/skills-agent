@@ -157,3 +157,41 @@ Make the smallest change that satisfies the condition while preserving existing 
 
 For executable checks, adapt or reuse [scripts/run_check.py](scripts/run_check.py) or [scripts/run_check.sh](scripts/run_check.sh), or write the task's own probe. Both references take a log path followed by a command and its arguments, keep complete combined output, show a bounded tail and preserve the command's exit status. They do not add an execution timeout. When that is needed, the feedback skill's `run` operation provides a time limit and separate full stdout/stderr logs. Inspect the relevant log range when a tail cannot distinguish setup failure from the behavior under test.
 ````
+
+## v4 · 2026-10-27 · 直接英文表达与明确使用边界
+
+来源：本轮工作区未提交；skills_agent/builtin_skills/code-repair/SKILL.md。
+
+- 发现的问题：部分指令较抽象或过长，使用与跳过条件需要更容易区分。
+- 本版本目标：使用清楚、自然、直接的英文说明动作与边界；保留实质约束、原脚本接口和代码示例。六个实验 worktree 使用同一正文。
+- 本版本效果：技能格式、本地引用和原有代码示例核对通过；已完成技能路由场景审阅。未运行新一轮真实模型测评，行为与分数效果待验证。
+
+### 完整原文
+
+````text
+---
+name: code-repair
+description: >-
+  Diagnose and fix a reported or observed code failure, then verify the repair
+  with a reproducer or focused check. Skip new feature development,
+  cosmetic changes and refactoring without evidence of a defect.
+---
+
+## When to use this skill
+
+Use this skill when a reported or observed failure needs diagnosis and repair. A possible improvement alone does not establish a defect. Handle new features, cosmetic edits and refactoring without a demonstrated defect through their normal workflows.
+
+## Find the cause and check the repair
+
+Establish the expected behavior from the reported failure and the existing contract. Do this independently of the proposed fix. Trace the relevant path from input to output until observations support a cause.
+
+Choose an existing check, a focused probe or a regression test that reaches the failure and distinguishes the original behavior from the repaired behavior. A missing dependency or failed setup is not a reproduction of the suspected defect. Exercise the actual affected interface or behavior. If you substitute an external dependency, explain what that substitute cannot verify.
+
+Make the smallest change that fixes the defect while preserving existing contracts. Check the affected behavior after the change. Ask whether the check could still pass if the defect were present; if so, improve that check. Keep expected values independent of the implementation. Broaden checking only to address relevant remaining uncertainty, and report any gap in reproduction or verification.
+
+## Run checks and retain their output
+
+You can use or adapt [scripts/run_check.py](scripts/run_check.py) or [scripts/run_check.sh](scripts/run_check.sh), or write a probe for the task. Both helpers take a log path followed by a command and its arguments. They retain complete combined output, show a bounded tail and preserve the command's exit status.
+
+The helpers do not add an execution timeout. When a time limit is needed, the feedback skill's `run` operation provides one and saves separate full stdout/stderr logs. Read the relevant log range when the tail does not show whether the failure came from setup or from the behavior being tested.
+````

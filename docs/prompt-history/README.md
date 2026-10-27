@@ -2,7 +2,7 @@
 
 每个独立提示词或模型输入模板维护一份文档，保留版本原文，并说明发现的问题、本版本目标、本版本效果。建档日期为 2026-10-11，时区为 Asia/Shanghai。
 
-2026-10-26 的六分支实验共同使用 [工作原则 v1](agent-working-principles-20261026.md)，替换系统提示词开头七段。后续协议及五个方法分支各自的 skill 预加载正文不变；旧完整提示词归档继续保留，当前共同段落以该独立记录为准。
+六个实验分支自 2026-10-27 起共同使用 [工作原则 v3](agent-working-principles-20261026.md)，以自然、直接的英文表达用户确认的八节原则。全部技能及配套参考使用共享的英文正文，明确适用与跳过条件；旧版本继续保留。除主动注入选择外，系统模板与技能内容逐字一致。
 
 ## 版本约定
 
@@ -25,7 +25,7 @@
 
 | 文档 | 源位置或用途 | 当前版本 |
 | --- | --- | --- |
-| [主工作提示词](agent-system.md) | `Agent._system()`；含共用工作规则及 subagent 可用时的沟通、委派、review 段 | v14 |
+| [主工作提示词](agent-system.md) | `Agent._system()`；共同原则、工具协议及按配置选择的共享skill正文 | v17（共享英文版） |
 | [子 Agent 最终报告](subagent-report.md) | `Agent._subagent()` 的公共角色追加指令 | v1 |
 | [历史检索子 Agent 角色](history-retrieval-role.md) | `history=True` 的专用角色追加指令 | v1 |
 | [子 Agent 任务输入](subagent-task-input.md) | 子任务名称、任务文本、只读快照和原生附件标签 | v1 |
@@ -39,32 +39,33 @@
 | [shell 工具说明](tool-shell.md) | 宿主机执行说明及参数描述 | v6 |
 | [sandbox 工具说明](tool-sandbox.md) | Docker 执行说明及参数描述 | v2 |
 | [subagent 工具说明](tool-subagent.md) | 委派范围、输入、报告和历史模式说明 | v1 |
-| [workspace 技能](skill-workspace.md) | `builtin_skills/workspace/SKILL.md` | v4 |
-| [resource-management 技能](skill-resource-management.md) | `builtin_skills/resource-management/SKILL.md` | v1 |
-| [investigation 技能](skill-investigation.md) | `builtin_skills/investigation/SKILL.md` | v3 |
-| [code-repair 技能](skill-code-repair.md) | `builtin_skills/code-repair/SKILL.md` | v3 |
-| [file-editing 技能](skill-file-editing.md) | `builtin_skills/file-editing/SKILL.md` | v3 |
-| [file-editing 渐进编辑示例](skill-file-editing-incremental-examples.md) | `builtin_skills/file-editing/references/incremental-editing.md` | v2 |
-| [review 技能](skill-review.md) | `builtin_skills/review/SKILL.md` | v2 |
-| [images 技能](skill-images.md) | `builtin_skills/images/SKILL.md` | v3 |
-| [feedback 技能](skill-feedback.md) | `builtin_skills/feedback/SKILL.md` | v8 |
-| [feedback 跨回合反馈示例](skill-feedback-loop.md) | `builtin_skills/feedback/references/feedback-loop.md` | v4 |
-| [feedback 验收检查参考](skill-feedback-acceptance.md) | `builtin_skills/feedback/references/acceptance-checks.md` | v2 |
-| [workspace 定位提取参考](skill-workspace-extraction.md) | `builtin_skills/workspace/references/extraction.md` | v2 |
-| [后台任务技能](skill-background-tasks.md) | `builtin_skills/background-tasks/SKILL.md` | v7 |
-| [process-management 技能](skill-process-management.md) | `builtin_skills/process-management/SKILL.md` | v8 |
-| [process-management 跨回合参考](skill-process-management-across-turns.md) | `builtin_skills/process-management/references/across-turns.md` | v3 |
+| [要求与证据记录技能](skill-acceptance-criteria.md) | builtin_skills/acceptance-criteria/SKILL.md；按需保存可见要求与证据 | v2（共享英文版） |
+| [workspace 技能](skill-workspace.md) | `builtin_skills/workspace/SKILL.md` | v5（共享英文版） |
+| [resource-management 技能](skill-resource-management.md) | `builtin_skills/resource-management/SKILL.md` | v4（共享英文版） |
+| [investigation 技能](skill-investigation.md) | `builtin_skills/investigation/SKILL.md` | v7（共享英文版） |
+| [code-repair 技能](skill-code-repair.md) | `builtin_skills/code-repair/SKILL.md` | v4（共享英文版） |
+| [file-editing 技能](skill-file-editing.md) | `builtin_skills/file-editing/SKILL.md` | v4（共享英文版） |
+| [file-editing 渐进编辑示例](skill-file-editing-incremental-examples.md) | `builtin_skills/file-editing/references/incremental-editing.md` | v3（共享英文版） |
+| [images 技能](skill-images.md) | `builtin_skills/images/SKILL.md` | v4（共享英文版） |
+| [feedback 技能](skill-feedback.md) | `builtin_skills/feedback/SKILL.md` | v12（共享英文版） |
+| [feedback 跨回合反馈示例](skill-feedback-loop.md) | `builtin_skills/feedback/references/feedback-loop.md` | v5（共享英文版） |
+| [feedback 验收检查参考](skill-feedback-acceptance.md) | `builtin_skills/feedback/references/acceptance-checks.md` | v3（共享英文版） |
+| [workspace 定位提取参考](skill-workspace-extraction.md) | `builtin_skills/workspace/references/extraction.md` | v3（共享英文版） |
+| [后台任务技能](skill-background-tasks.md) | `builtin_skills/background-tasks/SKILL.md` | v8（共享英文版） |
+| [process-management 技能](skill-process-management.md) | `builtin_skills/process-management/SKILL.md` | v9（共享英文版） |
+| [process-management 跨回合参考](skill-process-management-across-turns.md) | `builtin_skills/process-management/references/across-turns.md` | v4（共享英文版） |
 | [后台作业完成观察](background-job-result.md) | `BackgroundResults.drain()` 的运行时结果包装 | v1 |
 | [后台作业监管未确认观察](background-job-uncertainty.md) | `BackgroundResults._report_uncertainty()` 的可恢复错误包装 | v1 |
 | [反馈图片来源标签](feedback-image-label.md) | `feedback_content()` 的源文件与会话快照标签 | v2 |
 | [图片引用](image-reference.md) | `images.image_reference()` 与工作上下文的图片 URL/事件引用 | v1 |
 | [工具附件观察包装](tool-feedback-observation.md) | 请求中工具产生的只读观察与附件来源标签 | v1 |
-| [history 技能](skill-history.md) | `context/history_skill/SKILL.md`，包含旧目录历史 | v2 |
+| [history 技能](skill-history.md) | `context/history_skill/SKILL.md`，包含旧目录历史 | v3（共享英文版） |
 
 ## 已停用的提示词
 
 | 文档 | 原用途 | 停用状态 |
 | --- | --- | --- |
+| [review 技能](skill-review.md) | 旧独立审查技能 | 当前运行时未提供；保留历史归档 |
 | [read_skill 工具说明](tool-read-skill.md) | 初版独立技能读取工具 | `5fffe14` 已移除 |
 | [已执行命令摘录标签](context-command-excerpt.md) | 旧上下文中的历史命令来源标签 | `0858689` 已移除 |
 | [摘要质量审核](summary-review.md) | 独立模型审核摘要 | 当前未提交工作区已移除 |
@@ -72,6 +73,21 @@
 | [摘要审核历史读取工具](summary-review-tool.md) | 审核调用专用的 `read_history` 说明 | 当前未提交工作区已移除 |
 | [摘要修复问题反馈模板](summary-review-feedback.md) | 向模型提供程序产生的具体引用问题 | 当前未提交工作区已移除 |
 | [摘要审核工具反馈](summary-review-tool-feedback.md) | 向审核模型说明工具调用限制或失败 | 当前未提交工作区已移除 |
+
+## 共享内容与显式注入选择
+
+2026-10-27 后续统一：六个 worktree 的代码、测试、全部 skill 正文和提示词记录一致，仅 `skills_agent/system_skill.py` 中的 `SYSTEM_SKILL_NAME` 值不同。共同工作原则现为 v3 英文版，全部技能及配套参考也已按直接英文表达和使用边界统一更新。旧分支归档原文完整保留，同号历史版本以来源分支区分；各文档末尾及上表列出当前共享版本。
+
+| worktree | 显式注入选择 |
+| --- | --- |
+| 00-working-principles-baseline | `None`（关闭预载，仍可按需读取skill） |
+| 01-data-semantics | `investigation` |
+| 02-discriminating-experiments | `investigation` |
+| 03-feedback-conflicts | `feedback` |
+| 04-discriminating-verification | `feedback` |
+| 05-measured-resources | `resource-management` |
+
+01与02当前配置相同，03与04当前配置相同；名称保留用于对应历史实验，不再代表不同正文。
 
 ## 维护方式
 

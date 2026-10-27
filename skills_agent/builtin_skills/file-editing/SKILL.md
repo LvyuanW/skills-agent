@@ -1,15 +1,23 @@
 ---
 name: file-editing
 description: >-
-  Use for precise changes to existing text or code files that must preserve
-  surrounding contents, line endings and file mode, using unique anchors and
-  inspecting the saved change. Skip simple standalone file creation, read-only
-  inspection and binary-file editing.
+  Make precise changes to existing text or code files while preserving unrelated
+  content, line endings and file mode. Use current contents and unique anchors,
+  then inspect the saved change. Skip simple standalone file creation, read-only
+  inspection and edits to binary contents.
 ---
 
-Base an edit on the current saved contents. Identify the exact region to change and preserve unrelated content. If a match is missing or ambiguous, inspect the file and refine the match instead of reconstructing it from memory. Group related edits when their inputs are known; inspect a result before choosing a dependent edit.
+## When to use this skill
 
-[scripts/edit.py](scripts/edit.py) implements these operations. Read its source to learn or adapt the method, call it directly when useful, or write task-specific editing code that preserves the same relevant properties. Simple file creation does not require a helper. The reference helper requires Python 3.11 or newer; resolve its absolute path from this SKILL.md in each independent shell call.
+Use this skill for targeted changes to existing text or code, especially when the surrounding content must stay intact. Simple standalone file creation and read-only inspection need no editing helper. Use a format-specific method to edit binary contents.
+
+## Edit the current file
+
+Read the current saved contents and identify the exact region to change. Preserve unrelated content. If a match is missing or ambiguous, inspect the file again and refine the match; do not reconstruct the file from memory.
+
+Group related edits when their inputs are already known. When one edit depends on another's result, inspect that result before choosing the next edit.
+
+[scripts/edit.py](scripts/edit.py) provides the operations below. You can use it directly, read and adapt its source, or write task-specific editing code that preserves the same relevant properties. The helper requires Python 3.11 or newer. Resolve its absolute path from this SKILL.md in each independent shell call.
 
 | Operation | Content arguments |
 | --- | --- |
@@ -25,6 +33,12 @@ For example, after observing a unique current string:
 python3 /absolute/skill/scripts/edit.py replace notes.txt --old 'Original paragraph.' --new 'Revised paragraph.'
 ```
 
-The helper requires nonempty literal old strings and anchors that occur exactly once, counting overlaps. It edits regular, nonsymlink UTF-8 files without NUL bytes; `delete-file` also accepts binary files. Parent directories must exist. Writes use a temporary file and preserve untouched contents, line endings and mode. Separate operations are not one transaction. A heredoc adds a final newline; use inline text or a payload file when that distinction matters.
+Old strings and anchors must be nonempty literal text that occurs exactly once, including overlapping matches. The helper edits regular UTF-8 files without NUL bytes; it does not edit symlinks. The `delete-file` operation also accepts binary files. Parent directories must already exist.
 
-Inspect the exit status and saved-content feedback. The returned excerpt may be truncated; its `location` line and column locate a targeted follow-up read. Choose `result_mode: direct` for exact file text. Read [references/incremental-editing.md](references/incremental-editing.md) for examples of continuing from saved edits and resolving ambiguous matches; their sequence is not a required task plan.
+Writes use a temporary file and preserve untouched contents, line endings and file mode. Separate operations are not a single transaction. A heredoc adds a final newline; use inline text or a payload file when that difference matters.
+
+## Check the saved result
+
+Inspect the exit status and the returned saved content. If the excerpt is truncated, use its `location` line and column for a targeted follow-up read. Choose `result_mode: direct` when you need exact file text.
+
+Read [references/incremental-editing.md](references/incremental-editing.md) when you need examples of continuing from saved edits or resolving ambiguous matches. The examples illustrate these operations; they do not prescribe a sequence for every task.

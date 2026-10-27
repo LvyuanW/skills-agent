@@ -1,49 +1,49 @@
-# Check the requirement at its observable boundary
+# Check the result where the requirement applies
 
-Select a condition derived from the task or established contract that distinguishes an acceptable result from an unacceptable one. Obtain the actual saved artifact or execution result, then check it. A check covers only its stated condition; it does not certify the whole task. Simple work needs a relevant check, not a new test suite or a mandatory acceptance file.
+Use this reference when a known task requirement can be checked against a saved file or an execution result. Choose the expected condition from the task or established contract, then inspect the actual result. A check supports only the condition it covers. It does not prove that the whole task is complete. Simple work does not need a new test suite or a separate requirements file.
 
-Resolve each helper path from the loaded skill directory. These are separate shell actions with returned results between them; each action establishes its own variables.
+Resolve helper paths from the loaded skill directory. The examples below are separate shell calls. Read a returned result before deciding the next action, and set variables in each call that uses them.
 
 ## Saved data
 
-If the contract requires a nonempty output file, observe that condition directly:
+If the task requires a nonempty output file, check that condition directly:
 
 ```sh
 check='/absolute/path/from/skill-catalog/feedback/scripts/check.py'
 python3 "$check" file result.json --min-bytes 1
 ```
 
-Successful acquisition establishes that a regular nonempty file exists. It does not establish valid JSON or correct values. If the agreed contract requires a specific nested result, inspect that value:
+A successful check proves that a regular, nonempty file exists. It does not prove that the JSON or its values are correct. If the task requires a particular nested value, check it:
 
 ```sh
 check='/absolute/path/from/skill-catalog/feedback/scripts/check.py'
 python3 "$check" json result.json --pointer /summary/processed --equals-json '12'
 ```
 
-The expected 12 must come from the actual input or the contract, not from copying the program's answer. A failure reports the observed value or missing path. Compare the difference and inspect its cause before modifying the implementation. RFC 6901 pointers use `~1` for `/`, `~0` for `~`, and zero-based array indexes. JSON strings in `--equals-json` require JSON quotes, such as `'"ready"'`.
+The expected value, 12 in this example, must come from the input or the contract. Do not copy it from the program's answer. A failure reports the observed value or missing path. Inspect the difference and its cause before changing the implementation. RFC 6901 pointers use `~1` for `/`, `~0` for `~`, and zero-based array indexes. JSON strings in `--equals-json` need JSON quotes, such as `'"ready"'`.
 
-Literal content checks can inspect a required text fragment and an obsolete one:
+For an exact-text requirement, check that the required text is present and obsolete text is absent:
 
 ```sh
 check='/absolute/path/from/skill-catalog/feedback/scripts/check.py'
 python3 "$check" text result.txt --contains 'required literal text' --absent 'obsolete literal text'
 ```
 
-Choose the actual requirement's literals. Returned source positions support later reading; a match does not prove semantic correctness or working behavior.
+Replace these strings with the task's required text. Returned positions help you read the source later. A text match does not prove that the meaning or behavior is correct.
 
 ## Behavior and execution failures
 
-When the requirement concerns behavior, exercise the behavior at its consumer boundary. Use an existing relevant test or a focused executable probe rather than checking whether implementation text contains a desired function name:
+When the requirement concerns behavior, run it through the interface that actually uses it. Use an existing relevant test or a focused executable check. Finding a function name in the source does not show that the behavior works:
 
 ```sh
 feedback='/absolute/path/from/skill-catalog/feedback/scripts/feedback.py'
 python3 "$feedback" run --log-dir .verify/logs -- python3 path/to/existing-check.py
 ```
 
-Replace the command and arguments with the project's relevant executable check or a focused probe of the required behavior; this does not prescribe a language, test framework, or new script.
+Replace the command and arguments with a check suited to the required behavior. This example does not require Python, a particular test framework or a new script.
 
-Inspect the returned status and output. First confirm that the check reached the behavior: a missing module, unavailable service or invalid test setup is an execution gap. An assertion on the actual outcome is behavioral evidence. Read the full saved logs when the bounded tail leaves this distinction uncertain.
+Inspect the returned status and output. First confirm that the check reached the intended behavior. A missing module, unavailable service or invalid test setup means it did not. An assertion about the actual outcome provides evidence about the behavior. Read the full saved logs if the tail does not show which happened.
 
-After a failure, choose the smallest useful next action based on the diagnostic: acquire missing evidence, repair setup, or change the observed faulty behavior. Run the relevant check again after that change. Keep the requirement independent of the implementation. If evidence shows that the check or its interpretation is wrong, correct it against the original requirement and explain the mismatch; do not change an expected value merely to accept the current output.
+After a failure, use the result to choose a focused next action: collect missing evidence, fix the setup or correct the demonstrated defect. Run the relevant check again after the change. Keep the original requirement as the basis for the expected result. If the check or its interpretation is wrong, correct it against that requirement and explain the mismatch. Do not change an expected value just to accept the current output.
 
-When the requirement involves a later read or state transition, observe that actual transition at its relevant boundary. For visual or interactive requirements, inspect the native visual feedback or execute the relevant interaction; data checks alone do not establish those properties. Before claiming completion, compare covered conditions with the original task and identify any remaining unobserved scope.
+If the requirement depends on a later read or a change of state, observe that part of the actual workflow. For appearance, inspect the actual image; for interaction, perform the relevant action. Data checks alone do not establish either. Before claiming completion, compare what was checked with the original task and identify any required conditions that remain unobserved.

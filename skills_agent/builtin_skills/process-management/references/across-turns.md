@@ -1,8 +1,8 @@
 # Manage a job after the shell launch receipt
 
-Start the job using `shell` with `run_in_background=true` and the [background-tasks skill](../../background-tasks/SKILL.md). The helper in this reference observes or stops that existing job; it does not start another one.
+Use these examples when a registered job needs a status check, log inspection, readiness check, wait, or stop. Launch the job with `shell run_in_background=true` and the [background-tasks skill](../../background-tasks/SKILL.md). These management commands operate on that existing job; they do not launch another one.
 
-Replace `/ABS/PROCESS.py` with the resolved helper path. Replace `/ABS/STATE` and `RETURNED_NAME` with the exact `state_dir` and safe internal `name` from the launch receipt. Do not substitute the human-facing `display_name`. Each block below is a separate shell call with `run_in_background=false`.
+Replace `/ABS/PROCESS.py` with the helper's absolute path. Copy `/ABS/STATE` and `RETURNED_NAME` from the receipt's `state_dir` and internal `name`. Do not use `display_name`. Run each command in a separate shell call with `run_in_background=false`, allowing enough time for its configured wait or stop.
 
 Read current ownership and execution state:
 
@@ -34,7 +34,7 @@ Check a task-specific endpoint or result as well; neither the marker nor TCP acc
 python3 /ABS/PROCESS.py wait --state-dir /ABS/STATE --name RETURNED_NAME --timeout 30
 ```
 
-Its timeout only bounds the observation; the job keeps running under its original execution deadline. You can continue independent work and rely on automatic completion delivery rather than repeatedly waiting.
+The wait timeout ends this observation without stopping the job or changing its execution deadline. Continue independent work and rely on automatic completion delivery when another wait would not help decide the next step.
 
 Stop a job no longer needed:
 
@@ -42,4 +42,6 @@ Stop a job no longer needed:
 python3 /ABS/PROCESS.py stop --state-dir /ABS/STATE --name RETURNED_NAME --grace 3 --timeout 10
 ```
 
-Confirm a terminal state. If this observation times out, inspect `status` before proceeding. Complete and verify any dependent deliverables after receiving the runtime's actual job result. A `task` blocks final completion until it has exited or been stopped. A `service` may remain after a successful reply and normal CLI exit: deliver its address and verified behavior together with its job ID, absolute state directory, internal name, logs and this exact stop command. The independent supervisor continues monitoring it; do not restart it merely because a new shell call or Agent turn begins. Benchmark rejects services.
+Check that the job reached a terminal state and that cleanup is confirmed. If the stop observation times out, inspect `status` before proceeding. After receiving the actual job result, finish and check any dependent deliverables.
+
+A `task` prevents the Agent from finishing until its exit or stop is confirmed. A `service` may remain running after a successful reply and normal CLI exit. Deliver its address and checked behavior, along with its job ID, absolute state directory, internal name, logs, and exact stop command. Its independent supervisor continues monitoring it. A new shell call or Agent turn does not require restarting it. Benchmark runs reject services.

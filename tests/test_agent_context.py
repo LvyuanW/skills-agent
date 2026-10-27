@@ -95,7 +95,7 @@ class AgentContextTests(unittest.TestCase):
         self.assertEqual(len(model.calls), 4)
         for system, messages, tools in model.calls:
             self.assertIn(environment, system)
-            self.assertIn("Report outcomes faithfully", system)
+            self.assertIn("Report what you completed, what you checked, and what remains unconfirmed.", system)
             self.assertNotIn("use the review skill", system)
             self.assertNotIn("/runtime/workspace", json.dumps(messages))
         self.assertNotIn("/runtime/workspace", json.dumps(self.session.messages()))

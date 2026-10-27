@@ -1,15 +1,17 @@
 ---
 name: process-management
 description: >-
-  Inspect, wait for readiness or completion, read logs, and stop jobs already
-  registered by shell run_in_background=true. Use when an intermediate observation
-  or explicit stop is needed. Starting background work belongs to background-tasks;
-  ordinary foreground execution does not require this skill.
+  Inspect status and logs, wait for readiness or completion, or stop a job already
+  registered by shell run_in_background=true. Use when you need an intermediate
+  observation or an explicit stop. Use background-tasks to launch jobs; skip this
+  skill for ordinary foreground commands or automatic completion delivery.
 ---
 
-Use this skill to manage an existing registered job. Start all background work with the existing `shell` tool's `run_in_background=true`, following the [background-tasks skill](../background-tasks/SKILL.md). Do not use this helper's legacy `start` operation as a second launch interface. You do not need to read this skill just to start a job or receive the runtime's automatic completion result.
+Use this skill when an existing registered job needs a status check, log inspection, readiness check, bounded wait, or explicit stop.
 
-Resolve [scripts/process.py](scripts/process.py) to an absolute path from this SKILL.md. Copy the exact internal `state_dir` and `name` from the shell launch receipt; `display_name` is only the human-facing label. Keep those values across calls; shell variables do not persist. The helper needs Python 3.11 or newer and a POSIX host with `ps` and `waitid/WNOWAIT`.
+Launch background work with `shell run_in_background=true` and the [background-tasks skill](../background-tasks/SKILL.md). Do not use this helper's legacy `start` operation. You do not need this skill just to launch a job or receive its automatic completion result. Ordinary foreground commands also do not require it.
+
+Resolve [scripts/process.py](scripts/process.py) to an absolute path from this SKILL.md. Copy the exact `state_dir` and internal `name` from the shell launch receipt. `display_name` is only a label. Retain the returned values between calls; shell variables do not persist. The helper requires Python 3.11 or newer and a POSIX host with `ps` and `waitid/WNOWAIT`.
 
 | Operation | Observation |
 | --- | --- |
@@ -20,9 +22,9 @@ Resolve [scripts/process.py](scripts/process.py) to an absolute path from this S
 | `wait ... --tcp HOST PORT` | Observe reachability, not service identity or correct behavior |
 | `stop --state-dir DIR --name NAME [--grace 3 --timeout 10]` | Request TERM, escalate to KILL for the owned process group, and confirm cleanup |
 
-Invoke these short management commands with `shell run_in_background=false`. Give the shell call enough time for the helper's bounded wait or stop, within the synchronous 600-second maximum. An observation deadline neither extends nor replaces the job's independent execution deadline.
+Run these management commands with `shell run_in_background=false`. Allow enough time for the helper's wait or stop, within the shell call's 600-second maximum. A management timeout limits how long that call observes the job; it does not change the job's execution deadline.
 
-Stop registered work by its returned identifiers instead of broad command-line matching such as `pkill -f worker.py`. That text may also appear in a new launch helper or shell, causing it to kill the replacement while trying to stop the old worker. For example, substitute the helper's absolute path and the exact `state_dir` and internal `name` from the receipt:
+Stop a registered job using its returned identifiers. Avoid broad matching such as `pkill -f worker.py`: that text may also appear in a new launch's shell or helper, so it can kill the replacement too. In this example, substitute the helper's absolute path and the exact `state_dir` and internal `name` from the receipt:
 
 ```json
 {
@@ -35,10 +37,18 @@ Stop registered work by its returned identifiers instead of broad command-line m
 
 Check the returned state and cleanup confirmation before starting a replacement.
 
-Only wait or poll to answer a concrete dependency, readiness or progress question. Prefer meaningful flushed markers or task-specific checks over elapsed time. TCP reachability alone does not prove your service is ready or behaving correctly. When no intermediate observation is needed, continue independent work and let the runtime deliver completion. A successful launch or a marker is not proof of full computation success.
+Wait or poll only when the result will answer a specific question about dependencies, readiness, or progress. Use meaningful flushed markers or task-specific checks; elapsed time alone is weak evidence. TCP reachability does not establish service identity or correct behavior. A launch receipt or a log marker does not prove that the computation succeeded.
 
-Explicitly stop a job when it is no longer needed. Read the returned state: a `stop --timeout` expiry only ends that observation, so use `status` to confirm subsequent cleanup. Do not relaunch a duplicate merely because an observation timed out. A `task` must reach a confirmed terminal state before the Agent can finish. A `service` may remain running after a successful reply and normal CLI exit, but needs an actual readiness and behavior check before delivery. Preserve its job ID, absolute state/log paths and exact stop command for later management; stop it when no longer needed. A failed or cancelled turn cleans its newly launched services, while previously retained services remain. Benchmark rejects services.
+When you do not need an intermediate observation, continue independent work and let the runtime deliver the completion result.
 
-The supervisor signals only its verified owned process group. If ownership cannot be confirmed, it reports `orphaned` and refuses to guess; do not signal an arbitrary PID or treat that state as completion. The runtime returns an `unconfirmed` diagnostic instead of terminating the Agent when supervision or cleanup is uncertain. Inspect its error, exact job identifiers, durable record and logs, then use verified `status` or `stop` observations to recover. Do not rerun the command blindly or change registration fields to manufacture cleanup confirmation. An unresolved required task remains a runtime-enforced final-reply gate until supervision is restored or actual exit and cleanup are confirmed. A verified service keeps its nonblocking lifecycle contract; an uncertain state does not prove readiness. This is the same cooperative process-group boundary as shell execution, not a hard sandbox: do not create new sessions, daemonize or delegate unmanaged work. Entry exit status does not contain every descendant's status; scripts must wait and aggregate their internal results.
+Stop a job when it is no longer needed, then check the returned state. If `stop --timeout` expires, the observation has ended but cleanup may still be running. Use `status` to confirm what happened. Do not start a duplicate merely because an observation timed out.
 
-Read [references/across-turns.md](references/across-turns.md) for status, logs, readiness and stop examples using a shell launch receipt.
+A `task` must reach a confirmed terminal state before the Agent can finish. A `service` may stay running after a successful reply and normal CLI exit. Check its readiness and required behavior before delivery, and provide its job ID, absolute state and log paths, and exact stop command. A failed or cancelled turn cleans up services launched in that turn; previously retained services remain. Benchmark runs reject services.
+
+The supervisor signals a process group only after verifying that it owns the group. If it cannot confirm ownership, it reports `orphaned`. Do not guess a PID to signal or treat this state as completion.
+
+When supervision or cleanup is uncertain, the runtime returns an `unconfirmed` diagnostic and keeps the Agent running. Read its error, exact job identifiers, saved record, and logs. Use verified `status` or `stop` results to recover. Do not rerun the command blindly or edit registration fields to claim cleanup. A required task still prevents the final reply until supervision is restored or actual exit and cleanup are confirmed. A verified service may remain running under its `service` lifecycle, but an uncertain state does not prove readiness.
+
+This protocol uses the same cooperative process-group boundary as shell execution. It is not a hard sandbox. Do not create new sessions, daemonize, or delegate unmanaged work. The entry process's exit status does not report every descendant's result; scripts must wait for their children and combine their results.
+
+Read [references/across-turns.md](references/across-turns.md) when you need command examples for status, logs, readiness, completion, or stopping a job using its shell launch receipt.
