@@ -107,12 +107,12 @@ For an HTTP(S) image, use the [investigation fetch helper](../investigation/scri
 
 ## Render or wait for an image
 
-To inspect local HTML or SVG, use the [feedback render helper](../feedback/SKILL.md) to create a screenshot within the size limit. Declare the output in the same shell call:
+To inspect local HTML or SVG, use the [check-results render helper](../check-results/SKILL.md) to create a screenshot within the size limit. Declare the output in the same shell call:
 
 ```json
 {
   "name": "Render and inspect page",
-  "command": "python3 /absolute/builtin_skills/feedback/scripts/feedback.py render /absolute/workspace/page.html --output /absolute/workspace/capture.png --width 500 --height 400",
+  "command": "python3 /absolute/builtin_skills/check-results/scripts/feedback.py render /absolute/workspace/page.html --output /absolute/workspace/capture.png --width 500 --height 400",
   "run_in_background": false,
   "images": [{"path": "/absolute/workspace/capture.png", "label": "Page capture"}]
 }

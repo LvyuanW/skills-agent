@@ -22,4 +22,4 @@ Make the smallest change that fixes the defect while preserving existing contrac
 
 You can use or adapt [scripts/run_check.py](scripts/run_check.py) or [scripts/run_check.sh](scripts/run_check.sh), or write a probe for the task. Both helpers take a log path followed by a command and its arguments. They retain complete combined output, show a bounded tail and preserve the command's exit status.
 
-The helpers do not add an execution timeout. When a time limit is needed, the feedback skill's `run` operation provides one and saves separate full stdout/stderr logs. Read the relevant log range when the tail does not show whether the failure came from setup or from the behavior being tested.
+The helpers do not add an execution timeout. When a time limit is needed, the check-results skill's `run` operation provides one and saves separate full stdout/stderr logs. Read the relevant log range when the tail does not show whether the failure came from setup or from the behavior being tested.

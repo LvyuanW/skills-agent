@@ -9,14 +9,14 @@ The examples assume that the current task has already produced a result. Replace
 To check whether an output was saved in the expected location, read its metadata:
 
 ```sh
-feedback='/absolute/path/from/skill-catalog/feedback/scripts/feedback.py'
+feedback='/absolute/path/from/skill-catalog/check-results/scripts/feedback.py'
 python3 "$feedback" file result.txt
 ```
 
 The helper returns the actual file's type, size, modification time and hash. A missing path indicates a problem finding or saving the file. An existing file does not show that its contents are correct. To check content, read the relevant range:
 
 ```sh
-feedback='/absolute/path/from/skill-catalog/feedback/scripts/feedback.py'
+feedback='/absolute/path/from/skill-catalog/check-results/scripts/feedback.py'
 python3 "$feedback" text result.txt --start 1 --end 80
 ```
 
@@ -29,7 +29,7 @@ Compare the returned content with the task's requirement. If the relevant conten
 Use an existing relevant check or a focused probe that runs the required behavior. For example, the project may already provide a suitable check script:
 
 ```sh
-feedback='/absolute/path/from/skill-catalog/feedback/scripts/feedback.py'
+feedback='/absolute/path/from/skill-catalog/check-results/scripts/feedback.py'
 python3 "$feedback" run --log-dir .verify/logs -- python3 path/to/existing-check.py
 ```
 
@@ -38,7 +38,7 @@ Replace the command and arguments with the actual check. The helper can run more
 The helper returns the actual exit code, timeout status, separate stdout and stderr tails, and paths to the full logs. Check how far execution got. A missing executable or dependency means the intended behavior was not tested. A mismatch after that behavior ran is evidence about its result. If the tail is not enough, read the relevant part of the saved log:
 
 ```sh
-feedback='/absolute/path/from/skill-catalog/feedback/scripts/feedback.py'
+feedback='/absolute/path/from/skill-catalog/check-results/scripts/feedback.py'
 python3 "$feedback" text /absolute/path/returned/in/observations/stderr_log --start 1 --end 80
 ```
 
@@ -62,7 +62,7 @@ For a local HTML or SVG result, the installed browser can produce a screenshot:
 ```json
 {
   "name": "Render and inspect preview",
-  "command": "python3 /absolute/path/from/skill-catalog/feedback/scripts/feedback.py render /absolute/workspace/preview.html --output /absolute/workspace/.verify/preview.png --width 500 --height 400 --wait-ms 0",
+  "command": "python3 /absolute/path/from/skill-catalog/check-results/scripts/feedback.py render /absolute/workspace/preview.html --output /absolute/workspace/.verify/preview.png --width 500 --height 400 --wait-ms 0",
   "run_in_background": false,
   "images": [{"path": "/absolute/workspace/.verify/preview.png", "label": "Preview"}]
 }

@@ -9,14 +9,14 @@ Resolve helper paths from the loaded skill directory. The examples below are sep
 If the task requires a nonempty output file, check that condition directly:
 
 ```sh
-check='/absolute/path/from/skill-catalog/feedback/scripts/check.py'
+check='/absolute/path/from/skill-catalog/check-results/scripts/check.py'
 python3 "$check" file result.json --min-bytes 1
 ```
 
 A successful check proves that a regular, nonempty file exists. It does not prove that the JSON or its values are correct. If the task requires a particular nested value, check it:
 
 ```sh
-check='/absolute/path/from/skill-catalog/feedback/scripts/check.py'
+check='/absolute/path/from/skill-catalog/check-results/scripts/check.py'
 python3 "$check" json result.json --pointer /summary/processed --equals-json '12'
 ```
 
@@ -25,7 +25,7 @@ The expected value, 12 in this example, must come from the input or the contract
 For an exact-text requirement, check that the required text is present and obsolete text is absent:
 
 ```sh
-check='/absolute/path/from/skill-catalog/feedback/scripts/check.py'
+check='/absolute/path/from/skill-catalog/check-results/scripts/check.py'
 python3 "$check" text result.txt --contains 'required literal text' --absent 'obsolete literal text'
 ```
 
@@ -36,7 +36,7 @@ Replace these strings with the task's required text. Returned positions help you
 When the requirement concerns behavior, run it through the interface that actually uses it. Use an existing relevant test or a focused executable check. Finding a function name in the source does not show that the behavior works:
 
 ```sh
-feedback='/absolute/path/from/skill-catalog/feedback/scripts/feedback.py'
+feedback='/absolute/path/from/skill-catalog/check-results/scripts/feedback.py'
 python3 "$feedback" run --log-dir .verify/logs -- python3 path/to/existing-check.py
 ```
 

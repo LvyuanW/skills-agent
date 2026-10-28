@@ -40,16 +40,16 @@
 | [sandbox 工具说明](tool-sandbox.md) | Docker 执行说明及参数描述 | v2 |
 | [subagent 工具说明](tool-subagent.md) | 委派范围、输入、报告和历史模式说明 | v1 |
 | [要求与证据记录技能](skill-acceptance-criteria.md) | builtin_skills/acceptance-criteria/SKILL.md；按需保存可见要求与证据 | v2（共享英文版） |
-| [workspace 技能](skill-workspace.md) | `builtin_skills/workspace/SKILL.md` | v5（共享英文版） |
-| [resource-management 技能](skill-resource-management.md) | `builtin_skills/resource-management/SKILL.md` | v4（共享英文版） |
-| [investigation 技能](skill-investigation.md) | `builtin_skills/investigation/SKILL.md` | v7（共享英文版） |
-| [code-repair 技能](skill-code-repair.md) | `builtin_skills/code-repair/SKILL.md` | v4（共享英文版） |
+| [workspace 技能](skill-workspace.md) | `builtin_skills/workspace/SKILL.md` | v6（现行技能名称同步） |
+| [manage-compute-resources 技能](skill-resource-management.md) | `builtin_skills/manage-compute-resources/SKILL.md` | v5（名称与召回条件更新） |
+| [investigation 技能](skill-investigation.md) | `builtin_skills/investigation/SKILL.md` | v8（召回条件与主动比较） |
+| [code-repair 技能](skill-code-repair.md) | `builtin_skills/code-repair/SKILL.md` | v5（现行技能名称同步） |
 | [file-editing 技能](skill-file-editing.md) | `builtin_skills/file-editing/SKILL.md` | v4（共享英文版） |
 | [file-editing 渐进编辑示例](skill-file-editing-incremental-examples.md) | `builtin_skills/file-editing/references/incremental-editing.md` | v3（共享英文版） |
-| [images 技能](skill-images.md) | `builtin_skills/images/SKILL.md` | v4（共享英文版） |
-| [feedback 技能](skill-feedback.md) | `builtin_skills/feedback/SKILL.md` | v12（共享英文版） |
-| [feedback 跨回合反馈示例](skill-feedback-loop.md) | `builtin_skills/feedback/references/feedback-loop.md` | v5（共享英文版） |
-| [feedback 验收检查参考](skill-feedback-acceptance.md) | `builtin_skills/feedback/references/acceptance-checks.md` | v3（共享英文版） |
+| [images 技能](skill-images.md) | `builtin_skills/images/SKILL.md` | v5（现行技能名称与路径同步） |
+| [check-results 技能](skill-feedback.md) | `builtin_skills/check-results/SKILL.md` | v13（名称与召回条件更新） |
+| [check-results 跨回合反馈示例](skill-feedback-loop.md) | `builtin_skills/check-results/references/feedback-loop.md` | v6（现行目录路径同步） |
+| [check-results 验收检查参考](skill-feedback-acceptance.md) | `builtin_skills/check-results/references/acceptance-checks.md` | v4（现行目录路径同步） |
 | [workspace 定位提取参考](skill-workspace-extraction.md) | `builtin_skills/workspace/references/extraction.md` | v3（共享英文版） |
 | [后台任务技能](skill-background-tasks.md) | `builtin_skills/background-tasks/SKILL.md` | v8（共享英文版） |
 | [process-management 技能](skill-process-management.md) | `builtin_skills/process-management/SKILL.md` | v9（共享英文版） |
@@ -83,11 +83,23 @@
 | 00-working-principles-baseline | `None`（关闭预载，仍可按需读取skill） |
 | 01-data-semantics | `investigation` |
 | 02-discriminating-experiments | `investigation` |
-| 03-feedback-conflicts | `feedback` |
-| 04-discriminating-verification | `feedback` |
-| 05-measured-resources | `resource-management` |
+| 03-feedback-conflicts | `check-results` |
+| 04-discriminating-verification | `check-results` |
+| 05-measured-resources | `manage-compute-resources` |
 
 01与02当前配置相同，03与04当前配置相同；名称保留用于对应历史实验，不再代表不同正文。
+
+## 2026-10-28 召回条件与名称更新
+
+本轮保留 `investigation` 名称，将 `feedback` 改名为 `check-results`，将 `resource-management` 改名为 `manage-compute-resources`。三者使用用户确认的自然语言 description，并更新方法正文；其他技能及参考中的相关名称、链接和示例路径同步到现行目录。历史文档继续沿用原文件名，所有既有版本原文保留。
+
+20261028 的45次基线运行均可见这三个技能的目录描述，但未读取其正文。本轮针对目录触发条件与名称清晰度进行修改；没有据此认定未召回就是低分原因，也没有新一轮真实模型测评证明召回或分数已经改善。名称和描述在本轮同时变化，后续效果不能仅归因于其中一个词。
+
+六个实验 worktree 共享本轮技能内容，仅显式注入选择按上表区分。主系统模板与八节工作原则未改，继续分别使用 v17 和 v3，不追加对应提示词版本。
+
+本轮实现提交标识在完成提交后补入此处；提交记录作为后续独立文档提交维护，避免文档自引用其自身提交标识。
+
+<!-- SKILL_RECALL_COMMIT_RECORDS -->
 
 ## 维护方式
 

@@ -292,13 +292,13 @@ API 错误的脱敏诊断保存在对应会话 `events.jsonl` 的 `error.diagnos
 
 内置 [file-editing skill](../skills_agent/builtin_skills/file-editing/SKILL.md) 提供新建、精确替换、锚点前后插入、删除内容和删除文件的 Python 脚本，通过现有 shell 调用，不新增 tools。替换和插入要求原文或锚点唯一匹配，失败不写入；成功返回改动位置与有限行号片段。它还提供[跨回合渐进编辑示例](../skills_agent/builtin_skills/file-editing/references/incremental-editing.md)：先保存有用产物，读取操作结果，再选择下一段扩展。
 
-内置 [feedback skill](../skills_agent/builtin_skills/feedback/SKILL.md) 提供获取实际工作结果的基础能力，同样通过现有 shell 调用：`file` 读取文件或目录元数据，`text` 按行列读取实际 UTF-8 文本，`run` 执行检查并保存完整、分离的 stdout／stderr 日志，`render` 使用已安装的 Chrome／Chromium 截取本地 HTML 或 SVG。附图统一使用下面的 images 技能和 shell 的 `images` 参数，截图命令负责准备文件。长文本返回续读行列；命令失败和超时保留真实状态。[跨回合反馈示例](../skills_agent/builtin_skills/feedback/references/feedback-loop.md) 展示保存、获取、观察和修改之间的衔接。
+内置 [check-results skill](../skills_agent/builtin_skills/check-results/SKILL.md) 提供获取实际工作结果的基础能力，同样通过现有 shell 调用：`file` 读取文件或目录元数据，`text` 按行列读取实际 UTF-8 文本，`run` 执行检查并保存完整、分离的 stdout／stderr 日志，`render` 使用已安装的 Chrome／Chromium 截取本地 HTML 或 SVG。附图统一使用下面的 images 技能和 shell 的 `images` 参数，截图命令负责准备文件。长文本返回续读行列；命令失败和超时保留真实状态。[跨回合反馈示例](../skills_agent/builtin_skills/check-results/references/feedback-loop.md) 展示保存、获取、观察和修改之间的衔接。
 
 内置 [images skill](../skills_agent/builtin_skills/images/SKILL.md) 要求每次附图时使用，覆盖已有图片、下载图片、生成图片、截图和渲染结果。每个模型请求最多10张图，每张编码图片文件最多1,000,000字节（1 MB，base64前）；多次工具调用不能叠加该额度。禁止制作超过1 MB的新图片；[images.py](../skills_agent/builtin_skills/images/scripts/images.py) 的 `save_bounded` 支持内存生成后合限才写盘，`prepare SOURCE --output PATH` 将已有大图压缩为副本，保留原件。确需同时检查超过10张时，`compose SOURCE... --output PATH [--columns N]` 生成一张合限的编号拼图，返回原图URL、尺寸及最终图片中的区域坐标，便于回查与坐标换算。上述 helper 和 `feedback.py render` 负责准备文件及元数据，发送哪些图片由 shell 的 `images` 参数声明，无需再调用 attach。图片处理使用项目依赖 Pillow，压缩次数有界，不保存超限中间图。helper可从任意工作目录运行，无需导入 skills-agent 包。
 
 shell 可选 `images` 参数的元素为 `{"path":"/absolute/host/image.png","label":"可选说明","source_url":"可选原始URL"}`；`path` 接受绝对宿主机路径或本地 `file://` URL，包括历史图片快照地址。运行时在同步命令结束后读取、校验并保存快照；命令可以先生成图片，也可以用 `command: "true"` 直接查看已有图片。远程图片先用现有 fetch helper 下载，再声明实际文件路径和原始 `source_url`。此参数仅用于图片，不接受 PDF 或任意文件。技能包含生成并打印日志、多图准备后一次声明、合图、历史URL重附、渲染及后台任务范例。脚本不会上传图片，也不会自动安装依赖；拼图用于概览，需要细节时可裁剪原图再声明。
 
-反馈技能的 `scripts/check.py` 检查明确的文件、文本和 JSON 验收条件，保留实际观察与源位置，区分条件失败和获取错误；[验收检查参考](../skills_agent/builtin_skills/feedback/references/acceptance-checks.md) 说明如何检查需求，以及失败后选择下一步。通过指定条件只证明该检查范围，行为要求仍需真实运行。
+反馈技能的 `scripts/check.py` 检查明确的文件、文本和 JSON 验收条件，保留实际观察与源位置，区分条件失败和获取错误；[验收检查参考](../skills_agent/builtin_skills/check-results/references/acceptance-checks.md) 说明如何检查需求，以及失败后选择下一步。通过指定条件只证明该检查范围，行为要求仍需真实运行。
 
 显式 `images`（包括空数组 `[]`）优先于 stdout 的旧反馈协议，普通日志、多段JSON或文本筛选不会改变显式声明的图片；`images: []` 表示只准备文件、不附图。未提供该参数时，暂时兼容 stdout 为单个反馈JSON对象的旧调用，新技能只推荐参数入口。运行时在文本筛选前识别 PNG／JPEG／GIF／WebP 图片头并保存独立会话快照，在同一次模型请求中附上图片与快照的 `file://` URL，保留可选原始 `source_url`，获取失败明确返回诊断。原文件后续修改或删除不会改变已保存的观察。每次 assistant 回复（包括继续调用工具）都会消费该轮图片，之后仅保留可回查引用；需要再次查看时，在新的 `images` 中声明记录的快照URL或准备好的裁剪图。辅助报告、上下文压缩和历史检索遵循相同的图片限制；供应商请求中的只读媒体投影不改变当前真实用户任务。
 

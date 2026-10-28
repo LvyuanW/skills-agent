@@ -1,33 +1,35 @@
 ---
-name: feedback
+name: check-results
 description: >-
-  Inspect actual output or behavior when the next decision needs execution logs,
-  saved text or JSON values, or a rendered HTML/SVG image. Skip planning and lookups
-  that need no execution or output check, or when existing observations already
-  answer the question. Use the images skill as well whenever attaching images.
+  Use when you need to check whether a calculation, generated file, or running
+  program does what the task requires. Also use when a separate test behaves
+  differently from the real run, or when a change may not have reached the final
+  files. Choose a check that answers the question, inspect the actual result,
+  and confirm the correction. Skip another check when existing evidence already
+  answers the same question and the relevant inputs, code, and files are unchanged.
 ---
 
 # Check the actual result
 
-Use this skill when you need an observation from execution or a saved artifact to decide what to do next. It provides ways to collect and inspect results. Pure planning and lookups that do not need such a check can proceed without it. When the cause of conflicting results needs investigation, use the [investigation skill](../investigation/SKILL.md) as needed.
+Decide what you need to know before running another check. Choose what to inspect, read the actual result, and use it to decide whether the work needs a correction. Pure planning and lookups that do not need a result check can proceed without this skill.
 
-If the current tool result or a simple targeted read already provides the evidence you need, use it directly. You do not need to load this skill for an additional check.
+An existing tool result or a short file read may provide all the evidence you need. Use it directly. If you still need to decide what to check or what the result means, the method below can help even when no new execution is needed. Skip another check when the earlier observation still answers the question and the relevant inputs, code and files have not changed.
 
-## Choose evidence for the question
+## Choose a check that answers the question
 
-Run the behavior to check behavior, read saved content to check values, and inspect pixels to check appearance. If correctness depends on how a file is used, open or process the saved file through its intended consumer, entry point and relevant preprocessing steps. A successful write or capture alone does not prove that the content is correct.
+Run the program to check its behavior, read the saved file to check its contents, and inspect the image to check its appearance. If correctness depends on how a file is used, open or process the saved file with the intended program or command, including the required input preparation. A successful write or capture alone does not show that the content is correct.
 
-Before applying a diagnostic result, confirm which inputs and execution path the check used. A separate probe does not automatically reproduce the task's actual execution. Preserve valid outputs and try changes to execution conditions separately.
+Before using a separate test to change the work, confirm which inputs it used and which code it ran. It may differ from the real task. Keep experiments in separate scripts or files when they could change the execution conditions or overwrite useful outputs. A failure in the test does not by itself show that the real run has failed.
 
-Choose a check that addresses the unresolved question. For example, zeros or symmetric inputs may hide a defect that a less uniform input reveals. An independent formula, an input with a known answer or a task-provided reference may test conditions shared by the implementation's own checks. A second implementation that makes the same assumptions offers little independent evidence. Use the appropriate method; these examples are not a required sequence.
+Choose a check that can answer the question you identified. For example, zeros or symmetric inputs may hide a defect that a less uniform input reveals. A separate formula, an input with a known answer or a reference supplied with the task may reveal an error that the implementation's own checks miss. Two implementations can agree and still be wrong if both rely on the same unverified definition or method. Choose the check that fits the problem; these examples are not a required sequence.
 
 ## Use the result to guide the work
 
-When results conflict, determine whether the problem is in the work, the check, the diagnostic path or an expectation that has no basis in the task. If the cause remains unclear, choose a check that can distinguish the possible causes before making changes.
+When results conflict, check whether the problem is in the work, the check itself, the way the separate test ran, or an extra condition you introduced. If you cannot yet tell, choose a check that can tell those causes apart before making a correction. Use the [investigation skill](../investigation/SKILL.md) when you need help deciding between explanations, definitions or methods.
 
-Decide from the original requirement and the observed cause. Do not choose a change just because it makes a check pass. Remove extra conditions you introduced without support in the task, but keep unresolved user requirements visible. Apply only corrections supported by evidence and allowed by the task.
+Decide what to change from the original requirement and what the result shows. Do not change the work just to make a check pass. Remove only extra conditions you added without support in the task; keep user requirements that have not yet been met. Make the correction that the evidence supports, within the scope the user allowed.
 
-After a correction, update and check the affected final output and any results that depend on it. Reuse evidence that still applies. Repeat broader checks only when a change, contradiction or newly found gap gives a reason to do so.
+After a correction, update the affected final files and any results that use them. Read those outputs or run the appropriate check to confirm they contain the correction. Fixing a separate test is not enough if the final files still contain the error. Reuse evidence that still applies. Repeat broader checks only when a change, conflicting result or newly found gap gives a reason to do so.
 
 ## Collect execution and file results
 

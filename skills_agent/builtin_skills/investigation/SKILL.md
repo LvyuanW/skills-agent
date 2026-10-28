@@ -1,41 +1,45 @@
 ---
 name: investigation
 description: >-
-  Investigate conflicting evidence or uncertain causes by choosing checks that
-  distinguish possible explanations. Also use to save a known HTTP(S) source with
-  its origin and transfer status. Skip routine edits, straightforward lookups that
-  need no saved source or comparison, and conversation-history retrieval.
+  Use when results disagree, a change has no effect, or you need to clarify what
+  a value means before continuing. Also use when you need a fair comparison to
+  choose between explanations or methods. Decide what to check and use the result
+  to guide the next step. This skill can also save a known web source with its
+  retrieval record. Skip ordinary lookups and edits when the answer is clear and
+  no saved source is needed. Use the assigned route for conversation history.
 ---
 
-# Investigate a specific uncertainty
+# Investigate a question that affects the work
 
-Use this skill when the cause or meaning of an observation is unclear and the answer would change the next action. Use the source-capture helper when a known URL needs a saved response and retrieval record. A routine lookup or edit does not need an investigation. Retrieve conversation history through its assigned delegated route.
+Start with the question that would change your next action. It may concern a result you cannot explain, two sources that disagree, the meaning of a value, or which method to use. Choose a check that can help settle that question. You do not need to wait for an error, and you do not need to invent alternatives when the answer is already clear.
 
-## Choose a check that can change the diagnosis
+## Choose a check or comparison
 
-Identify a few plausible explanations, including the possibility that the suspected problem is absent. Choose an observation whose possible results would support different explanations. Existing logs or source data may already answer the question.
+Use existing logs, source data or measurements when they answer the question. For an unexplained result, consider plausible explanations, including the possibility that the suspected problem is absent. Choose an observation whose possible results would distinguish them.
 
-Match the check to the observed pattern:
+When choosing between methods, keep the current usable work and compare relevant candidates in a suitably sized trial. Use the same task inputs, constraints and basis of comparison. Check the property that matters to the choice, then use the result to decide which method to continue with.
+
+For a mismatch, choose a check that fits the observed pattern:
 
 - If several changes leave the same mismatch, check a condition they all rely on before trying another similar variation.
 - If the mismatch is systematic, compare processing stages or input conditions to find where the results first differ.
 - If a search over smoothly varying parameters stalls, checking a boundary may reveal an untested convention or a discrete change in behavior.
 
-These are alternative approaches, not required steps. Confirm that an experiment actually reaches the condition you intended to test before interpreting its result. If the result still cannot distinguish the causes and the decision matters, choose a different observation.
+These are alternative approaches, not required steps. Before interpreting an experiment, confirm that it actually reaches the condition you intended to test. If it does not, repair the trial before drawing a conclusion. If the result still cannot distinguish the explanations or methods and the decision matters, choose a different observation.
 
 ## Check what the values mean
 
-When measurements disagree, check whether both describe the same object, unit, denominator, time, coordinate and aggregation. A period total and a value at the end of that period may both be correct. Recalculating them does not establish which one the task requires.
+Check definitions that could affect the comparison, such as the object, unit, denominator, time, coordinates or aggregation. A period total and a value at the end of that period may both be correct. Recalculating them does not establish which one the task requires.
 
 Resolve the definition from the task, source or established contract before treating the difference as a code defect. Preserve the identifiers and coordinates needed through later transformations. If the evidence does not settle the definition, state the remaining ambiguity; do not choose a meaning just because it makes the numbers agree.
 
 Before relying on a custom measurement, establish these definitions and the measurement method. Then inspect a sample or check an input with a known answer. Two implementations that share an uncertain definition do not resolve that uncertainty. An indirect measurement alone does not prove the suspected cause.
 
-## Apply what the evidence establishes
+## Use the result to continue the work
 
-When evidence identifies a defect within the task's scope, repair that part and preserve unaffected work. When a definition is resolved, apply it consistently to the affected transformations, calculations and comparisons. Update and inspect the affected deliverables after either change.
+When evidence identifies a defect within the task's scope, repair that part and preserve unaffected work. When a definition is resolved, apply it to the affected transformations, calculations and comparisons. If a comparison supports changing methods, retain the work that remains useful. Update the saved outputs that depend on the change, then read or run them to confirm that the change took effect.
 
-When evidence contradicts or limits a suspected cause, withdraw or narrow the diagnosis and change the next action accordingly. Keep observations, assumptions and conclusions separate. Save source locations and relevant versions with observations. Read enough surrounding context to assess contradictory evidence: a filtered sample or an unsuccessful search does not prove that something is absent.
+When evidence contradicts or limits an explanation, withdraw or narrow it and change the next action accordingly. Keep observations separate from assumptions and conclusions. Save source locations and relevant versions with observations. Read enough surrounding context to assess contradictory evidence: a filtered sample or an unsuccessful search does not prove that something is absent.
 
 Stop investigating when another check would not change the decision, and continue the task.
 

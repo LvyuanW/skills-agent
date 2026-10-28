@@ -1,5 +1,7 @@
 """Deadlines must bound work, cancellation, and cleanup without losing logs."""
 
+import errno
+import json
 import math
 import os
 from pathlib import Path
@@ -58,6 +60,47 @@ class ExecutionTests(unittest.TestCase):
             "print(repr(sys.stdin.read()))", env={**os.environ, "EXECUTION_TEST_VALUE": "provided"},
         )
         self.assertEqual(result, {"exit_code": 0, "stdout": f"{self.root}\nprovided\n''\n", "stderr": ""})
+
+    def test_normal_exit_retries_a_transient_inspection_timeout_without_signaling(self):
+        inspect_group = execution._group_members
+        wait_for_main = execution._wait_for_main_exit
+        observations = []
+        processes = []
+        callback = Mock()
+
+        def slow_first_probe(pgid, deadline):
+            observations.append((pgid, deadline))
+            if len(observations) == 1:
+                raise subprocess.TimeoutExpired("ps", execution._PROBE_TIMEOUT_SECONDS)
+            return inspect_group(pgid, deadline)
+
+        def remember_process(process, deadline):
+            processes.append(process)
+            return wait_for_main(process, deadline)
+
+        with patch.object(execution, "_group_members", side_effect=slow_first_probe), \
+                patch.object(execution, "_wait_for_main_exit", side_effect=remember_process), \
+                patch.object(execution, "_signal_group", wraps=execution._signal_group) as send_signal:
+            try:
+                result = self.run_python(
+                    "import sys; print('complete output'); print('complete error', file=sys.stderr); sys.exit(7)",
+                    cleanup=callback,
+                )
+            finally:
+                # Reap this short-lived fixture even when the regression is present.
+                for process in processes:
+                    if process.returncode is None:
+                        process.wait(timeout=1)
+
+        self.assertEqual(result, {
+            "exit_code": 7, "stdout": "complete output\n", "stderr": "complete error\n",
+        })
+        self.assertGreaterEqual(len(observations), 2)
+        self.assertLessEqual(max(deadline for _, deadline in observations), observations[0][1])
+        send_signal.assert_not_called()
+        callback.assert_not_called()
+        self.assertEqual(next(self.logs.glob("*/stdout.log")).read_text(), "complete output\n")
+        self.assertEqual(next(self.logs.glob("*/stderr.log")).read_text(), "complete error\n")
 
     def test_timeout_returns_evidence_and_runs_backend_cleanup_once(self):
         callback = Mock()
@@ -146,6 +189,39 @@ class ExecutionTests(unittest.TestCase):
 
 
 class CleanupDeadlineTests(unittest.TestCase):
+    def test_normal_exit_inspection_retries_with_one_bounded_deadline(self):
+        process = Mock(pid=123, returncode=None)
+        observed_deadlines = []
+
+        def unavailable(pgid, deadline):
+            observed_deadlines.append(deadline)
+            raise subprocess.TimeoutExpired("ps", 0.01)
+
+        started = time.monotonic()
+        with patch.object(execution, "CLEANUP_TIMEOUT_SECONDS", 0.06), \
+                patch.object(execution, "_group_members", side_effect=unavailable):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                execution._finish_main_exit(process)
+        self.assertGreater(len(observed_deadlines), 1)
+        self.assertEqual(len(set(observed_deadlines)), 1)
+        self.assertLess(time.monotonic() - started, 0.8)
+        process.wait.assert_not_called()
+
+    def test_unstopped_probe_is_not_cleared_by_a_later_empty_group(self):
+        process = Mock(pid=123, returncode=None)
+        probe_error = execution.ToolCleanupError("Process inspection could not be stopped")
+        with patch.object(execution, "_signal_group"), \
+                patch.object(execution, "_wait_for_completion", side_effect=[probe_error, True]):
+            with self.assertRaises(execution.ToolCleanupError) as caught:
+                execution._stop_process(process)
+        self.assertIn("inspection could not be stopped", str(caught.exception))
+        self.assertFalse(caught.exception.diagnostics["cleanup_confirmed"])
+
+    def test_reaped_group_is_never_signalled(self):
+        with patch.object(execution.os, "killpg") as kill:
+            execution._signal_group(Mock(pid=123, returncode=0), signal.SIGKILL)
+        kill.assert_not_called()
+
     def test_expired_inspection_is_an_unfinished_phase_not_cleanup_failure(self):
         process = Mock()
         with patch.object(execution, "_finished", side_effect=[subprocess.TimeoutExpired("ps", 0.01), True]):
@@ -165,12 +241,38 @@ class CleanupDeadlineTests(unittest.TestCase):
             self.assertGreater(call.kwargs["timeout"], 0)
             self.assertLessEqual(call.kwargs["timeout"], execution._PROBE_TIMEOUT_SECONDS)
 
+    def test_failed_probe_signal_still_attempts_reap_and_remains_fatal_when_unconfirmed(self):
+        probe = Mock(pid=321, returncode=None)
+        probe.wait.side_effect = subprocess.TimeoutExpired("ps", 0.01)
+        probe.kill.side_effect = PermissionError(errno.EPERM, "probe signal denied")
+        with patch.object(execution.subprocess, "Popen", return_value=probe):
+            with self.assertRaises(execution.ToolCleanupError) as caught:
+                execution._group_members(123, time.monotonic() + 1)
+        self.assertEqual(probe.wait.call_count, 2)
+        details = caught.exception.diagnostics
+        self.assertEqual(details["original_error"]["type"], "TimeoutExpired")
+        self.assertEqual([e["phase"] for e in details["cleanup_errors"]],
+                         ["inspection_kill", "inspection_reap"])
+        self.assertEqual(details["cleanup_errors"][0]["errno"], errno.EPERM)
+        json.dumps(details)
+
+    def test_probe_signal_error_is_resolved_only_when_probe_exit_is_confirmed(self):
+        timeout = subprocess.TimeoutExpired("ps", 0.01)
+        probe = Mock(pid=321, returncode=None)
+        probe.wait.side_effect = [timeout, 0]
+        probe.kill.side_effect = PermissionError(errno.EPERM, "probe already exited")
+        with patch.object(execution.subprocess, "Popen", return_value=probe):
+            with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                execution._group_members(123, time.monotonic() + 1)
+        self.assertIs(caught.exception, timeout)
+        self.assertEqual(probe.wait.call_count, 2)
+
     def test_failed_group_cleanup_never_uses_an_unbounded_final_wait(self):
         process = Mock(pid=123, returncode=None)
         process.wait.side_effect = subprocess.TimeoutExpired("test command", 5)
         with patch.object(execution, "_signal_group") as send_signal, \
                 patch.object(execution, "_wait_for_completion", return_value=False):
-            with self.assertRaisesRegex(execution.ToolCleanupError, "cleanup deadline"):
+            with self.assertRaisesRegex(execution.ToolCleanupError, "cleanup could not be confirmed"):
                 execution._stop_process(process)
         self.assertIn(unittest.mock.call(process, signal.SIGTERM), send_signal.call_args_list)
         self.assertIn(unittest.mock.call(process, signal.SIGKILL), send_signal.call_args_list)
@@ -186,6 +288,125 @@ class CleanupDeadlineTests(unittest.TestCase):
                 execution._cleanup(Mock(), callback)
         self.assertIs(caught.exception.__cause__, failure)
         callback.assert_called_once_with()
+
+
+class ProcessPermissionCleanupTests(unittest.TestCase):
+    def setUp(self):
+        for name, value in (("TERM_GRACE_SECONDS", 0.02), ("CLEANUP_TIMEOUT_SECONDS", 0.2),
+                            ("_POLL_SECONDS", 0.005)):
+            setting = patch.object(execution, name, value)
+            setting.start()
+            self.addCleanup(setting.stop)
+
+    def child(self):
+        process = Mock(pid=123, returncode=None)
+
+        def reap(*, timeout):
+            self.assertGreater(timeout, 0)
+            self.assertLessEqual(timeout, execution.CLEANUP_TIMEOUT_SECONDS)
+            process.returncode = 0
+            return 0
+
+        process.wait.side_effect = reap
+        return process
+
+    def test_last_member_exits_between_observation_and_term_permission_error(self):
+        process = self.child()
+        live_members = [124]
+        observations = []
+
+        def members(pgid, deadline):
+            observations.append(list(live_members))
+            return list(live_members)
+
+        def signal_after_exit(child, signum):
+            self.assertIsNone(child.returncode, "The group ID must still be reserved")
+            self.assertEqual(signum, signal.SIGTERM)
+            live_members.clear()
+            raise PermissionError(errno.EPERM, "only zombies remain")
+
+        with patch.object(execution, "_peek_exit", return_value=True), \
+                patch.object(execution, "_group_members", side_effect=members), \
+                patch.object(execution, "_signal_group", side_effect=signal_after_exit) as send_signal:
+            result = execution._finish_main_exit(process)
+
+        self.assertEqual(observations[0], [124])
+        self.assertIn([], observations, "EPERM requires a confirmed empty live group")
+        self.assertIs(result["cleanup_confirmed"], True)
+        send_signal.assert_called_once_with(process, signal.SIGTERM)
+        process.wait.assert_called_once()
+        self.assertEqual(process.returncode, 0)
+
+    def test_last_member_exits_before_kill_permission_error(self):
+        process = self.child()
+        live_members = [124]
+        sent = []
+
+        def send_signal(child, signum):
+            self.assertIsNone(child.returncode, "Never signal a reaped process group")
+            sent.append(signum)
+            if signum == signal.SIGKILL:
+                live_members.clear()
+                raise PermissionError(errno.EPERM, "group became zombie-only before KILL")
+
+        with patch.object(execution, "_peek_exit", return_value=True), \
+                patch.object(execution, "_group_members", side_effect=lambda *_: list(live_members)), \
+                patch.object(execution, "_signal_group", side_effect=send_signal):
+            execution._stop_process(process)
+
+        self.assertEqual(sent, [signal.SIGTERM, signal.SIGKILL])
+        process.wait.assert_called_once()
+        self.assertEqual(process.returncode, 0)
+
+    def test_permission_error_is_not_success_without_confirmed_group_completion(self):
+        for case in ("live_member", "inspection_unavailable", "entry_still_running"):
+            with self.subTest(case=case):
+                process = self.child()
+
+                def members(*_):
+                    if case == "inspection_unavailable":
+                        raise subprocess.TimeoutExpired("ps", 0.01)
+                    return [124] if case == "live_member" else []
+
+                started = time.monotonic()
+                with patch.object(execution, "_peek_exit", return_value=case != "entry_still_running"), \
+                        patch.object(execution, "_group_members", side_effect=members), \
+                        patch.object(execution, "_signal_group", side_effect=PermissionError(errno.EPERM, "denied")):
+                    with self.assertRaises(execution.ToolCleanupError):
+                        execution._stop_process(process)
+                self.assertLess(time.monotonic() - started, 1.5)
+
+    def test_repeated_signal_errors_preserve_diagnostics_and_do_not_skip_reaping_or_backend_cleanup(self):
+        process = self.child()
+        callback = Mock()
+        sent = []
+
+        def deny_signal(child, signum):
+            self.assertIsNone(child.returncode, "Never signal after the leader is reaped")
+            sent.append(signum)
+            message = "TERM permission denied" if signum == signal.SIGTERM else "KILL permission denied"
+            raise PermissionError(errno.EPERM, message)
+
+        with patch.object(execution, "_peek_exit", return_value=True), \
+                patch.object(execution, "_group_members", return_value=[124]), \
+                patch.object(execution, "_signal_group", side_effect=deny_signal):
+            with self.assertRaises(execution.ToolCleanupError) as caught:
+                execution._cleanup(process, callback)
+
+        self.assertIn(signal.SIGTERM, sent)
+        self.assertIn(signal.SIGKILL, sent)
+        process.wait.assert_called_once()
+        callback.assert_called_once_with()
+        details = caught.exception.diagnostics["cleanup_errors"]
+        json.dumps(details)
+        for expected in ("TERM permission denied", "KILL permission denied"):
+            matches = [item for item in details if expected in item["message"]]
+            self.assertTrue(matches, (expected, details))
+            self.assertTrue(any(item["type"] == "PermissionError" and item.get("errno") == errno.EPERM
+                                for item in matches))
+            for item in matches:
+                self.assertTrue(item["phase"])
+                self.assertIn(expected, item["traceback"])
 
 
 if __name__ == "__main__":

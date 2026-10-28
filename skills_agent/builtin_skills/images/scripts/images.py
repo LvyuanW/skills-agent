@@ -17,7 +17,7 @@ from urllib.request import url2pathname
 
 
 # Load by file path: shell execution does not require skills_agent on sys.path.
-_helper = Path(__file__).resolve().parents[2] / "feedback/scripts/feedback.py"
+_helper = Path(__file__).resolve().parents[2] / "check-results/scripts/feedback.py"
 _spec = importlib.util.spec_from_file_location("_images_feedback", _helper)
 feedback = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(feedback)

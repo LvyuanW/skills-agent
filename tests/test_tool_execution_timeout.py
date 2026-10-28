@@ -1,6 +1,7 @@
 """Exercise tool deadlines through real shell processes and the Agent loop."""
 
 from copy import deepcopy
+import errno
 import json
 import os
 from pathlib import Path
@@ -222,6 +223,104 @@ print('parent-exited', flush=True)
         self.assertEqual(len(model.requests), 1)
         self.assertEqual(session.events()[-1]["type"], "error")
         self.assertIn("cleanup", session.events()[-1]["message"])
+
+    @unittest.skipUnless(os.name == "posix" and hasattr(os, "WNOWAIT"), "POSIX process ownership")
+    def test_foreground_cleanup_failure_preserves_original_error_and_output_logs(self):
+        completed = self.script("completed.py", "import sys\n"
+                                "print('saved stdout evidence', flush=True)\n"
+                                "print('saved stderr evidence', file=sys.stderr, flush=True)\n")
+        model = ScriptedModel([tool_response(self.command(completed), timeout_seconds=3),
+                               {"role": "assistant", "content": "Must not continue"}])
+        session = Session(self.root, "cleanup-diagnostics")
+        agent = Agent(model, session, SkillRegistry([]), self.root)
+        self.addCleanup(agent.close)
+
+        def fail_exit_check(process):
+            # The real entry process has already exited. Retain it for test cleanup
+            # even if an assertion fails before the executor can reap it.
+            self.processes.append(process)
+            raise RuntimeError("initial probe failure")
+
+        with patch("skills_agent.execution._finish_main_exit", side_effect=fail_exit_check), \
+                patch("skills_agent.execution._signal_group",
+                      side_effect=PermissionError(errno.EPERM, "signal permission denied")), \
+                patch("skills_agent.execution._wait_for_completion",
+                      side_effect=RuntimeError("inspection unavailable")):
+            with self.assertRaises(ToolCleanupError) as caught:
+                agent.run(session.make_user_message("Read the existing evidence", []))
+
+        self.assertEqual(len(model.requests), 1)
+        events = session.events()
+        error = next(event for event in reversed(events) if event["type"] == "error")
+        diagnostics = error["diagnostics"]
+        self.assertEqual(diagnostics, caught.exception.diagnostics)
+        self.assertIs(diagnostics["cleanup_confirmed"], False)
+        self.assertEqual(diagnostics["original_error"]["type"], "RuntimeError")
+        self.assertEqual(diagnostics["original_error"]["message"], "initial probe failure")
+        self.assertIn("initial probe failure", diagnostics["original_error"]["traceback"])
+        failures = diagnostics["cleanup_errors"]
+        self.assertTrue(any(failure["type"] == "PermissionError"
+                            and failure.get("errno") == errno.EPERM for failure in failures))
+        self.assertTrue(any("inspection unavailable" in failure["message"] for failure in failures))
+        self.assertTrue(all(failure.get("phase") for failure in failures))
+        stdout_path, stderr_path = [Path(diagnostics[key]) for key in ("stdout_path", "stderr_path")]
+        self.assertTrue(stdout_path.is_relative_to(session.path / "tool-runs"))
+        self.assertEqual(stdout_path.read_text(), "saved stdout evidence\n")
+        self.assertEqual(stderr_path.read_text(), "saved stderr evidence\n")
+        recorded = [json.loads(message["content"]) for message in session.messages()
+                    if message["role"] == "tool"]
+        self.assertEqual(len(recorded), 1)
+        self.assertIn("error", recorded[0])
+        self.assertNotIn("exit_code", recorded[0])
+        self.assertNotIn("stdout", recorded[0])
+
+    @unittest.skipUnless(os.name == "posix" and hasattr(os, "WNOWAIT"), "POSIX process ownership")
+    def test_repeated_cleanup_failure_retains_both_rounds_of_diagnostics(self):
+        completed = self.script("completed.py", "print('output before cleanup failures', flush=True)\n")
+        model = ScriptedModel([tool_response(self.command(completed), timeout_seconds=3),
+                               {"role": "assistant", "content": "Must not continue"}])
+        session = Session(self.root, "repeated-cleanup")
+        agent = Agent(model, session, SkillRegistry([]), self.root)
+        self.addCleanup(agent.close)
+        first_errors = [
+            {"phase": "SIGTERM", "type": "PermissionError", "errno": errno.EPERM,
+             "message": "first signal rejected"},
+            {"phase": "SIGTERM_confirmation", "type": "RuntimeError",
+             "message": "first inspection failed"},
+        ]
+        later_errors = [
+            {"phase": "SIGKILL", "type": "PermissionError", "errno": errno.EPERM,
+             "message": "later signal rejected"},
+        ]
+        original = ToolCleanupError("initial cleanup failed", diagnostics={
+            "cleanup_confirmed": False, "cleanup_errors": deepcopy(first_errors),
+        })
+        final = ToolCleanupError("outer cleanup failed", diagnostics={
+            "cleanup_confirmed": False, "cleanup_errors": deepcopy(later_errors),
+        })
+
+        def fail_exit_cleanup(process):
+            self.processes.append(process)
+            raise original
+
+        with patch("skills_agent.execution._finish_main_exit", side_effect=fail_exit_cleanup), \
+                patch("skills_agent.execution._cleanup", side_effect=final) as cleanup:
+            with self.assertRaises(ToolCleanupError) as caught:
+                agent.run(session.make_user_message("Read the existing evidence", []))
+
+        cleanup.assert_called_once_with(self.processes[-1], None)
+        self.assertIs(caught.exception, final)
+        self.assertEqual(len(model.requests), 1)
+        error = next(event for event in reversed(session.events()) if event["type"] == "error")
+        diagnostics = error["diagnostics"]
+        self.assertEqual(diagnostics["cleanup_errors"], first_errors + later_errors)
+        self.assertEqual(original.diagnostics["cleanup_errors"], first_errors)
+        self.assertEqual(diagnostics["original_error"]["type"], "ToolCleanupError")
+        self.assertEqual(diagnostics["original_error"]["message"], "initial cleanup failed")
+        self.assertIn("initial cleanup failed", diagnostics["original_error"]["traceback"])
+        self.assertIs(diagnostics["cleanup_confirmed"], False)
+        self.assertEqual(Path(diagnostics["stdout_path"]).read_text(), "output before cleanup failures\n")
+        self.assertEqual(Path(diagnostics["stderr_path"]).read_text(), "")
 
     def test_timeout_metadata_survives_auto_report_in_next_model_request(self):
         status = {

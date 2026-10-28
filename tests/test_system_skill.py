@@ -20,7 +20,7 @@ class SystemSkillTests(unittest.TestCase):
         self.session = Session(self.root, "main")
         self.package = Path(system_skill.__file__).resolve().parent
         self.skill_name = system_skill.SYSTEM_SKILL_NAME
-        self.source_name = self.skill_name or "feedback"
+        self.source_name = self.skill_name or "check-results"
         self.skill_path = self.package / "builtin_skills" / self.source_name / "SKILL.md"
         self.body = self.skill_path.read_text(encoding="utf-8").split("---", 2)[2].strip()
         if self.skill_name is None:
@@ -41,7 +41,7 @@ class SystemSkillTests(unittest.TestCase):
             self.assertEqual(system.count(self.body), 1)
             self.assertIn(str(self.skill_path), system)
             self.assertIn(f"Resolve relative references from {self.skill_path.parent}.", system)
-        for name in {"investigation", "feedback", "resource-management"} - {self.skill_name}:
+        for name in {"investigation", "check-results", "manage-compute-resources"} - {self.skill_name}:
             other = (self.package / "builtin_skills" / name / "SKILL.md").read_text().split("---", 2)[2].strip()
             self.assertNotIn(other, system)
 
@@ -101,7 +101,7 @@ class SystemSkillTests(unittest.TestCase):
 
     def test_invalid_or_missing_source_fails_instead_of_silently_omitting_instructions(self):
         fake_module = self.root / "package" / "system_skill.py"
-        skill_name = "feedback"
+        skill_name = "check-results"
         fake_skill = fake_module.parent / "builtin_skills" / skill_name / "SKILL.md"
         fake_skill.parent.mkdir(parents=True)
         with (patch.object(system_skill, "__file__", str(fake_module)),

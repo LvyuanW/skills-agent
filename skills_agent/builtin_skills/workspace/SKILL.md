@@ -4,7 +4,7 @@ description: >-
   Read selected parts of large or structured files and attachments (JSON, CSV,
   DOCX, XLSX, PDF), with source locations, or check whether required local tools
   and Python modules are available. Skip simple text reads and searches. Use
-  feedback for visual or runtime checks and delegated history retrieval for
+  check-results for visual or runtime checks and delegated history retrieval for
   conversation records.
 ---
 
@@ -30,7 +30,7 @@ Resolve scripts relative to this SKILL.md and run them through `shell` with an a
 
 Keep the source and selection options unchanged while following cursors. If the file changes, read it again from the appropriate starting point.
 
-These extractors read stored content. They do not check document layout, perform OCR, calculate formulas or test application behavior. Use feedback when those visual or runtime checks are needed. PDF extraction requires an installed reader and does not install one. Use a suitable reader for other binary formats. For very long text lines, the feedback skill's `text` operation supports line/column continuation.
+These extractors read stored content. They do not check document layout, perform OCR, calculate formulas or test application behavior. Use check-results when those visual or runtime checks are needed. PDF extraction requires an installed reader and does not install one. Use a suitable reader for other binary formats. For very long text lines, the check-results skill's `text` operation supports line/column continuation.
 
 Choose `result_mode: direct` when you need exact source text, structured values or cursors. Inspect the returned content and failure status before relying on it. Finding an executable or module confirms its availability, not that it works correctly.
 
