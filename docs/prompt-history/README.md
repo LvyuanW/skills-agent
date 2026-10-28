@@ -97,9 +97,16 @@
 
 六个实验 worktree 共享本轮技能内容，仅显式注入选择按上表区分。主系统模板与八节工作原则未改，继续分别使用 v17 和 v3，不追加对应提示词版本。
 
-本轮实现提交标识在完成提交后补入此处；提交记录作为后续独立文档提交维护，避免文档自引用其自身提交标识。
+以下实现提交包含本轮技能与引用更新、提示词快照，以及此前未提交的执行器修复和对应测试。提交记录由后续独立文档提交维护。
 
-<!-- SKILL_RECALL_COMMIT_RECORDS -->
+| worktree | 实现提交 |
+| --- | --- |
+| 00-working-principles-baseline | `ef2641fdb32b998a18d37c7ac6fa168a0987ee3c` |
+| 01-data-semantics | `69685ea6878802655d7c44777f94fe172b5ed456` |
+| 02-discriminating-experiments | `c6b4dec84d3494377658cd949bff775d5463a705` |
+| 03-feedback-conflicts | `cebd2568ab4d4124cea20e78176b8aaf1440e29b` |
+| 04-discriminating-verification | `5eaabfa4eff5fba77d58dee7f5a260be0ec3bf99` |
+| 05-measured-resources | `40d513c325a61c755e9b42291e2ece2ce53edebe` |
 
 ## 维护方式
 
