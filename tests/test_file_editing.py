@@ -1,300 +1,243 @@
 import json
 import os
-import shlex
+from pathlib import Path
 import stat
-import subprocess
-import sys
 import tempfile
 import unittest
-from pathlib import Path
+from unittest.mock import patch
 
-from skills_agent.skills import SkillRegistry
-from skills_agent.tools import ToolRegistry
-
-
-BUILTIN_ROOT = Path(__file__).resolve().parents[1] / "skills_agent" / "builtin_skills"
-SKILL_ROOT = BUILTIN_ROOT / "file-editing"
-SCRIPT = SKILL_ROOT / "scripts" / "edit.py"
+from skills_agent.file_editing import EditError, SafeFile
+from skills_agent.file_history import WorkspaceHistory
 
 
 class FileEditingTests(unittest.TestCase):
     def setUp(self):
-        self.directory = tempfile.TemporaryDirectory()
-        self.addCleanup(self.directory.cleanup)
-        self.workspace = Path(self.directory.name).resolve()
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
+        self.workspace = self.root / "work"
+        self.workspace.mkdir()
+        self.history = WorkspaceHistory(self.workspace, self.root / "state/history.git", session_id="test")
+        self.addCleanup(self.history.close)
 
-    def edit(self, *arguments, input=b""):
-        return subprocess.run(
-            [sys.executable, str(SCRIPT), *map(str, arguments)],
-            input=input, capture_output=True, cwd=self.workspace, timeout=10,
-        )
+    def edit(self, operation, path, **kwargs):
+        return self.history.edit(operation, path, **kwargs)
 
-    def success(self, *arguments, input=b"", changed=True):
-        result = self.edit(*arguments, input=input)
-        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", errors="replace"))
-        self.assertEqual(result.stderr, b"")
-        summary = json.loads(result.stdout)
-        self.assertEqual(summary["operation"], arguments[0])
-        self.assertEqual(summary["changed"], changed)
-        reported_path = Path(summary["path"])
-        if not reported_path.is_absolute():
-            reported_path = self.workspace / reported_path
-        self.assertEqual(reported_path, (self.workspace / arguments[1]).absolute())
-        return result, summary
+    def test_incremental_create_replace_move_and_delete(self):
+        self.edit("create", "scene.txt", content="<svg>\n<circle/>\n</svg>\n")
+        self.edit("replace", "scene.txt", old_text="<circle/>", new_text="<g><circle/></g>")
+        self.edit("replace", "scene.txt", old_text="<circle/>", new_text="<circle r='12'/>")
+        self.edit("replace", "scene.txt", old_text="<circle r='12'/>", new_text="")
+        self.assertEqual((self.workspace / "scene.txt").read_bytes(), b"<svg>\n<g></g>\n</svg>\n")
+        result = self.edit("move", "scene.txt", destination="renamed.txt")
+        self.assertTrue(result["applied"])
+        self.assertFalse((self.workspace / "scene.txt").exists())
+        self.edit("delete", "renamed.txt")
+        self.assertFalse((self.workspace / "renamed.txt").exists())
 
-    def failure(self, *arguments, input=b""):
-        result = self.edit(*arguments, input=input)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertTrue(result.stderr.strip(), "Failures must explain what prevented the edit")
-        return result
-
-    def test_progressive_create_insert_replace_delete_and_remove(self):
-        # Each invocation receives the previous invocation's persisted result.
-        target = self.workspace / "scene.html"
-        self.success("create", "scene.html", input=b"<svg>\n<circle/>\n</svg>\n")
-        self.assertEqual(target.read_bytes(), b"<svg>\n<circle/>\n</svg>\n")
-
-        self.success("insert", "scene.html", "--anchor", "<circle/>",
-                     "--position", "before", "--text", '<g id="wheel">')
-        self.assertEqual(target.read_bytes(), b'<svg>\n<g id="wheel"><circle/>\n</svg>\n')
-
-        self.success("insert", "scene.html", "--anchor", "<circle/>",
-                     "--position", "after", input=b"</g>")
-        self.success("replace", "scene.html", "--old", "<circle/>",
-                     "--new", '<circle r="12"/>')
-        self.assertEqual(target.read_bytes(), b'<svg>\n<g id="wheel"><circle r="12"/></g>\n</svg>\n')
-
-        self.success("delete-content", "scene.html", "--old", '<circle r="12"/>')
-        self.assertEqual(target.read_bytes(), b'<svg>\n<g id="wheel"></g>\n</svg>\n')
-        self.success("delete-file", "scene.html")
-        self.assertFalse(target.exists())
-
-    def test_ambiguous_missing_and_empty_matches_leave_content_unchanged(self):
+    def test_ambiguous_missing_overlapping_and_empty_matches_do_not_mutate(self):
         target = self.workspace / "notes.txt"
         original = b"aaa\nrepeat\nrepeat\n"
-        cases = [
-            ("replace", "--old", "absent", "--new", "replacement"),
-            ("replace", "--old", "repeat", "--new", "replacement"),
-            ("replace", "--old", "aa", "--new", "replacement"),
-            ("replace", "--old", "", "--new", "replacement"),
-            ("insert", "--anchor", "absent", "--position", "after", "--text", "inserted"),
-            ("insert", "--anchor", "repeat", "--position", "before", "--text", "inserted"),
-            ("insert", "--anchor", "aa", "--position", "after", "--text", "inserted"),
-            ("insert", "--anchor", "", "--position", "before", "--text", "inserted"),
-            ("delete-content", "--old", "absent"),
-            ("delete-content", "--old", "repeat"),
-            ("delete-content", "--old", "aa"),
-            ("delete-content", "--old", ""),
-        ]
-        for operation, *options in cases:
-            with self.subTest(operation=operation, options=options):
-                target.write_bytes(original)
-                self.failure(operation, "notes.txt", *options)
-                self.assertEqual(target.read_bytes(), original)
-
-    def test_exact_match_does_not_fall_back_to_whitespace_normalization(self):
-        target = self.workspace / "tabs.py"
-        original = b"\treturn value\r\nreturn end"
         target.write_bytes(original)
-        self.failure("replace", "tabs.py", "--old", "    return value\n", "--new", "pass\n")
-        self.assertEqual(target.read_bytes(), original)
+        for old in ("absent", "repeat", "aa", ""):
+            with self.subTest(old=old), self.assertRaises(EditError):
+                self.edit("replace", "notes.txt", old_text=old, new_text="replacement")
+            self.assertEqual(target.read_bytes(), original)
+        self.assertFalse(self.history.repository.exists())
 
-    def test_edits_preserve_unicode_tabs_mixed_newlines_and_missing_final_newline(self):
-        target = self.workspace / "字面量.txt"
-        before = "\t前缀\r\nreplace-me\n后缀\r\nlast\t尾".encode("utf-8")
-        target.write_bytes(before)
-        replacement = "\t新值\r\n第二行".encode("utf-8")
-        self.success("replace", "字面量.txt", "--old", "replace-me", input=replacement)
-        expected = before.replace(b"replace-me", replacement)
-        self.assertEqual(target.read_bytes(), expected)
+    def test_empty_file_can_be_filled_without_a_general_overwrite_operation(self):
+        result = self.edit("create", "empty.txt", content="")
+        first = result["after_revision"]
+        unchanged = self.edit("replace", "empty.txt", old_text="", new_text="")
+        self.assertFalse(unchanged["changed"])
+        self.assertEqual(self.history.last_checkpoint, first)
+        self.edit("replace", "empty.txt", old_text="", new_text="now filled\r\n")
+        self.assertEqual((self.workspace / "empty.txt").read_bytes(), b"now filled\r\n")
+        with self.assertRaises(EditError):
+            self.edit("replace", "empty.txt", old_text="", new_text="overwrite")
 
-        insertion = "插入\r\n".encode("utf-8")
-        self.success("insert", "字面量.txt", "--anchor", "last\t尾", "--position", "before",
-                     input=insertion)
-        expected = expected.replace("last\t尾".encode("utf-8"), insertion + "last\t尾".encode("utf-8"))
-        self.assertEqual(target.read_bytes(), expected)
-
-        self.success("delete-content", "字面量.txt", "--old", "第二行")
-        self.assertEqual(target.read_bytes(), expected.replace("第二行".encode("utf-8"), b""))
-
-    def test_multiline_payload_files_and_empty_replacement(self):
-        old = self.workspace / "old payload.txt"
-        new = self.workspace / "new payload.txt"
-        anchor = self.workspace / "anchor payload.txt"
-        target = self.workspace / "document.txt"
-        original = b"before\r\nold first\r\nold second\nafter"
-        old.write_bytes(b"old first\r\nold second")
-        new.write_bytes(b"new first\r\nnew second")
-        anchor.write_bytes(b"new first\r\nnew second")
-        source = self.workspace / "initial payload.txt"
-        source.write_bytes(original)
-        self.success("create", "document.txt", "--text-file", source)
-        self.assertEqual(target.read_bytes(), original)
-        self.success("replace", "document.txt", "--old-file", old, "--new-file", new)
-        self.assertEqual(target.read_bytes(), b"before\r\nnew first\r\nnew second\nafter")
-        self.success("insert", "document.txt", "--anchor-file", anchor,
-                     "--position", "after", "--text-file", old)
-        self.success("delete-content", "document.txt", "--old-file", old)
-        self.success("replace", "document.txt", "--old-file", anchor, "--new", "")
-        self.assertEqual(target.read_bytes(), b"before\r\n\nafter")
-
-    def test_create_refuses_overwrite_and_does_not_create_parent_directories(self):
-        target = self.workspace / "existing.txt"
-        original = b"original"
+    def test_unicode_tabs_crlf_and_executable_mode_are_preserved(self):
+        target = self.workspace / "字面量.py"
+        original = "\t前缀\r\nreplace-me\n后缀\r\nlast\t尾".encode()
         target.write_bytes(original)
-        self.failure("create", "existing.txt", "--text", "replacement")
-        self.assertEqual(target.read_bytes(), original)
-        self.failure("create", "missing-parent/new.txt", "--text", "new file")
-        self.assertFalse((self.workspace / "missing-parent").exists())
-
-    def test_noop_replacement_reports_unchanged_and_retains_content(self):
-        target = self.workspace / "unchanged.txt"
-        original = "前缀\r\n\tkeep\n最后".encode("utf-8")
-        target.write_bytes(original)
-        self.success("replace", "unchanged.txt", "--old", "keep", "--new", "keep", changed=False)
-        self.assertEqual(target.read_bytes(), original)
-
-    def test_missing_files_and_directories_are_not_created_or_removed(self):
-        directory = self.workspace / "directory"
-        directory.mkdir()
-        child = directory / "keep.txt"
-        child.write_bytes(b"keep")
-        for target in ("missing.txt", "directory"):
-            for operation, *options in [
-                ("replace", "--old", "keep", "--new", "changed"),
-                ("insert", "--anchor", "keep", "--position", "after", "--text", "changed"),
-                ("delete-content", "--old", "keep"),
-                ("delete-file",),
-            ]:
-                with self.subTest(target=target, operation=operation):
-                    self.failure(operation, target, *options)
-                    self.assertFalse((self.workspace / "missing.txt").exists())
-                    self.assertTrue(directory.is_dir())
-                    self.assertEqual(child.read_bytes(), b"keep")
-
-    def test_text_edits_reject_binary_files_without_modifying_them(self):
-        target = self.workspace / "binary.dat"
-        for original in (b"\xffkeep", b"keep\x00data"):
-            for operation, *options in [
-                ("replace", "--old", "keep", "--new", "changed"),
-                ("insert", "--anchor", "keep", "--position", "before", "--text", "changed"),
-                ("delete-content", "--old", "keep"),
-            ]:
-                with self.subTest(original=original, operation=operation):
-                    target.write_bytes(original)
-                    self.failure(operation, "binary.dat", *options)
-                    self.assertEqual(target.read_bytes(), original)
-        self.success("delete-file", "binary.dat")
-        self.assertFalse(target.exists())
-
-    def test_invalid_utf8_or_nul_payloads_leave_targets_unchanged(self):
-        target = self.workspace / "existing.txt"
-        for payload in (b"\xff", b"new\x00value"):
-            with self.subTest(payload=payload):
-                target.write_bytes(b"old")
-                self.failure("replace", "existing.txt", "--old", "old", input=payload)
-                self.assertEqual(target.read_bytes(), b"old")
-                self.failure("create", "new.txt", input=payload)
-                self.assertFalse((self.workspace / "new.txt").exists())
-
-    def test_missing_or_invalid_payload_files_do_not_modify_target(self):
-        target = self.workspace / "existing.txt"
-        payload = self.workspace / "payload.txt"
-        for contents in (None, b"\xff", b"old\x00", b""):
-            for operation, *options in [
-                ("replace", "--old-file", payload, "--new", "new"),
-                ("insert", "--anchor-file", payload, "--position", "after", "--text", "new"),
-                ("delete-content", "--old-file", payload),
-            ]:
-                with self.subTest(contents=contents, operation=operation):
-                    target.write_bytes(b"old")
-                    payload.unlink(missing_ok=True)
-                    if contents is not None:
-                        payload.write_bytes(contents)
-                    self.failure(operation, "existing.txt", *options)
-                    self.assertEqual(target.read_bytes(), b"old")
-
-    @unittest.skipUnless(hasattr(os, "symlink"), "Symbolic links are unavailable")
-    def test_edits_and_deletion_refuse_symlinks_and_preserve_their_targets(self):
-        target = self.workspace / "real.txt"
-        target.write_bytes(b"keep")
-        link = self.workspace / "link.txt"
-        link.symlink_to(target)
-        for operation, *options in [
-            ("create", "--text", "new"),
-            ("replace", "--old", "keep", "--new", "changed"),
-            ("insert", "--anchor", "keep", "--position", "before", "--text", "changed"),
-            ("delete-content", "--old", "keep"),
-            ("delete-file",),
-        ]:
-            with self.subTest(operation=operation):
-                self.failure(operation, "link.txt", *options)
-                self.assertTrue(link.is_symlink())
-                self.assertEqual(target.read_bytes(), b"keep")
-        dangling = self.workspace / "dangling.txt"
-        dangling.symlink_to(self.workspace / "not-created.txt")
-        self.failure("create", "dangling.txt", "--text", "new")
-        self.assertTrue(dangling.is_symlink())
-        self.assertFalse((self.workspace / "not-created.txt").exists())
-
-    @unittest.skipUnless(os.name == "posix", "POSIX executable permissions are required")
-    def test_edits_preserve_executable_permissions(self):
-        target = self.workspace / "run.py"
-        target.write_bytes(b"#!/usr/bin/env python3\nprint('old')\n")
         target.chmod(0o751)
-        self.success("replace", "run.py", "--old", "old", "--new", "new")
+        replacement = "\t新值\r\n第二行"
+        self.edit("replace", str(target), old_text="replace-me", new_text=replacement)
+        self.assertEqual(target.read_bytes(), original.replace(b"replace-me", replacement.encode()))
         self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o751)
-        self.assertEqual(target.read_bytes(), b"#!/usr/bin/env python3\nprint('new')\n")
+        with self.assertRaises(EditError):
+            self.edit("replace", target, old_text="    前缀\n", new_text="wrong")
 
-    def test_success_output_is_bounded_without_truncating_saved_content(self):
-        target = self.workspace / "large.txt"
-        for original in (b"x" * 100000 + b"old", (b"line\n" * 30000) + b"old\n"):
-            with self.subTest(length=len(original)):
-                target.unlink(missing_ok=True)
-                result, _ = self.success("create", "large.txt", input=original)
-                self.assertLess(len(result.stdout), 20000)
-                self.assertEqual(target.read_bytes(), original)
-                result, summary = self.success("replace", "large.txt", "--old", "old", "--new", "new")
-                self.assertLess(len(result.stdout), 20000)
-                self.assertTrue(any("new" in line["text"] for line in summary["excerpt"]["lines"]),
-                                "Bounded feedback should show the edited region, including long-line tails")
-                self.assertEqual(target.read_bytes(), original.replace(b"old", b"new"))
-                self.success("delete-file", "large.txt")
+    def test_create_and_move_refuse_overwrite_and_require_existing_parents(self):
+        target = self.workspace / "existing.txt"
+        target.write_bytes(b"keep")
+        for operation, path, kwargs in (
+            ("create", "existing.txt", {"content": "overwrite"}),
+            ("create", "missing/new.txt", {"content": "new"}),
+            ("move", "existing.txt", {"destination": "missing/new.txt"}),
+            ("move", "existing.txt", {"destination": "existing.txt"}),
+        ):
+            with self.subTest(operation=operation, path=path), self.assertRaises(EditError):
+                self.edit(operation, path, **kwargs)
+        (self.workspace / "occupied.txt").write_bytes(b"occupied")
+        with self.assertRaises(EditError):
+            self.edit("move", "existing.txt", destination="occupied.txt")
+        self.assertEqual(target.read_bytes(), b"keep")
+        self.assertEqual((self.workspace / "occupied.txt").read_bytes(), b"occupied")
+        self.assertFalse((self.workspace / "missing").exists())
 
-    def test_invalid_argument_combinations_do_not_mutate_files(self):
+    def test_noop_keeps_inode_and_does_not_initialize_history(self):
         target = self.workspace / "keep.txt"
-        source = self.workspace / "payload.txt"
-        target.write_bytes(b"old")
-        source.write_bytes(b"new")
-        for arguments in [
-            ("replace", "keep.txt", "--new", "new"),
-            ("replace", "keep.txt", "--old", "old", "--old-file", source, "--new", "new"),
-            ("replace", "keep.txt", "--old", "old", "--new", "new", "--new-file", source),
-            ("insert", "keep.txt", "--anchor", "old", "--text", "new"),
-            ("insert", "keep.txt", "--anchor", "old", "--position", "middle", "--text", "new"),
-            ("create", "new.txt", "--text", "new", "--text-file", source),
-        ]:
-            with self.subTest(arguments=arguments):
-                self.failure(*arguments)
-                self.assertEqual(target.read_bytes(), b"old")
-                self.assertFalse((self.workspace / "new.txt").exists())
+        target.write_bytes(b"before\r\nkeep")
+        before = target.stat()
+        result = self.edit("replace", "keep.txt", old_text="keep", new_text="keep")
+        self.assertFalse(result["changed"])
+        self.assertFalse(result["applied"])
+        self.assertEqual(target.stat().st_ino, before.st_ino)
+        self.assertFalse(self.history.repository.exists())
 
-    def test_skill_is_discovered_and_script_runs_through_existing_shell_tool(self):
-        catalog = SkillRegistry([BUILTIN_ROOT]).catalog()
-        self.assertIn("file-editing:", catalog)
-        self.assertIn(str(SKILL_ROOT / "SKILL.md"), catalog)
-        tools = ToolRegistry(self.workspace)
-        self.assertEqual([schema["name"] for schema in tools.schemas], ["shell"])
-        command = shlex.join([sys.executable, str(SCRIPT), "create", "result 'quoted'.txt",
-                              "--text", "literal $(printf wrong) `pwd` 中文"])
-        result = json.loads(tools.execute("shell", json.dumps({
-            "name": "Create an artifact using the file-editing skill", "command": command,
-            "result_mode": "direct", "run_in_background": False,
-        })))
-        self.assertEqual(result["exit_code"], 0, result["stderr"])
-        self.assertEqual(json.loads(result["stdout"])["operation"], "create")
-        self.assertEqual((self.workspace / "result 'quoted'.txt").read_bytes(),
-                         "literal $(printf wrong) `pwd` 中文".encode("utf-8"))
+    def test_binary_move_delete_and_text_validation(self):
+        target = self.workspace / "binary.dat"
+        for data in (b"\xffkeep", b"keep\x00data"):
+            target.write_bytes(data)
+            with self.assertRaises(EditError):
+                self.edit("replace", "binary.dat", old_text="keep", new_text="changed")
+            self.assertEqual(target.read_bytes(), data)
+        target.chmod(0o640)
+        self.edit("move", "binary.dat", destination="moved.bin")
+        moved = self.workspace / "moved.bin"
+        self.assertEqual(moved.read_bytes(), b"keep\x00data")
+        self.assertEqual(stat.S_IMODE(moved.stat().st_mode), 0o640)
+        self.edit("delete", "moved.bin")
+        self.assertFalse(moved.exists())
+
+    def test_invalid_payloads_and_directories_are_rejected(self):
+        target = self.workspace / "existing.txt"
+        target.write_text("old")
+        (self.workspace / "directory").mkdir()
+        for payload in (None, b"bytes", "new\x00value", "\udcff"):
+            with self.subTest(payload=repr(payload)), self.assertRaises(EditError):
+                self.edit("replace", "existing.txt", old_text="old", new_text=payload)
+            with self.assertRaises(EditError):
+                self.edit("create", "new.txt", content=payload)
+        for path in ("missing", "directory"):
+            with self.subTest(path=path), self.assertRaises(EditError):
+                self.edit("delete", path)
+        self.assertEqual(target.read_text(), "old")
+        self.assertFalse((self.workspace / "new.txt").exists())
+
+    def test_symlink_leaf_parent_and_dangling_links_are_refused(self):
+        outside = self.root / "outside"
+        outside.mkdir()
+        actual = outside / "actual.txt"
+        actual.write_text("keep")
+        (self.workspace / "link").symlink_to(actual)
+        (self.workspace / "directory-link").symlink_to(outside, target_is_directory=True)
+        (self.workspace / "dangling").symlink_to(outside / "absent")
+        for operation, path, kwargs in (
+            ("delete", "link", {}),
+            ("replace", "link", {"old_text": "keep", "new_text": "wrong"}),
+            ("create", "dangling", {"content": "wrong"}),
+            ("create", "directory-link/new", {"content": "wrong"}),
+        ):
+            with self.subTest(operation=operation, path=path), self.assertRaises(EditError):
+                self.edit(operation, path, **kwargs)
+        self.assertEqual(actual.read_text(), "keep")
+        self.assertFalse((outside / "new").exists())
+
+    def test_workspace_and_protected_paths_cannot_be_edited(self):
+        outside = self.root / "outside.txt"
+        outside.write_text("keep")
+        for path in ("../outside.txt", str(outside), ".git/config", ".GIT/config", ".venv/a.py",
+                     ".agent/log", str(self.history.repository / "config")):
+            with self.subTest(path=path), self.assertRaises(EditError):
+                self.edit("create", path, content="wrong")
+        self.assertEqual(outside.read_text(), "keep")
+
+    def test_case_aliases_of_runtime_storage_are_protected(self):
+        storage = self.workspace / "Runtime-Data"
+        storage.mkdir()
+        (storage / "receipt.json").write_text("keep")
+        history = WorkspaceHistory(self.workspace, self.repository_path(), session_id="case",
+                                   excluded_roots=[storage])
+        self.addCleanup(history.close)
+        with self.assertRaisesRegex(EditError, "Protected"):
+            history.edit("replace", "runtime-data/receipt.json", old_text="keep", new_text="wrong")
+        self.assertEqual((storage / "receipt.json").read_text(), "keep")
+
+    def repository_path(self):
+        return self.root / "case-history.git"
+
+    def test_external_preimage_change_is_not_overwritten(self):
+        target = self.workspace / "target.txt"
+        target.write_text("old")
+        commit = self.history._commit_paths
+        def changed(states, metadata, phase):
+            result = commit(states, metadata, phase)
+            if phase == "before":
+                target.write_text("external writer")
+            return result
+        with patch.object(self.history, "_commit_paths", side_effect=changed):
+            with self.assertRaises(EditError) as failure:
+                self.edit("replace", "target.txt", old_text="old", new_text="new")
+        self.assertFalse(failure.exception.details["applied"])
+        self.assertIsNotNone(failure.exception.details["before_revision"])
+        self.assertEqual(target.read_text(), "external writer")
+
+    def test_parent_replaced_by_symlink_after_backup_is_refused(self):
+        folder = self.workspace / "folder"
+        folder.mkdir()
+        (folder / "file.txt").write_text("inside")
+        outside = self.root / "outside"
+        outside.mkdir()
+        (outside / "file.txt").write_text("outside")
+        commit = self.history._commit_paths
+        def changed(states, metadata, phase):
+            result = commit(states, metadata, phase)
+            if phase == "before":
+                folder.rename(self.workspace / "moved")
+                folder.symlink_to(outside, target_is_directory=True)
+            return result
+        with patch.object(self.history, "_commit_paths", side_effect=changed):
+            with self.assertRaises(EditError):
+                self.edit("replace", "folder/file.txt", old_text="inside", new_text="new")
+        self.assertEqual((outside / "file.txt").read_text(), "outside")
+        self.assertEqual((self.workspace / "moved/file.txt").read_text(), "inside")
+
+    def test_cleanup_failure_after_publication_reports_applied(self):
+        original = os.unlink
+        failed = False
+        def cleanup(path, *args, **kwargs):
+            nonlocal failed
+            if str(path).startswith(".file-editing-") and not failed:
+                failed = True
+                raise PermissionError("cleanup failed after publication")
+            return original(path, *args, **kwargs)
+        with patch("skills_agent.file_editing.os.unlink", side_effect=cleanup):
+            with self.assertRaises(EditError) as failure:
+                self.edit("create", "created.txt", content="published")
+        self.assertTrue(failure.exception.details["applied"])
+        self.assertIsNotNone(failure.exception.details["after_revision"])
+        self.assertEqual((self.workspace / "created.txt").read_text(), "published")
+
+    def test_partial_move_reports_created_destination_and_keeps_recovery(self):
+        (self.workspace / "source.bin").write_bytes(b"\xff\x00source")
+        with patch.object(SafeFile, "delete", side_effect=PermissionError("source deletion failed")):
+            with self.assertRaises(EditError) as failure:
+                self.edit("move", "source.bin", destination="destination.bin")
+        details = failure.exception.details
+        self.assertTrue(details["applied"])
+        self.assertEqual(details["applied_paths"], ["destination.bin"])
+        self.assertIsNotNone(details["before_revision"])
+        self.assertIsNotNone(details["after_revision"])
+        self.assertEqual((self.workspace / "destination.bin").read_bytes(), b"\xff\x00source")
+        self.assertEqual((self.workspace / "source.bin").read_bytes(), b"\xff\x00source")
+
+    def test_feedback_is_bounded_and_shows_the_edit(self):
+        target = self.workspace / "large.txt"
+        target.write_text("x" * 100000 + "old")
+        result = self.edit("replace", "large.txt", old_text="old", new_text="new")
+        self.assertLess(len(json.dumps(result)), 20000)
+        self.assertTrue(any("new" in line["text"] for line in result["excerpt"]["lines"]))
+        self.assertTrue(target.read_text().endswith("new"))
 
 
 if __name__ == "__main__":

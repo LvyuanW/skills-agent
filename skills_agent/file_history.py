@@ -1,24 +1,17 @@
-"""Automatic, external Git checkpoints of files observed in a workspace.
-
-The watcher observes states, not every write syscall. Checkpoints can contain
-changes from any process sharing the workspace; an observer is not an author.
-"""
+"""External Git history for files changed through the editing tool."""
 
 from __future__ import annotations
 
 import argparse
-from contextlib import ExitStack, contextmanager
+from contextlib import contextmanager
 from datetime import datetime, timezone
-import errno
 import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
-import stat
 import subprocess
 import sys
 import threading
-import time
 from uuid import uuid4
 
 
@@ -27,14 +20,6 @@ EXCLUDED_NAMES = frozenset({
     "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache",
 })
 HISTORY_REF = "refs/heads/history"
-BLOB_BATCH_SIZE = 64
-BLOB_BATCH_BYTES = 32 * 1024 * 1024
-
-
-class TransientScanError(RuntimeError):
-    """A concurrent writer changed a file while it was being captured."""
-
-
 def _environment():
     # Runtime history must not inherit the user's index, filters or Git config.
     env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
@@ -98,24 +83,17 @@ def _atomic_json(path, value, *, ensure_ascii=False):
         temporary.unlink(missing_ok=True)
 
 
-def _fingerprint(info):
-    return (info.st_dev, info.st_ino, info.st_mode, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
-
-
-def _cache_digest(payload):
-    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"),
-                                    ensure_ascii=True).encode("ascii")).hexdigest()
-
-
 class WorkspaceHistory:
-    """Watch one workspace and save recoverable file contents outside it."""
+    """Record only edits performed through the dedicated file-editing tool."""
 
     def __init__(self, workspace, repository, *, session_id, excluded_roots=()):
         self.workspace = Path(workspace).expanduser().resolve()
         self.repository = Path(repository).expanduser().resolve()
         if not self.workspace.is_dir():
             raise ValueError(f"History workspace does not exist: {self.workspace}")
-        if self.repository == self.workspace or self.workspace.is_relative_to(self.repository):
+        workspace_parts = tuple(part.casefold() for part in self.workspace.parts)
+        repository_parts = tuple(part.casefold() for part in self.repository.parts)
+        if workspace_parts[:len(repository_parts)] == repository_parts:
             raise ValueError("The history repository cannot contain the workspace")
         self.session_id = str(session_id)
         self.excluded_roots = tuple({self.repository,
@@ -125,387 +103,219 @@ class WorkspaceHistory:
         self.last_error = None
         self.pending_error = None
         self.last_checkpoint = None
-        self._cache = {}
-        self._cache_loaded = False
-        self._stop = threading.Event()
-        self._ready = threading.Event()
         self._mutex = threading.RLock()
-        self._lifecycle = threading.RLock()
-        self._thread = None
-        self._watching = False
         self._closed = False
         self._owns_repository = False
         self._instance_id = uuid4().hex
 
-    def _excluded(self, path):
-        relative = path.relative_to(self.workspace)
-        return (any(part in EXCLUDED_NAMES for part in relative.parts[:-1])
-                or path.name in {".git", ".agent", ".skills-agent"}
-                or (path.name in EXCLUDED_NAMES and path.is_dir())
-                or any(path == root or path.is_relative_to(root) for root in self.excluded_roots))
+    def start(self):
+        """Compatibility entry point; never scan, watch, or initialize storage."""
+        if self._closed:
+            raise RuntimeError("File editing history is closed")
+        return self
+
+    def close(self):
+        with self._mutex:
+            self._closed = True
+
+    def checkpoint(self, reason="manual checkpoint"):
+        """Compatibility only: programs and shell writes are not recorded."""
+        return self.last_checkpoint
+
+    def status(self):
+        return {"workspace": str(self.workspace), "repository": str(self.repository),
+                "session_id": self.session_id, "pid": os.getpid(), "mode": "editing-only",
+                "monitoring": False, "initialized": (self.repository / "HEAD").is_file(),
+                "checkpoint": self.last_checkpoint, "last_error": self.last_error,
+                "pending_error": None, "closed": self._closed,
+                "excluded_names": sorted(EXCLUDED_NAMES),
+                "excluded_roots": [str(path) for path in sorted(self.excluded_roots)],
+                "recorded_at": datetime.now(timezone.utc).isoformat()}
 
     def _initialize(self):
         metadata = self.repository / "workspace.json"
         self._owns_repository = False
         if metadata.exists():
             saved = json.loads(metadata.read_text(encoding="utf-8"))
-            if saved.get("format") != 1 or saved.get("workspace") != str(self.workspace):
+            if saved.get("format") not in {1, 2} or saved.get("workspace") != str(self.workspace):
                 raise ValueError("File history repository belongs to a different workspace")
         else:
             if (self.repository / "HEAD").exists():
                 raise ValueError("Refuse to take over an existing Git repository without runtime ownership metadata")
-            # Establish ownership before Git initialization; interrupted initialization
-            # can then resume without mistaking the partial repository for a user's.
-            _atomic_json(metadata, {"workspace": str(self.workspace),
-                                    "excluded_names": sorted(EXCLUDED_NAMES),
-                                    "format": 1})
+            saved = {"workspace": str(self.workspace), "excluded_names": sorted(EXCLUDED_NAMES)}
+        updated = {**saved, "format": 2, "mode": "editing-only"}
+        if updated != saved:
+            _atomic_json(metadata, updated, ensure_ascii=True)
         self._owns_repository = True
         if not (self.repository / "HEAD").exists():
             _git(self.repository, "init", "--bare", "--initial-branch=history", self.repository)
-        if not self._cache_loaded:
-            self._cache_loaded = True
-            self._load_blob_cache()
-
-    def _load_blob_cache(self):
-        """Reuse unchanged file hashes across starts; validate the referenced blobs."""
-        try:
-            saved = json.loads((self.repository / "file-cache.json").read_text(encoding="utf-8"))
-            payload = saved["payload"]
-            if (payload["version"] != 1 or payload["workspace"] != str(self.workspace)
-                    or saved["sha256"] != _cache_digest(payload)):
-                return
-            entries = {}
-            for name, value in payload["entries"].items():
-                if (not isinstance(name, str) or not name or PurePosixPath(name).is_absolute()
-                        or ".." in PurePosixPath(name).parts
-                        or not isinstance(value, list) or len(value) != 2):
-                    return
-                fingerprint, oid = value
-                if (not isinstance(fingerprint, list) or len(fingerprint) != 6
-                        or not all(type(part) is int for part in fingerprint)
-                        or not isinstance(oid, str) or len(oid) != 40
-                        or any(char not in "0123456789abcdef" for char in oid)):
-                    return
-                entries[name] = (tuple(fingerprint), oid)
-            if not entries:
-                return
-            identifiers = sorted({value[1] for value in entries.values()})
-            result = _git(self.repository, "cat-file", "--batch-check=%(objectname) %(objecttype)",
-                          input=("\n".join(identifiers) + "\n").encode("ascii"), check=False)
-            if result.returncode:
-                return
-            verified = {line.split()[0].decode("ascii") for line in result.stdout.splitlines()
-                        if len(line.split()) == 2 and line.split()[1] == b"blob"}
-            self._cache.update({name: value for name, value in entries.items() if value[1] in verified})
-        except (OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.SubprocessError):
-            # The cache is optional; a miss takes the normal safe file-read path.
-            return
-
-    def _save_blob_cache(self):
-        payload = {"version": 1, "workspace": str(self.workspace), "entries": self._cache}
-        try:
-            _atomic_json(self.repository / "file-cache.json",
-                         {"payload": payload, "sha256": _cache_digest(payload)}, ensure_ascii=True)
-        except OSError:
-            pass  # The committed snapshot remains valid without this optimization.
 
     def _record_status(self):
-        if not self._owns_repository:
-            return
-        _atomic_json(self.repository / "runtime" / (self._instance_id + ".json"), self.status())
+        if self._owns_repository:
+            _atomic_json(self.repository / "runtime" / (self._instance_id + ".json"),
+                         self.status(), ensure_ascii=True)
 
-    def status(self):
-        return {"workspace": str(self.workspace), "repository": str(self.repository),
-                "session_id": self.session_id, "pid": os.getpid(),
-                "monitoring": bool(self._watching and not self._closed),
-                "checkpoint": self.last_checkpoint, "last_error": self.last_error,
-                "pending_error": self.pending_error,
-                "excluded_names": sorted(EXCLUDED_NAMES),
-                "excluded_roots": [str(path) for path in sorted(self.excluded_roots)],
-                "recorded_at": datetime.now(timezone.utc).isoformat()}
+    def _head(self):
+        result = _git(self.repository, "rev-parse", "--verify", HISTORY_REF, check=False)
+        return result.stdout.strip().decode("ascii") if result.returncode == 0 else None
 
-    @contextmanager
-    def _parent_directory(self, path):
-        """Keep each parent open without following a raced-in directory symlink."""
-        relative = path.relative_to(self.workspace)
-        if os.open in os.supports_dir_fd and hasattr(os, "O_NOFOLLOW"):
-            flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-            descriptor = os.open(self.workspace, flags)
-            try:
-                for component in relative.parts[:-1]:
-                    child = os.open(component, flags, dir_fd=descriptor)
-                    os.close(descriptor)
-                    descriptor = child
-                yield descriptor, relative.name
-            finally:
-                os.close(descriptor)
-        else:
-            if not path.parent.resolve().is_relative_to(self.workspace):
-                raise ValueError("History path escaped its workspace")
-            yield None, str(path)
-
-    def _open_regular(self, path):
-        # Keep the safe descriptor open until hashing and the final fstat finish.
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
-        with self._parent_directory(path) as (parent, name):
-            descriptor = os.open(name, flags, dir_fd=parent)
-        return os.fdopen(descriptor, "rb")
-
-    def _regular_blob(self, path, info):
-        """Single-file fallback for platforms without inherited /dev/fd paths."""
-        relative = path.relative_to(self.workspace).as_posix()
-        cached = self._cache.get(relative)
-        fingerprint = _fingerprint(info)
-        if cached and cached[0] == fingerprint:
-            return cached[1]
-        for _ in range(3):
-            with self._open_regular(path) as stream:
-                before = os.fstat(stream.fileno())
-                if not stat.S_ISREG(before.st_mode):
-                    raise TransientScanError(f"File changed type during history scan: {relative}")
-                oid = _git(self.repository, "hash-object", "-w", "--stdin", stdin=stream).strip().decode("ascii")
-                after = os.fstat(stream.fileno())
-            if _fingerprint(before) == _fingerprint(after):
-                self._cache[relative] = (_fingerprint(after), oid)
-                return oid
-        raise TransientScanError(f"File kept changing during history scan: {relative}")
-
-    def _regular_blobs(self, requests):
-        """Hash bounded batches of safely opened files with one Git process each."""
-        results = {}
+    def _commit_paths(self, states, metadata, phase):
+        """Change only the operation's paths in the existing history tree."""
+        parent = self._head()
+        index = self.repository / ("runtime-index-" + uuid4().hex)
+        env = {**_environment(), "GIT_INDEX_FILE": str(index)}
         try:
-            if os.name != "posix" or not Path("/dev/fd").is_dir():
-                for path, info in requests:
-                    results[path.relative_to(self.workspace).as_posix()] = self._regular_blob(path, info)
-                return results
-            offset = 0
-            while offset < len(requests):
-                end, size = offset, 0
-                while end < len(requests) and end - offset < BLOB_BATCH_SIZE:
-                    next_size = requests[end][1].st_size
-                    if end > offset and size + next_size > BLOB_BATCH_BYTES:
-                        break
-                    size += next_size
-                    end += 1
-                batch = requests[offset:end]
-                offset = end
-                with ExitStack() as stack:
-                    opened = []
-                    for path, info in batch:
-                        stream = stack.enter_context(self._open_regular(path))
-                        before = os.fstat(stream.fileno())
-                        if not stat.S_ISREG(before.st_mode) or _fingerprint(before) != _fingerprint(info):
-                            raise TransientScanError(f"File changed before history read: {path}")
-                        opened.append((path.relative_to(self.workspace).as_posix(), stream, before))
-                    descriptors = tuple(stream.fileno() for _, stream, _ in opened)
-                    paths = b"".join(f"/dev/fd/{descriptor}\n".encode("ascii") for descriptor in descriptors)
-                    raw = _git(self.repository, "hash-object", "-w", "--no-filters", "--stdin-paths",
-                               input=paths, pass_fds=descriptors)
-                    identifiers = raw.decode("ascii").splitlines()
-                    if len(identifiers) != len(opened):
-                        raise RuntimeError("Git did not return one object for each file history input")
-                    for relative, stream, before in opened:
-                        if _fingerprint(before) != _fingerprint(os.fstat(stream.fileno())):
-                            raise TransientScanError(f"File changed during history read: {relative}")
-                    for (relative, _, before), oid in zip(opened, identifiers):
-                        self._cache[relative] = (_fingerprint(before), oid)
-                        results[relative] = oid
-        except OSError as exc:
-            if exc.errno in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP, errno.EINVAL):
-                raise TransientScanError(f"File changed during history scan: {exc.filename}") from exc
-            raise
-        return results
-
-    def _entries(self):
-        entries = []
-        requests = []
-        present = set()
-        def scan_error(error):
-            if error.errno in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP):
-                raise TransientScanError(f"Directory changed during history scan: {error.filename}") from error
-            raise error
-        for directory, folders, files in os.walk(self.workspace, followlinks=False, onerror=scan_error):
-            base = Path(directory)
-            kept = []
-            for name in folders:
-                path = base / name
-                if self._excluded(path):
+            if parent:
+                _git(self.repository, "read-tree", parent, env=env)
+            else:
+                _git(self.repository, "read-tree", "--empty", env=env)
+            updates = []
+            if parent:
+                names = _git(self.repository, "ls-tree", "-r", "-z", "--name-only", parent).split(b"\0")
+                for raw_name in filter(None, names):
+                    name = os.fsdecode(raw_name)
+                    if any(name == path or name.startswith(path + "/") or path.startswith(name + "/")
+                           for path in states):
+                        updates.append(b"0 " + b"0" * 40 + b"\t" + raw_name + b"\0")
+            for name, state in states.items():
+                if state is None:
                     continue
-                if path.is_symlink():
-                    files.append(name)
-                else:
-                    kept.append(name)
-            folders[:] = kept
-            for name in files:
-                path = base / name
-                if self._excluded(path):
-                    continue
-                relative = path.relative_to(self.workspace).as_posix()
-                try:
-                    info = path.lstat()
-                    if stat.S_ISLNK(info.st_mode):
-                        with self._parent_directory(path) as (parent, name):
-                            target = os.readlink(name, dir_fd=parent)
-                        oid = _git(self.repository, "hash-object", "-w", "--stdin",
-                                   input=os.fsencode(target)).strip().decode("ascii")
-                        mode = "120000"
-                    elif stat.S_ISREG(info.st_mode):
-                        cached = self._cache.get(relative)
-                        oid = cached[1] if cached and cached[0] == _fingerprint(info) else None
-                        if oid is None:
-                            requests.append((path, info))
-                        mode = "100755" if info.st_mode & 0o111 else "100644"
-                    else:
-                        continue
-                except OSError as exc:
-                    if exc.errno in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP, errno.EINVAL):
-                        raise TransientScanError(f"File changed during history scan: {relative}") from exc
-                    raise
-                present.add(relative)
-                entries.append((mode, relative, oid))
-        captured = self._regular_blobs(requests)
-        self._cache = {key: value for key, value in self._cache.items() if key in present}
-        return b"".join(mode.encode() + b" " + (oid or captured[relative]).encode() + b"\t" +
-                        os.fsencode(relative) + b"\0" for mode, relative, oid in entries)
-
-    def checkpoint(self, reason="manual checkpoint"):
-        """Save an observed file state. Return its commit, also for a no-op."""
-        with self._mutex, _repository_lock(self.repository):
-            try:
-                self._initialize()
-                entries = self._entries()
-                index = self.repository / ("runtime-index-" + uuid4().hex)
-                env = {**_environment(), "GIT_INDEX_FILE": str(index)}
-                try:
-                    _git(self.repository, "read-tree", "--empty", env=env)
-                    _git(self.repository, "update-index", "-z", "--index-info", input=entries, env=env)
-                    tree = _git(self.repository, "write-tree", env=env).strip().decode("ascii")
-                finally:
-                    index.unlink(missing_ok=True)
-                    index.with_name(index.name + ".lock").unlink(missing_ok=True)
-                previous = _git(self.repository, "rev-parse", "--verify", HISTORY_REF, check=False)
-                parent = previous.stdout.strip().decode("ascii") if previous.returncode == 0 else None
-                old_tree = (_git(self.repository, "rev-parse", parent + "^{tree}").strip().decode("ascii")
-                            if parent else None)
-                if tree != old_tree:
-                    description = ("Workspace checkpoint\n\nObserver session: " + self.session_id +
-                                   "\nReason: " + str(reason) +
-                                   "\nIncludes observed workspace changes from any writer.\n")
-                    parent_args = ["-p", parent] if parent else []
-                    commit = _git(self.repository, "commit-tree", tree, *parent_args,
-                                  input=description.encode("utf-8")).strip().decode("ascii")
-                    _git(self.repository, "update-ref", HISTORY_REF, commit, parent or "0" * 40)
-                    self.last_checkpoint = commit
-                else:
-                    self.last_checkpoint = parent
-                self.pending_error = None
-                self._save_blob_cache()
-                self._record_status()
-                return self.last_checkpoint
-            except TransientScanError as exc:
-                self.pending_error = str(exc)
-                self._record_status()
-                raise
-            except Exception as exc:
-                self.last_error = str(exc)
-                if (self.repository / "HEAD").exists():
-                    self._record_status()
-                raise
-
-    def _settled_checkpoint(self, reason, timeout=5):
-        deadline = time.monotonic() + timeout
-        while True:
-            try:
-                return self.checkpoint(reason)
-            except TransientScanError as exc:
-                if time.monotonic() >= deadline:
-                    self.last_error = "Unable to capture a stable final file state: " + str(exc)
-                    self._record_status()
-                    raise RuntimeError(self.last_error) from exc
-                time.sleep(.05)
-
-    def start(self):
-        # Lifecycle state has its own lock: an already-running monitor can be
-        # returned immediately even while its checkpoint holds the scan mutex.
-        with self._lifecycle:
-            if self._closed:
-                raise RuntimeError("File history monitor is closed")
-            if self._thread is not None:
-                if self.last_error:
-                    raise RuntimeError(self.last_error)
-                if self._ready.is_set() and self._thread.is_alive():
-                    return self
-                raise RuntimeError("File history monitor is not running")
-            # Import before saving, so missing dependencies fail before reporting monitoring.
-            from watchfiles import watch
-            self._settled_checkpoint("initial state")
-
-            def monitor():
-                last_scan = time.monotonic()
-                self._watching = True
-                try:
-                    for changes in watch(self.workspace, watch_filter=lambda change, path: not self._excluded(Path(path)),
-                                         stop_event=self._stop, debounce=300, step=50,
-                                         rust_timeout=200, yield_on_timeout=True):
-                        if self._stop.is_set():
-                            break
-                        now = time.monotonic()
-                        if changes or self.pending_error or not self._ready.is_set() or now - last_scan >= 10:
-                            try:
-                                self.checkpoint("filesystem changes" if changes else "monitor reconciliation")
-                                last_scan = now
-                            except TransientScanError:
-                                pass  # Retry a complete scan once the concurrent write settles.
-                        self._ready.set()
-                except Exception as exc:
-                    self.last_error = str(exc)
-                finally:
-                    self._watching = False
-                    self._ready.set()
-                    try:
-                        self._record_status()
-                    except OSError:
-                        pass  # last_error remains available to close() and the runtime.
-
-            self._thread = threading.Thread(target=monitor, name="workspace-file-history", daemon=True)
-            self._thread.start()
-            if not self._ready.wait(10):
-                self._stop.set()
-                raise RuntimeError("File history monitor did not become ready")
-            if self.last_error:
-                self._stop.set()
-                raise RuntimeError("File history monitor failed: " + self.last_error)
-            if not self._thread.is_alive():
-                raise RuntimeError("File history monitor stopped during startup")
-            return self
-
-    def close(self):
-        with self._lifecycle:
-            self._close()
-
-    def _close(self):
-        if self._closed:
-            return
-        self._stop.set()
-        if self._thread is not None:
-            self._thread.join(timeout=130)
-            if self._thread.is_alive():
-                self.last_error = "File history monitor did not stop"
-                raise RuntimeError(self.last_error)
-        try:
-            if self._thread is not None:
-                self._settled_checkpoint("runtime closing")
+                oid = _git(self.repository, "hash-object", "-w", "--no-filters", "--stdin",
+                           input=state.data).strip()
+                mode = b"100755" if state.mode & 0o111 else b"100644"
+                updates.append(mode + b" " + oid + b"\t" + os.fsencode(name) + b"\0")
+            _git(self.repository, "update-index", "-z", "--index-info", input=b"".join(updates), env=env)
+            tree = _git(self.repository, "write-tree", env=env).strip().decode("ascii")
         finally:
-            self._closed = True
-            if (self.repository / "HEAD").exists():
-                self._record_status()
-        if self.last_error:
-            raise RuntimeError("File history recording encountered an error: " + self.last_error)
+            index.unlink(missing_ok=True)
+            index.with_name(index.name + ".lock").unlink(missing_ok=True)
+        old_tree = (_git(self.repository, "rev-parse", parent + "^{tree}").strip().decode("ascii")
+                    if parent else None)
+        if tree == old_tree:
+            self.last_checkpoint = parent
+            return parent
+        details = {key: metadata.get(key) for key in ("operation_id", "session_id", "tool_call_id",
+                   "operation", "path", "destination")}
+        details["phase"] = phase
+        message = "File edit " + phase + "\n\n" + json.dumps(details, ensure_ascii=True, sort_keys=True) + "\n"
+        commit = _git(self.repository, "commit-tree", tree, *(["-p", parent] if parent else []),
+                      input=message.encode("utf-8")).strip().decode("ascii")
+        _git(self.repository, "update-ref", HISTORY_REF, commit, parent or "0" * 40)
+        self.last_checkpoint = commit
+        return commit
+
+    @staticmethod
+    def _summaries(states):
+        return {path: None if value is None else {"bytes": len(value.data), "mode": value.mode,
+                "sha256": hashlib.sha256(value.data).hexdigest()} for path, value in states.items()}
+
+    def edit(self, operation, path, *, content=None, old_text=None, new_text=None,
+             destination=None, tool_call_id=None, session_id=None):
+        from .file_editing import EditError, prepare_edit
+        with self._mutex:
+            if self._closed:
+                raise EditError("File editing history is closed", details={"applied": False, "changed": False})
+            with _repository_lock(self.repository):
+                with prepare_edit(self.workspace, operation, path, content=content, old_text=old_text,
+                                  new_text=new_text, destination=destination,
+                                  protected_names=EXCLUDED_NAMES, excluded_roots=self.excluded_roots) as plan:
+                    if not plan.changed:
+                        for name, target in plan.targets.items():
+                            target.verify(plan.before[name])
+                        return {**plan.review, "changed": False, "applied": False, "operation_id": None,
+                                "before_revision": None, "after_revision": None}
+                    identifier = uuid4().hex
+                    record = {**plan.review, "operation_id": identifier,
+                              "session_id": self.session_id if session_id is None else str(session_id),
+                              "tool_call_id": tool_call_id, "status": "prepared", "applied": False,
+                              "before_revision": None, "after_revision": None,
+                              "before": self._summaries(plan.before),
+                              "created_at": datetime.now(timezone.utc).isoformat()}
+                    record_path = self.repository / "operations" / (identifier + ".json")
+                    try:
+                        self._initialize()
+                        _atomic_json(record_path, record, ensure_ascii=True)
+                        record["before_revision"] = self._commit_paths(plan.before, record, "before")
+                        _atomic_json(record_path, record, ensure_ascii=True)
+                        after = plan.apply()
+                        record.update(applied=True, applied_paths=list(plan.applied_paths),
+                                      after=self._summaries(after))
+                        record["after_revision"] = self._commit_paths(after, record, "after")
+                        record.update(status="succeeded", completed_at=datetime.now(timezone.utc).isoformat())
+                        _atomic_json(record_path, record, ensure_ascii=True)
+                        self.last_error = None
+                        self._record_status()
+                        return {**plan.review, "changed": True, "applied": True, "operation_id": identifier,
+                                "before_revision": record["before_revision"],
+                                "after_revision": record["after_revision"], "history_repository": str(self.repository)}
+                    except BaseException as exc:
+                        self.last_error = str(exc) or type(exc).__name__
+                        applied, changed = plan.applied, plan.applied
+                        observed, observed_changed = None, []
+                        if plan.attempted_paths:
+                            try:
+                                observed = {name: target.read() for name, target in plan.targets.items()}
+                                observed_changed = [name for name, value in observed.items()
+                                    if self._summaries({name: value}) != self._summaries({name: plan.before[name]})]
+                                if not applied and observed_changed:
+                                    applied, changed = None, True
+                            except BaseException as observation_error:
+                                record["recovery_error"] = str(observation_error) or type(observation_error).__name__
+                                if not applied:
+                                    applied, changed = None, None
+                        record.update(status="failed" if isinstance(exc, Exception) else "interrupted",
+                                      error=self.last_error, applied=applied, changed=changed,
+                                      application_state="uncertain" if applied is None else
+                                                        "confirmed" if applied else "not-applied",
+                                      applied_paths=list(plan.applied_paths),
+                                      attempted_paths=list(plan.attempted_paths),
+                                      observed_changed_paths=observed_changed,
+                                      completed_at=datetime.now(timezone.utc).isoformat())
+                        if observed is not None and not record["after_revision"]:
+                            try:
+                                record["after"] = self._summaries(observed)
+                                record["after_revision"] = self._commit_paths(observed, record, "failed result")
+                            except BaseException as recovery_error:
+                                record["recovery_error"] = str(recovery_error) or type(recovery_error).__name__
+                        if self._owns_repository:
+                            try:
+                                _atomic_json(record_path, record, ensure_ascii=True)
+                                self._record_status()
+                            except BaseException as record_error:
+                                record["recording_error"] = str(record_error) or type(record_error).__name__
+                        if not isinstance(exc, Exception):
+                            raise
+                        details = {"operation_id": identifier, "applied": applied,
+                                   "changed": changed, "application_state": record["application_state"],
+                                   "applied_paths": list(plan.applied_paths),
+                                   "attempted_paths": list(plan.attempted_paths),
+                                   "observed_changed_paths": observed_changed,
+                                   "before_revision": record["before_revision"],
+                                   "after_revision": record["after_revision"],
+                                   "history_repository": str(self.repository)}
+                        for key in ("recovery_error", "recording_error"):
+                            if key in record:
+                                details[key] = record[key]
+                        message = f"File edit failed: {exc}"
+                        if record["before_revision"]:
+                            message += f"; original content is saved at {record['before_revision']}"
+                        if plan.applied:
+                            message += "; workspace changes were applied; inspect the files before retrying"
+                        elif applied is None:
+                            message += "; publication was attempted and its outcome is uncertain; inspect the files before retrying"
+                        raise EditError(message, details=details) from exc
 
 
 def _revision(repository, revision):
     return _git(repository, "rev-parse", "--verify", "--end-of-options",
                 str(revision) + "^{commit}").strip().decode("ascii")
+
+
+def _existing_head(repository):
+    if not (repository / "HEAD").is_file():
+        return None
+    result = _git(repository, "rev-parse", "--verify", HISTORY_REF, check=False)
+    return result.stdout.strip().decode("ascii") if result.returncode == 0 else None
 
 
 def _path(value):
@@ -533,29 +343,35 @@ def main(argv=None):
     args = parser.parse_args(argv)
     repository = args.repository.expanduser().resolve()
     try:
+        if args.command == "log" and not 1 <= args.limit <= 1000:
+            raise ValueError("--limit must be between 1 and 1000")
         if not (repository / "workspace.json").is_file():
+            if args.command in {"status", "log"} and not (repository / "HEAD").exists():
+                value = ({"repository": str(repository), "mode": "editing-only", "initialized": False,
+                          "checkpoint": None, "monitoring": False, "last_error": None, "observers": []}
+                         if args.command == "status" else [])
+                print(json.dumps(value, indent=2))
+                return 0
             raise ValueError(f"No runtime file history found at {repository}")
         if args.command == "status":
             metadata = json.loads((repository / "workspace.json").read_text())
             observers = []
             for path in sorted((repository / "runtime").glob("*.json")):
                 item = json.loads(path.read_text())
-                if item.get("monitoring"):
-                    try:
-                        os.kill(item["pid"], 0)
-                    except ProcessLookupError:
-                        item["monitoring"] = False
+                item["monitoring"] = False
                 observers.append(item)
             observers.sort(key=lambda item: item.get("recorded_at", ""))
-            head = _git(repository, "rev-parse", "--verify", HISTORY_REF).strip().decode("ascii")
+            head = _existing_head(repository)
             print(json.dumps({**metadata, "repository": str(repository), "checkpoint": head,
-                              "monitoring": any(item["monitoring"] for item in observers),
+                              "mode": metadata.get("mode", "legacy-snapshots"),
+                              "initialized": (repository / "HEAD").is_file(), "monitoring": False,
                               "last_error": next((item["last_error"] for item in reversed(observers)
                                                   if item.get("last_error")), None),
                               "observers": observers}, ensure_ascii=False, indent=2))
         elif args.command == "log":
-            if args.limit < 1 or args.limit > 1000:
-                raise ValueError("--limit must be between 1 and 1000")
+            if _existing_head(repository) is None:
+                print("[]")
+                return 0
             paths = ["--", args.path] if args.path else []
             raw = _git(repository, "log", "-z", "--format=%H%x00%aI%x00%B",
                        f"--max-count={args.limit}", HISTORY_REF, *paths)

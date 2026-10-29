@@ -31,17 +31,19 @@ class RuntimeFileHistoryTests(unittest.TestCase):
         self.addCleanup(agent.close)
         return agent
 
-    def test_parent_and_child_share_history_and_shutdown_saves_shell_outputs(self):
+    def test_parent_and_child_share_recorded_edits_without_recording_other_inputs(self):
+        (self.workspace / "input.dat").write_bytes(b"untouched input")
         model = ScriptedModel([
-            call("shell", {"name": "Write parent", "command": "printf parent > parent.txt"}),
+            call("edit_file", {"name": "Write parent", "operation": "create",
+                               "path": "parent.txt", "content": "parent"}),
             call("subagent", {"name": "Write child", "task": "Create child.txt"}, number=2),
-            call("shell", {"name": "Write child", "command": "printf child > child.txt"}),
+            call("edit_file", {"name": "Write child", "operation": "create",
+                               "path": "child.txt", "content": "child"}, number=3),
             final("child done"), final("done"),
         ])
         agent = self.agent(model)
-        with patch.object(agent.file_history, "start", wraps=agent.file_history.start) as start:
+        with patch.object(agent.file_history, "start", side_effect=AssertionError("No history startup scan")):
             self.assertEqual(agent.run({"role": "user", "content": "Create both files"}), "done")
-            self.assertEqual(start.call_count, 1)
         agent.close()
         self.assertFalse((self.workspace / ".git").exists())
         self.assertFalse((self.workspace / ".agent").exists())
@@ -50,15 +52,52 @@ class RuntimeFileHistoryTests(unittest.TestCase):
                 "git", "--git-dir", str(self.storage.history), "show", f"HEAD:{filename}",
             ])
             self.assertEqual(saved, expected)
+        saved_paths = subprocess.check_output([
+            "git", "--git-dir", str(self.storage.history), "ls-tree", "-r", "--name-only", "HEAD",
+        ], text=True).splitlines()
+        self.assertEqual(set(saved_paths), {"parent.txt", "child.txt"})
+        operations = [json.loads(path.read_text()) for path in (self.storage.history / "operations").glob("*.json")]
+        recorded_sessions = {item["session_id"] for item in operations}
+        self.assertIn(str(self.session.path), recorded_sessions)
+        self.assertTrue(any(Path(path).parent == self.session.path / "subagents" for path in recorded_sessions))
         receipt = json.loads((self.session.path / "file-history.json").read_text())
-        self.assertIsInstance(receipt, dict)
+        self.assertEqual(receipt["mode"], "editing-only")
+        self.assertFalse(receipt["monitoring"])
         for system, _, tools in model.calls:
             self.assertIn(str(self.storage.history), system)
-            self.assertIn("# Workspace file history", system)
+            self.assertIn("# File editing history", system)
             self.assertIn("history.py", system)
-            self.assertLessEqual({tool["name"] for tool in tools}, {"shell", "subagent"})
+            self.assertIn("edit_file", {tool["name"] for tool in tools})
 
-    def test_user_is_saved_and_displayed_before_blocked_history_but_model_waits(self):
+    def test_reading_and_program_outputs_do_not_initialize_or_populate_history(self):
+        (self.workspace / "input.txt").write_text("source")
+        model = ScriptedModel([
+            call("shell", {"name": "Read input", "command": "cat input.txt"}),
+            final("read"),
+        ])
+        agent = self.agent(model)
+        self.assertFalse(self.storage.history.exists())
+        agent.run({"role": "user", "content": "Read input"})
+        (self.workspace / "generated.txt").write_text("program output")
+        agent.close()
+        self.assertFalse(self.storage.history.exists())
+        self.assertFalse((self.workspace / ".git").exists())
+
+    def test_history_retrieval_child_cannot_call_edit_file(self):
+        model = ScriptedModel([
+            call("subagent", {"name": "Recall", "task": "Find the user's request", "history": True}),
+            call("edit_file", {"name": "Forbidden edit", "operation": "create",
+                               "path": "unexpected.txt", "content": "no"}, number=2),
+            final("retrieved"), final("done"),
+        ])
+        agent = self.agent(model)
+        self.assertEqual(agent.run({"role": "user", "content": "Recall my request"}), "done")
+        self.assertIn("edit_file", {tool["name"] for tool in model.calls[0][2]})
+        self.assertNotIn("edit_file", {tool["name"] for tool in model.calls[1][2]})
+        self.assertFalse((self.workspace / "unexpected.txt").exists())
+        self.assertFalse(self.storage.history.exists())
+
+    def test_user_is_saved_and_displayed_before_saving_runtime_receipt(self):
         model = ScriptedModel([final("done"), final("again")])
         agent = self.agent(model)
         visible = []
@@ -66,12 +105,12 @@ class RuntimeFileHistoryTests(unittest.TestCase):
         entered = threading.Event()
         release = threading.Event()
         results, failures = [], []
-        start = agent.file_history.start
-        def blocked_start():
+        save_receipt = agent._save_file_history_receipt
+        def blocked_receipt():
             entered.set()
             if not release.wait(5):
-                raise RuntimeError("test did not release history startup")
-            return start()
+                raise RuntimeError("test did not release receipt save")
+            return save_receipt()
         def run():
             try:
                 results.append(agent.run({"role": "user", "content": "first task"}))
@@ -80,7 +119,7 @@ class RuntimeFileHistoryTests(unittest.TestCase):
         def users(events):
             return [event["message"]["content"] for event in events
                     if event["type"] == "message" and event["message"]["role"] == "user"]
-        with patch.object(agent.file_history, "start", side_effect=blocked_start), \
+        with patch.object(agent, "_save_file_history_receipt", side_effect=blocked_receipt), \
                 patch.object(agent.context, "sync", wraps=agent.context.sync) as sync:
             worker = threading.Thread(target=run)
             worker.start()
@@ -97,26 +136,26 @@ class RuntimeFileHistoryTests(unittest.TestCase):
             self.assertFalse(worker.is_alive())
             self.assertEqual(failures, [])
             self.assertEqual(results, ["done"])
-            self.assertTrue(agent.file_history.status()["monitoring"])
+            self.assertFalse(agent.file_history.status()["monitoring"])
             self.assertEqual(agent.run({"role": "user", "content": "second task"}), "again")
         self.assertEqual(users(visible), ["first task", "second task"])
         self.assertEqual(users(self.session.events()), ["first task", "second task"])
         self.assertEqual(len(model.calls), 2)
 
-    def test_start_failure_preserves_user_and_diagnostic_and_next_turn_recovers(self):
+    def test_receipt_failure_preserves_user_and_diagnostic_and_next_turn_recovers(self):
         model = ScriptedModel([final("recovered")])
         agent = self.agent(model)
         visible = []
         agent.on_event = visible.append
-        with patch.object(agent.file_history, "start", side_effect=RuntimeError("history unavailable")):
-            with self.assertRaisesRegex(RuntimeError, "history unavailable"):
+        with patch.object(agent, "_save_file_history_receipt", side_effect=RuntimeError("receipt unavailable")):
+            with self.assertRaisesRegex(RuntimeError, "receipt unavailable"):
                 agent.run({"role": "user", "content": "task"})
         self.assertEqual(model.calls, [])
         saved = Session(self.storage.sessions, "main").events()
         self.assertEqual(saved[0]["message"], {"role": "user", "content": "task"})
         self.assertEqual(visible[0]["message"], saved[0]["message"])
         self.assertEqual(saved[-1]["type"], "error")
-        self.assertEqual(saved[-1]["message"], "File history could not start: history unavailable")
+        self.assertEqual(saved[-1]["message"], "File history receipt could not be saved: receipt unavailable")
         self.assertEqual(agent.run({"role": "user", "content": "retry"}), "recovered")
         users = [event["message"]["content"] for event in self.session.events()
                  if event["type"] == "message" and event["message"]["role"] == "user"]
@@ -129,7 +168,7 @@ class RuntimeFileHistoryTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "context unavailable"):
                 agent.run({"role": "user", "content": "task"})
         self.assertEqual(model.calls, [])
-        self.assertTrue(agent.file_history.status()["monitoring"])
+        self.assertFalse(agent.file_history.status()["monitoring"])
         saved = self.session.events()
         self.assertEqual(saved[0]["message"]["content"], "task")
         self.assertEqual(saved[-1]["type"], "error")

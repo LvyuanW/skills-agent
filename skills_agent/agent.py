@@ -31,7 +31,8 @@ class Agent:
     def __init__(self, model, session, skills, workspace, *, context_tokens=DEFAULT_CONTEXT_TOKENS,
                  summary_output_tokens=8192, sandbox=None, on_event=None,
                  allow_subagent=True, instructions="", process_scope=None,
-                 allow_persistent_processes=False, file_history=None, owns_file_history=False):
+                 allow_persistent_processes=False, file_history=None, owns_file_history=False,
+                 allow_file_edit=True):
         self.model, self.session, self.skills = model, session, skills
         self.workspace = Path(workspace).resolve()
         self.file_history = file_history
@@ -62,7 +63,9 @@ class Agent:
                                  BackgroundJobMonitor(session.path, lambda event: self.on_event(event)))
         self.tools = ToolRegistry(workspace=self.workspace, sandbox=sandbox,
                                   subagent=self._subagent if allow_subagent else None,
-                                  on_activity=self._activity, log_dir=session.path / "tool-runs")
+                                  on_activity=self._activity, log_dir=session.path / "tool-runs",
+                                  file_history=file_history if allow_file_edit else None)
+        self.tools.edit_session_id = str(session.path)
         self._background_results = BackgroundResults(session, self._background_scope_paths,
                                                      accept_handoffs=not self._inherited_process_scope)
         self.tools.process_context = self._background_results.owner
@@ -90,24 +93,22 @@ class Agent:
     def _file_history_context(self):
         if self.file_history is None:
             return ""
-        helper = Path(__file__).parent / "builtin_skills" / "file-editing" / "scripts" / "history.py"
+        helper = Path(__file__).parent / "builtin_skills" / "read-file-history" / "scripts" / "history.py"
         command = shlex.join([sys.executable, str(helper), "--repository", str(self.file_history.repository)])
         error = self.file_history.last_error
         return (
-            "# Workspace file history\n\n"
-            "The runtime automatically saves an initial workspace snapshot and records later file "
-            "changes while this agent is running. You do not need to create Git commits to save "
-            "these checkpoints. The separate history repository does not change the project's Git "
-            "index or branches. Runtime logs, Git metadata and cache/dependency directories are "
-            "excluded; inspect status for recording details. Changes are grouped into checkpoints, "
-            "so short-lived intermediate contents may not be captured. A saved checkpoint does not "
-            "mean its contents were verified.\n"
+            "# File editing history\n\n"
+            "The runtime records the original and resulting contents of edit_file operations. "
+            "It does not back up untouched inputs or automatically record changes made by programs, "
+            "shell commands or other applications. You do not need to create Git commits for these "
+            "versions. The separate history repository does not change the project's Git index or "
+            "branches. A recorded version does not mean its contents were verified.\n"
             f"File history repository: {self.file_history.repository}\n"
             f"Check recording status: {command} status\n"
             f"List saved versions: {command} log\n"
             f"Show query options: {command} --help\n"
-            "Use the file-editing skill for comparing versions and retrieving earlier file contents. "
-            "This is workspace file history, separate from conversation-history retrieval.\n"
+            "Use read-file-history to compare versions or retrieve earlier file contents. "
+            "This is file editing history, separate from conversation-history retrieval.\n"
             + (f"Recording error: {error}. Recent changes may not have been saved.\n" if error else "")
             + "\n"
         )
@@ -177,6 +178,15 @@ class Agent:
             "result_mode=direct before proceeding with that work; reuse instructions already "
             "present in context. Simple targeted commands need no unrelated skill. Use only "
             "skills whose required tools are available.\n\n"
+            "Use edit_file to create, edit, delete or move files directly, including scripts, "
+            "configuration and temporary text files. Do not use shell or sandbox commands, "
+            "redirection, inline code or helper scripts to perform these edits. Read current "
+            "contents before changing an existing file, preserve unrelated work, and inspect "
+            "the tool result. If edit_file is unavailable, do not perform direct file changes. "
+            "You may run programs through shell or sandbox to compute, test, build, render, "
+            "download or produce task outputs, and use mkdir to create directories. "
+            "Create and modify program source with edit_file; "
+            "do not disguise direct file edits as program output to bypass the tool.\n\n"
             "Whenever attaching images to a model request, use the images skill, whether the images "
             "are newly created or already exist. Create images no larger than 1 MB (1,000,000 bytes); "
             "compress larger existing images into separate copies before attaching them. Attach at "
@@ -384,7 +394,7 @@ class Agent:
                       sandbox=self.sandbox, allow_subagent=False, instructions=instructions,
                       on_event=child_activity, process_scope=self.process_scope,
                       allow_persistent_processes=self.allow_persistent_processes,
-                      file_history=self.file_history)
+                      file_history=self.file_history, allow_file_edit=not history)
         if history:
             child.report_background = {"current_user_task": self.context.latest_user(),
                                        "retrieval_task": {"name": name, "task": task}}
@@ -409,8 +419,8 @@ class Agent:
                          "background_owner_session_id": child._background_results.owner})
 
     def run(self, user_message):
-        # Acknowledge input before preparing runtime services. Context selection
-        # can itself call the model, so defer it until file history is ready.
+        # Persist/display user input before preparing context or runtime services.
+        # File history is initialized lazily by the first actual edit.
         try:
             self._message(user_message, sync=False)
         except (Exception, KeyboardInterrupt, SystemExit) as exc:
@@ -418,10 +428,9 @@ class Agent:
             raise
         if self._owns_file_history:
             try:
-                self.file_history.start()
                 self._save_file_history_receipt()
             except Exception as exc:
-                self._event({"type": "error", "message": f"File history could not start: {exc}"})
+                self._event({"type": "error", "message": f"File history receipt could not be saved: {exc}"})
                 raise
         if self._inherited_process_scope:
             self.tools.process_scope = self.process_scope

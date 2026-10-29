@@ -116,7 +116,7 @@ Counterexample from a refinement task: `python run_refine.py 2>&1 | tail -35` sh
 
 ## Runnable script examples
 
-Resolve paths relative to this skill before using these examples. Write task outputs into the task workspace, not the skill directory. The scripts are examples to adapt; they do not replace the runtime supervisor.
+Resolve paths relative to this skill before using these examples. Write task outputs into the task workspace, not the skill directory. If adapting an example, save the task's script with `edit_file`, then execute it through shell. The scripts do not replace the runtime supervisor.
 
 | Script | Pattern and use |
 | --- | --- |
