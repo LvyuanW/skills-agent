@@ -37,3 +37,5 @@ Choose `result_mode: direct` when you need exact source text, structured values 
 ## Keep conversation retrieval separate
 
 Keep workspace searches outside session directories. The main agent retrieves original conversation evidence by assigning a named `subagent` with `history: true` and a concrete question. Ordinary subagents report missing historical input to their parent. Dedicated history retrieval subagents follow their assigned retrieval instructions.
+
+Earlier file contents are available separately when the runtime provides automatic workspace history. Use the [file-editing skill's history instructions](../file-editing/SKILL.md#use-automatic-file-history) to inspect or compare those versions. Conversation retrieval answers what was said or executed; file history supplies the saved file contents at a checkpoint.

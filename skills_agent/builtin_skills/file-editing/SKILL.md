@@ -2,14 +2,14 @@
 name: file-editing
 description: >-
   Make precise changes to existing text or code files while preserving unrelated
-  content, line endings and file mode. Use current contents and unique anchors,
-  then inspect the saved change. Skip simple standalone file creation, read-only
-  inspection and edits to binary contents.
+  content, line endings and file mode, or compare and retrieve earlier file
+  versions from automatic workspace history. Skip simple standalone file
+  creation, ordinary current-file reads and edits to binary contents.
 ---
 
 ## When to use this skill
 
-Use this skill for targeted changes to existing text or code, especially when the surrounding content must stay intact. Simple standalone file creation and read-only inspection need no editing helper. Use a format-specific method to edit binary contents.
+Use this skill for targeted changes to existing text or code, especially when the surrounding content must stay intact, or when an earlier saved file version can help continue or repair the work. Simple standalone file creation and ordinary current-file reads need no editing helper. Use a format-specific method to edit binary contents.
 
 ## Edit the current file
 
@@ -42,3 +42,16 @@ Writes use a temporary file and preserve untouched contents, line endings and fi
 Inspect the exit status and the returned saved content. If the excerpt is truncated, use its `location` line and column for a targeted follow-up read. Choose `result_mode: direct` when you need exact file text.
 
 Read [references/incremental-editing.md](references/incremental-editing.md) when you need examples of continuing from saved edits or resolving ambiguous matches. The examples illustrate these operations; they do not prescribe a sequence for every task.
+
+## Use automatic file history
+
+When the runtime provides a file-history repository in the system context, it watches the workspace and saves checkpoints automatically. You do not need to make Git commits to preserve those versions. This history is separate from the project's own Git repository and from conversation history. A checkpoint records saved content, not whether the content is correct.
+
+Use [scripts/history.py](scripts/history.py) through the existing shell to inspect it. Resolve this script's absolute path from this SKILL.md and use the repository path supplied by the runtime:
+
+```sh
+python3 /absolute/skill/scripts/history.py --repository /absolute/history.git status
+python3 /absolute/skill/scripts/history.py --repository /absolute/history.git log --path analysis.py --limit 10
+```
+
+Check `status` for recording errors and the excluded paths. Read [references/file-history.md](references/file-history.md) to compare checkpoints or retrieve old contents. Keep the useful parts of the current work: inspect the earlier version before choosing a local correction. File events are batched, so a checkpoint may not contain every short-lived intermediate version; files outside the recorded workspace are not covered.

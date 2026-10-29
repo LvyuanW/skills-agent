@@ -4,7 +4,7 @@ Python CLI Agent。模型阅读 `SKILL.md` 和参考脚本，编写代码，通�
 
 ## 安装和运行
 
-需要 Python 3.11+。依赖及锁定版本见 [pyproject.toml](pyproject.toml) 和 [uv.lock](uv.lock)。
+需要 Python 3.11+ 和 Git。Python 依赖及锁定版本见 [pyproject.toml](pyproject.toml) 和 [uv.lock](uv.lock)。
 
 ```sh
 python3 -m venv .venv
@@ -32,7 +32,9 @@ Anthropic 接口使用 `--provider anthropic`，并设置 `ANTHROPIC_API_KEY` �
 
 `run` 和 `benchmark` 自动读取工作目录中的 [skills-agent.toml](skills-agent.toml)；`--config PATH` 可指定另一份配置。优先级为 **命令行参数 > 配置文件 > 已支持的环境变量 > 默认值**。API key 只从环境变量读取。
 
-工作目录默认是当前目录，会话默认写入 `<workspace>/.agent/sessions`。模型窗口、上下文预算和输出额度必须与实际模型匹配；完整配置、界面操作、图片附件、后台作业与中断恢复见 [使用说明](docs/usage.md)。
+工作目录默认是当前目录，可以用 `--workspace` 指向独立的任务目录。会话和自动文件历史统一保存在 `~/.skills-agent/workspaces/<工作区标识>/`；`--data-dir` 或 `SKILLS_AGENT_DATA_DIR` 可更改运行数据根目录。`--sessions-dir` 仍可指定会话位置，包括恢复旧版 `<workspace>/.agent/sessions` 中的会话。模型窗口、上下文预算和输出额度必须与实际模型匹配；完整配置、界面操作、图片附件、后台作业与中断恢复见 [使用说明](docs/usage.md)。
+
+runtime 使用 Python 文件监听自动保存工作区检查点，文件版本存到独立的 `history.git`，不要求模型提交，也不改变项目自身的 Git 分支或暂存区。系统提示词提供历史仓库的实际路径和查询命令；`file-editing` skill 说明如何查看、比较和取回旧内容。检查点只表示保存了文件版本，不代表内容已经验证正确。记录范围和查询示例见[工作区文件历史](docs/usage.md#工作区文件历史)。
 
 运行时自动采集工作目录、是否位于 Git 仓库、平台、实际执行 shell 和操作系统版本，加入主 Agent 与子 Agent 的系统提示词；交互 CLI 与 `benchmark` 共用这套环境信息。系统提示引导模型按任务需要适度检查实际结果，并如实说明验证范围、未验证事项和剩余限制。
 
@@ -45,7 +47,7 @@ Anthropic 接口使用 `--provider anthropic`，并设置 `ANTHROPIC_API_KEY` �
   --log-dir /path/to/run-logs
 ```
 
-每次任务使用独立日志目录，正常结束、失败或中断时清理本任务登记的进程。`benchmark` 不允许跨任务保留后台服务。
+每次任务使用独立日志目录，正常结束、失败或中断时清理本任务登记的进程。会话和文件历史使用统一运行数据目录，并在退出时导出到 `<log-dir>/session` 和 `<log-dir>/history.git`，供测评归档。`benchmark` 不允许跨任务保留后台服务。
 
 - [ALE 适配器与安装说明](adapters/ale/README.md)
 - [ALE 当前环境、隔离和评分验收流程](../benchmark/ale/evaluation-protocol-20261017.txt)

@@ -19,6 +19,8 @@ An existing tool result or a short file read may provide all the evidence you ne
 
 Run the program to check its behavior, read the saved file to check its contents, and inspect the image to check its appearance. If correctness depends on how a file is used, open or process the saved file with the intended program or command, including the required input preparation. A successful write or capture alone does not show that the content is correct.
 
+Automatic workspace checkpoints preserve saved versions; they are not verification results. When you need to establish what changed since a check, compare the relevant file versions using the [file-editing skill's history instructions](../file-editing/SKILL.md#use-automatic-file-history). Apply earlier evidence only to contents and execution conditions for which it still holds.
+
 Before using a separate test to change the work, confirm which inputs it used and which code it ran. It may differ from the real task. Keep experiments in separate scripts or files when they could change the execution conditions or overwrite useful outputs. A failure in the test does not by itself show that the real run has failed.
 
 Choose a check that can answer the question you identified. For example, zeros or symmetric inputs may hide a defect that a less uniform input reveals. A separate formula, an input with a known answer or a reference supplied with the task may reveal an error that the implementation's own checks miss. Two implementations can agree and still be wrong if both rely on the same unverified definition or method. Choose the check that fits the problem; these examples are not a required sequence.
