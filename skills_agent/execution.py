@@ -1,6 +1,7 @@
 """Bound foreground commands and clean up their owned process groups."""
 
 from contextlib import contextmanager
+from copy import deepcopy
 import math
 import os
 from pathlib import Path
@@ -9,6 +10,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import traceback
 
 
 DEFAULT_TIMEOUT_SECONDS = 120
@@ -23,6 +25,25 @@ _PROBE_TIMEOUT_SECONDS = 0.5
 class ToolCleanupError(RuntimeError):
     """A command may still be active; the agent must not continue normally."""
 
+    def __init__(self, message, *, diagnostics=None):
+        super().__init__(message)
+        self.diagnostics = diagnostics
+
+
+def _error_details(error, phase=None):
+    details = {
+        "type": type(error).__name__,
+        "message": str(error),
+        "traceback": "".join(traceback.format_exception(error)),
+    }
+    if phase is not None:
+        details["phase"] = phase
+    if getattr(error, "errno", None) is not None:
+        details["errno"] = error.errno
+    if getattr(error, "diagnostics", None) is not None:
+        details["diagnostics"] = deepcopy(error.diagnostics)
+    return details
+
 
 def validate_timeout(value):
     if (type(value) not in (int, float) or not 0 < value <= MAX_TIMEOUT_SECONDS
@@ -33,6 +54,8 @@ def validate_timeout(value):
 
 def _signal_group(process, signum):
     # Only a live Popen object's unreaped child identifies the owned group.
+    if process.returncode is not None:
+        return
     try:
         os.killpg(process.pid, signum)
     except ProcessLookupError:
@@ -56,12 +79,21 @@ def _group_members(pgid, deadline):
         )
         try:
             probe.wait(timeout=min(_PROBE_TIMEOUT_SECONDS, remaining))
-        except BaseException:
-            probe.kill()
+        except BaseException as original:
+            errors = []
+            try:
+                probe.kill()
+            except BaseException as exc:
+                errors.append(_error_details(exc, "inspection_kill"))
             try:
                 probe.wait(timeout=max(0.001, min(_PROBE_TIMEOUT_SECONDS, deadline - time.monotonic())))
-            except subprocess.TimeoutExpired as exc:
-                raise ToolCleanupError("Process inspection could not be stopped") from exc
+            except BaseException as exc:
+                errors.append(_error_details(exc, "inspection_reap"))
+                raise ToolCleanupError("Process inspection could not be stopped", diagnostics={
+                    "original_error": _error_details(original, "inspection_wait"),
+                    "cleanup_errors": errors, "cleanup_confirmed": False,
+                    "inspection_pid": probe.pid,
+                }) from original
             raise
         if probe.returncode:
             raise ToolCleanupError("Cannot inspect the command's process group")
@@ -74,6 +106,17 @@ def _group_members(pgid, deadline):
             if int(parts[1]) == pgid and not parts[2].startswith("Z"):
                 members.append(int(parts[0]))
         return members
+
+
+def _inspect_group(pgid, deadline):
+    """Retry a reaped, timed-out probe within the same observation deadline."""
+    while True:
+        try:
+            return _group_members(pgid, deadline)
+        except subprocess.TimeoutExpired:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(min(_POLL_SECONDS, max(0, deadline - time.monotonic())))
 
 
 def _finished(process, deadline):
@@ -104,29 +147,57 @@ def _wait_for_main_exit(process, deadline):
 
 def _stop_process(process):
     if process.returncode is not None:
-        # Completion already confirmed the whole group before reaping.
+        # Never signal a group after releasing its leader's PID.
         return False
     deadline = time.monotonic() + CLEANUP_TIMEOUT_SECONDS
-    try:
-        _signal_group(process, signal.SIGTERM)
-        grace_deadline = min(deadline, time.monotonic() + TERM_GRACE_SECONDS)
-        if _wait_for_completion(process, grace_deadline):
-            return False
-        _signal_group(process, signal.SIGKILL)
-        if _wait_for_completion(process, deadline):
-            return True
-        raise ToolCleanupError("Command process group did not stop before the cleanup deadline")
-    except BaseException as exc:
-        # Even when observation failed, attempt to stop and reap our own child.
-        if process.returncode is None:
-            _signal_group(process, signal.SIGKILL)
-            try:
-                process.wait(timeout=max(0.001, deadline - time.monotonic()))
-            except subprocess.TimeoutExpired:
-                pass
-        if isinstance(exc, ToolCleanupError):
-            raise
-        raise ToolCleanupError("Command process group cleanup could not be confirmed") from exc
+    failures = []
+    fatal = False
+    for signum in (signal.SIGTERM, signal.SIGKILL):
+        phase = signal.Signals(signum).name
+        try:
+            _signal_group(process, signum)
+        except BaseException as exc:
+            failures.append((exc, _error_details(exc, phase)))
+            # macOS may reject signals to a zombie-only group. Only a later
+            # successful exit AND live-member check can resolve that error.
+            fatal = fatal or not isinstance(exc, PermissionError)
+        phase_deadline = (min(deadline, time.monotonic() + TERM_GRACE_SECONDS)
+                          if signum == signal.SIGTERM else deadline)
+        try:
+            if _wait_for_completion(process, phase_deadline):
+                if not fatal:
+                    return signum == signal.SIGKILL
+                break
+        except BaseException as exc:
+            failures.append((exc, _error_details(exc, phase + "_confirmation")))
+            # In particular, a probe that could not itself be stopped must
+            # remain a fatal error even if a later group check succeeds.
+            fatal = True
+        if process.returncode is not None:
+            break
+    # Both signal attempts are guarded. A second error cannot skip reaping.
+    # Reaping our direct child does not establish that the group was cleaned;
+    # no group signal is permitted after this last, bounded wait.
+    if process.returncode is None:
+        try:
+            process.wait(timeout=max(0.001, deadline - time.monotonic()))
+        except BaseException as exc:
+            failures.append((exc, _error_details(exc, "reap")))
+    message = "Command process group cleanup could not be confirmed"
+    if time.monotonic() >= deadline:
+        message += " before the cleanup deadline"
+    if failures:
+        message += ": " + "; ".join(
+            f"{details['phase']}: {details['type']}: {details['message']}"
+            for _, details in failures
+        )
+    failure = ToolCleanupError(message, diagnostics={
+        "cleanup_confirmed": False,
+        "cleanup_errors": [details for _, details in failures],
+    })
+    if failures:
+        raise failure from failures[0][0]
+    raise failure
 
 
 def _finish_main_exit(process):
@@ -137,7 +208,7 @@ def _finish_main_exit(process):
     successful continuation. A process that changes groups is outside this
     lightweight ownership boundary.
     """
-    members = _group_members(process.pid, time.monotonic() + CLEANUP_TIMEOUT_SECONDS)
+    members = _inspect_group(process.pid, time.monotonic() + CLEANUP_TIMEOUT_SECONDS)
     if not members:
         process.wait(timeout=CLEANUP_TIMEOUT_SECONDS)
         return {}
@@ -173,20 +244,49 @@ def _cleanup_signals():
 
 def _cleanup(process, callback):
     failures = []
+    errors = []
     with _cleanup_signals():
         try:
             _stop_process(process)
         except BaseException as exc:
             failures.append(exc)
+            diagnostics = getattr(exc, "diagnostics", None) or {}
+            errors.extend(diagnostics.get("cleanup_errors") or [_error_details(exc, "process_group")])
         if callback is not None:
             try:
                 # The backend owns its cleanup deadline (e.g. Docker removal).
                 callback()
             except BaseException as exc:
                 failures.append(exc)
+                errors.append(_error_details(exc, "backend_cleanup"))
     if failures:
         details = "; ".join(str(exc) or type(exc).__name__ for exc in failures)
-        raise ToolCleanupError("Command cleanup was not confirmed: " + details) from failures[0]
+        raise ToolCleanupError("Command cleanup was not confirmed: " + details, diagnostics={
+            "cleanup_confirmed": False, "cleanup_errors": errors,
+        }) from failures[0]
+
+
+def _record_command_failure(error, original, process, phase, stdout_path, stderr_path,
+                            timeout_seconds, started):
+    # Agent.run persists exception diagnostics in the session's error event.
+    # Keep the files as evidence without presenting an unconfirmed command as
+    # an ordinary successful tool result or loading unbounded output here.
+    details = dict(error.diagnostics or {})
+    if original is not error:
+        original_details = getattr(original, "diagnostics", None) or {}
+        details["cleanup_errors"] = [
+            *original_details.get("cleanup_errors", []),
+            *details.get("cleanup_errors", []),
+        ]
+    details.update(
+        original_error=_error_details(original, phase),
+        cleanup_confirmed=False, process_pid=process.pid,
+        process_returncode=process.returncode,
+        stdout_path=str(stdout_path), stderr_path=str(stderr_path),
+        timeout_seconds=timeout_seconds,
+        duration_seconds=round(time.monotonic() - started, 3),
+    )
+    error.diagnostics = details
 
 
 def _read_output(path, *, limit=None):
@@ -225,14 +325,31 @@ def run_command(command, *, cwd, shell=False, env=None,
             command, shell=shell, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
             stdout=stdout, stderr=stderr, start_new_session=True,
         )
+        phase = "execution"
         try:
             completed = _wait_for_main_exit(process, started + timeout_seconds)
+            phase = "exit_confirmation"
             cleanup_result = _finish_main_exit(process) if completed else {}
-        except BaseException:
-            _cleanup(process, cleanup)
+        except BaseException as original:
+            try:
+                _cleanup(process, cleanup)
+            except ToolCleanupError as error:
+                _record_command_failure(error, original, process, phase, stdout_path, stderr_path,
+                                        timeout_seconds, started)
+                raise
+            if isinstance(original, ToolCleanupError):
+                _record_command_failure(original, original, process, phase, stdout_path, stderr_path,
+                                        timeout_seconds, started)
             raise
         if not completed:
-            _cleanup(process, cleanup)
+            try:
+                _cleanup(process, cleanup)
+            except ToolCleanupError as error:
+                _record_command_failure(
+                    error, subprocess.TimeoutExpired(command, timeout_seconds), process,
+                    "execution_timeout", stdout_path, stderr_path, timeout_seconds, started,
+                )
+                raise
     limit = None if completed else TIMEOUT_OUTPUT_BYTES
     output, stdout_truncated = _read_output(stdout_path, limit=limit)
     errors, stderr_truncated = _read_output(stderr_path, limit=limit)
