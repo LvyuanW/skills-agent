@@ -506,10 +506,15 @@ class ConsoleRenderer:
             return
         label = "sub-agent" if call["name"] == "subagent" else call["name"]
         receiving = f"· {label}：接收调用"
-        try:
-            arguments = json.loads(call["arguments"])
-        except (ValueError, RecursionError):
-            arguments = None
+        arguments = None
+        # A complete argument object must end with a closing brace. Avoid
+        # reparsing the growing file/script contents for every streamed token.
+        # This is only a cheap candidate check; JSON still validates the object.
+        if not call["shown"] and call["arguments"].rstrip().endswith("}"):
+            try:
+                arguments = json.loads(call["arguments"])
+            except (ValueError, RecursionError):
+                pass
         display = None
         if isinstance(arguments, dict) and not call["shown"]:
             if self.full and call["name"] != "subagent":

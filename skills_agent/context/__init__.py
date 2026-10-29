@@ -27,7 +27,9 @@ def is_user_request(message):
 def image_records(records):
     """Project the complete chronology before records are split into summary batches."""
     messages = project_images([record["message"] for record in records])
-    selected = [{**deepcopy(record), "message": message} for record, message in zip(records, messages)]
+    # project_images already owns an independent copy of every message.
+    selected = [{**deepcopy({key: value for key, value in record.items() if key != "message"}),
+                 "message": message} for record, message in zip(records, messages)]
     for record in selected:
         content = record["message"].get("content")
         for block in content if isinstance(content, list) else []:
@@ -41,8 +43,8 @@ def image_records(records):
 
 def working_message(message):
     """Remove transport logs, retaining the provider state needed for another request."""
-    message = deepcopy(message)
-    raw = message.pop("_raw", {})
+    raw = message.get("_raw", {})
+    message = deepcopy({key: value for key, value in message.items() if key != "_raw"})
     if message.get("role") == "assistant" and "reasoning_content" not in message:
         values = [choice.get("message", {}).get("reasoning_content")
                   for choice in raw.get("choices", [])]
