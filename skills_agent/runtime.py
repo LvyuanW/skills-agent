@@ -11,8 +11,6 @@ from .storage import WorkspaceStorage
 
 
 def add_agent_arguments(parser):
-    parser.add_argument("--data-dir", type=Path,
-                        help="运行数据根目录，默认 SKILLS_AGENT_DATA_DIR 或 ~/.skills-agent")
     parser.add_argument("--config", type=Path, help="TOML 配置文件，默认读取工作目录中的 skills-agent.toml")
     parser.add_argument("--provider", choices=["openai", "anthropic"])
     parser.add_argument("--model", help="也可设置 OPENAI_MODEL 或 ANTHROPIC_MODEL")
@@ -33,7 +31,7 @@ def add_agent_arguments(parser):
 
 def create_agent(args, session, *, on_event=None, allow_persistent_processes=False):
     args = load_agent_config(args)
-    workspace = args.workspace.expanduser().resolve()
+    workspace = args.workspace
     if not workspace.is_dir():
         raise ValueError(f"工作目录不存在：{workspace}")
     prefix = args.provider.upper()
@@ -56,18 +54,10 @@ def create_agent(args, session, *, on_event=None, allow_persistent_processes=Fal
         skill_roots=[path for path in skills.roots if path.is_dir()],
         read_roots=[session.path.parent],
     ) if args.sandbox_image else None
-    storage = WorkspaceStorage(workspace, getattr(args, "data_dir", None)).ensure()
-    excluded = [storage.data_dir / "workspaces", session.path]
-    if not workspace.is_relative_to(session.path.parent):
-        excluded.append(session.path.parent)
+    storage = WorkspaceStorage(workspace).ensure()
+    excluded = [session.path]
     if getattr(args, "log_dir", None) is not None:
-        log_dir = args.log_dir.expanduser().resolve()
-        if log_dir == workspace:
-            excluded.extend(log_dir / name for name in (
-                "session", "history.git", "runtime-storage.json", "transcript.log", "stderr.log"))
-        else:
-            excluded.append(log_dir)
-    excluded = [path for path in excluded if not workspace.is_relative_to(path)]
+        excluded.append(args.log_dir / "runtime-storage.json")
     history = WorkspaceHistory(workspace, storage.history, session_id=str(session.path),
                                excluded_roots=excluded)
     return Agent(model, session, skills, workspace, context_tokens=args.context_tokens,

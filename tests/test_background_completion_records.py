@@ -39,6 +39,13 @@ def assistant(text):
     return {"type": "message", "message": {"role": "assistant", "content": text}}
 
 
+from tests.runtime_paths import isolated_runtime, runtime_sessions
+
+_runtime_environment = isolated_runtime()
+setUpModule = _runtime_environment.start
+tearDownModule = _runtime_environment.stop
+
+
 class BackgroundCompletionRecordTests(unittest.TestCase):
     def test_compact_direct_render_is_named_tool_record_without_private_details(self):
         event = completed()
@@ -158,15 +165,14 @@ class BackgroundCompletionRecordTests(unittest.TestCase):
         for full in (False, True):
             with self.subTest(full=full), TemporaryDirectory() as directory:
                 root = Path(directory)
-                session = Session(root / "sessions", "background-records")
+                session = Session(runtime_sessions(root), "background-records")
                 for event in (assistant("之前"), completed(), completed(), assistant("之后")):
                     session.append_event(event)
                 path = session.path / "events.jsonl"
                 before = path.read_bytes()
                 output = StringIO()
                 with redirect_stdout(output):
-                    self.assertEqual(main(["history", "--workspace", str(root), "--sessions-dir", str(root / "sessions"),
-                                           "--session", "background-records", *(["--full"] if full else [])]), 0)
+                    self.assertEqual(main(["history", "--workspace", str(root), "--session", "background-records", *(["--full"] if full else [])]), 0)
                 text = output.getvalue()
                 self.assertEqual(text.count("结果已加入上下文"), 1)
                 self.assertLess(text.index("之前"), text.index("结果已加入上下文"))

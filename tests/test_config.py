@@ -1,3 +1,4 @@
+from contextlib import chdir
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -7,15 +8,16 @@ from unittest.mock import patch
 
 from skills_agent.benchmark import parser as benchmark_parser
 from skills_agent.cli import parser as cli_parser
-from skills_agent.config import load_agent_config
+from skills_agent.config import load_agent_config, normalize_paths
 from skills_agent.runtime import create_agent
 from skills_agent.session import Session
+from skills_agent.storage import WorkspaceStorage
 
 
 class ConfigTests(unittest.TestCase):
     def setUp(self):
         self.root = Path(self.enterContext(TemporaryDirectory())).resolve()
-        self.enterContext(patch.dict(os.environ, {}, clear=True))
+        self.enterContext(patch.dict(os.environ, {"SKILLS_AGENT_DATA_DIR": str(self.root / "runtime-data")}, clear=True))
 
     def args(self, *options, benchmark=False):
         if benchmark:
@@ -24,8 +26,7 @@ class ConfigTests(unittest.TestCase):
         else:
             parser = cli_parser()
             initial = ["run", "--session", "demo"]
-        return parser.parse_args([*initial, "--workspace", str(self.root),
-                                 "--data-dir", str(self.root / "runtime-data"), *options])
+        return parser.parse_args([*initial, "--workspace", str(self.root), *options])
 
     def write_config(self, content):
         path = self.root / "skills-agent.toml"
@@ -114,7 +115,66 @@ api_format = "responses"
         self.assertEqual(args.context_tokens, 1000000)
         self.assertEqual(args.skill_dirs, [str(directory / "skills")])
         override = load_agent_config(self.args("--config", str(config), "--skill-dir", "cli-skills"))
-        self.assertEqual(override.skill_dirs, ["cli-skills"])
+        self.assertEqual(override.skill_dirs, [str(self.root / "cli-skills")])
+
+    def test_selected_workspace_anchors_all_relative_task_paths(self):
+        launcher, workspace = self.root / "launcher", self.root / "task"
+        launcher.mkdir()
+        (workspace / "settings").mkdir(parents=True)
+        (workspace / "settings/agent.toml").write_text('model="workspace-model"\nskill_dirs=["config-skills"]\n')
+        (launcher / "settings").mkdir()
+        (launcher / "settings/agent.toml").write_text('model="wrong-launcher-model"\n')
+        with chdir(launcher):
+            supplied = cli_parser().parse_args([
+                "run", "--workspace", "../task", "--config", "settings/agent.toml", "--file", "input.csv",
+            ])
+            args = load_agent_config(supplied)
+            self.assertEqual(args.workspace, workspace)
+            self.assertEqual(args.model, "workspace-model")
+            self.assertEqual(args.config, workspace / "settings/agent.toml")
+            self.assertEqual(args.file, [workspace / "input.csv"])
+            self.assertEqual(args.skill_dirs, [str(workspace / "settings/config-skills")])
+            supplied.skill_dirs = ["cli-skills"]
+            self.assertEqual(load_agent_config(supplied).skill_dirs, [str(workspace / "cli-skills")])
+            benchmark = normalize_paths(benchmark_parser().parse_args([
+                "--workspace", "../task", "--prompt-file", "task.txt", "--log-dir", "logs",
+            ]))
+            self.assertEqual(benchmark.prompt_file, workspace / "task.txt")
+            self.assertEqual(benchmark.log_dir, workspace / "logs")
+        # A second normalization is independent of any later process cwd change.
+        self.assertEqual(vars(normalize_paths(args)), vars(args))
+
+    def test_unspecified_workspace_uses_current_directory_at_initialization(self):
+        parser = cli_parser()
+        benchmark = benchmark_parser()
+        with chdir(self.root):
+            self.assertEqual(normalize_paths(parser.parse_args(["run"])).workspace, self.root)
+            self.assertEqual(normalize_paths(benchmark.parse_args([
+                "--prompt-file", "task.txt", "--log-dir", "logs",
+            ])).workspace, self.root)
+
+    def test_runtime_prompt_and_storage_use_only_the_selected_working_directory(self):
+        launcher, workspace = self.root / "launcher", self.root / "task"
+        launcher.mkdir()
+        workspace.mkdir()
+        (workspace / "skills-agent.toml").write_text('model="task-model"\n')
+        skill = workspace / "local-skills" / "example"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text('---\nname: example\ndescription: Test skill.\n---\n')
+        with chdir(launcher), patch.dict(os.environ, {"SKILLS_AGENT_DATA_DIR": ".runtime"}):
+            args = cli_parser().parse_args(["run", "--workspace", "../task", "--skill-dir", "local-skills"])
+            storage = WorkspaceStorage(workspace).ensure()
+            agent = create_agent(args, Session(storage.sessions, "selected-directory"))
+            try:
+                system = agent._system()
+                self.assertEqual(agent.workspace, workspace)
+                self.assertEqual(agent.file_history.repository, storage.history)
+                self.assertIn(f"Primary working directory: {workspace}", system)
+                self.assertIn(str(skill / "SKILL.md"), system)
+                self.assertNotIn(str(launcher), system)
+                self.assertTrue(agent.session.path.is_relative_to(workspace / ".runtime"))
+            finally:
+                agent.close()
 
     def test_removed_local_deepseek_configuration_is_rejected(self):
         for content in ('token_counter = "deepseek"', 'tokenizer_path = "tokenizer.json"',

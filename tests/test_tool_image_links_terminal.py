@@ -18,7 +18,7 @@ class ToolImageLinkTerminalTests(unittest.TestCase):
         source = self.workspace / "原始 截图.png"
         snapshot = self.workspace / "snapshot.png"
         opened = self.workspace / "opened.jsonl"
-        session = Session(self.workspace / ".agent" / "sessions", "terminal")
+        session = Session(self.storage.sessions, "terminal")
         session.append({"role": "user", "content": "Inspect the saved page."})
         session.append({"role": "assistant", "content": [], "tool_calls": [{
             "id": "capture-1", "name": "shell",

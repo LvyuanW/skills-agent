@@ -18,6 +18,7 @@ import unittest
 import pyte
 from wcwidth import wcwidth
 
+from tests.runtime_paths import terminal_storage
 from tests.sse import stream_response, responses_from_chat
 
 if os.name == "posix":
@@ -86,6 +87,8 @@ def terminal_owner():
 
 class Terminal:
     def __init__(self, workspace, endpoint):
+        self.storage = terminal_storage(workspace)
+        self.session_path = self.storage.sessions / "terminal"
         self.master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
         self.output = b""
@@ -98,12 +101,11 @@ class Terminal:
         try:
             self.process = subprocess.Popen(
                 [sys.executable, "-m", "skills_agent", "run", "--workspace", str(workspace),
-                 "--sessions-dir", str(workspace / ".agent/sessions"),
-                 "--data-dir", str(workspace / ".test-runtime"),
                  "--session", "terminal", "--model", "test-model", "--base-url", endpoint,
                  "--api-format", "responses"],
                 stdin=slave, stdout=slave, stderr=slave, cwd=PROJECT,
-                env={"PATH": os.defpath, "PYTHONPATH": str(PROJECT), "TERM": "xterm-256color"},
+                env={"PATH": os.defpath, "PYTHONPATH": str(PROJECT), "TERM": "xterm-256color",
+                     "SKILLS_AGENT_DATA_DIR": str(self.storage.data_dir)},
                 start_new_session=True, preexec_fn=terminal_owner,
             )
         finally:
@@ -213,6 +215,8 @@ class TerminalTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.workspace = Path(temporary.name)
+        self.storage = terminal_storage(self.workspace)
+        self.session_path = self.storage.sessions / "terminal"
 
     def server(self, respond):
         requests = []
@@ -280,7 +284,7 @@ class TerminalTests(unittest.TestCase):
         self.fail(f"Marker {marker!r} is not displayed in the terminal")
 
     def events(self):
-        raw = (self.workspace / ".agent/sessions/terminal/events.jsonl").read_text()
+        raw = (self.session_path / "events.jsonl").read_text()
         self.assertNotIn("\x1b", raw)
         self.assertNotIn("\\u001b", raw)
         return [json.loads(line) for line in raw.splitlines()]

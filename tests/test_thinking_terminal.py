@@ -113,7 +113,7 @@ class ThinkingTerminalTests(unittest.TestCase):
         self.assertNotIn(second, terminal.visible)
         self.assertNotIn("**FINAL_BODY**", terminal.visible)
         self.assertLess(terminal.visible.index("▶ 思考"), terminal.visible.index("FINAL_BODY"))
-        log = self.workspace / ".agent/sessions/terminal/events.jsonl"
+        log = self.session_path / "events.jsonl"
         before_toggle = log.read_bytes()
         terminal.click("▶ 思考")
         terminal.wait_for(lambda output: first in terminal.visible)
@@ -189,7 +189,7 @@ class ThinkingTerminalTests(unittest.TestCase):
                           and event["message"].get("role") == "assistant" for event in self.events())
                           and "停止" not in terminal.visible)
         terminal.prompt("ANSWER_AFTER_TAIL")
-        log = self.workspace / ".agent/sessions/terminal/events.jsonl"
+        log = self.session_path / "events.jsonl"
         assistant = next(event["message"] for event in self.events()
                          if event.get("type") == "message" and event["message"].get("role") == "assistant")
         self.assertEqual("".join(block.get("thinking", "") for block in assistant["content"]
@@ -339,7 +339,7 @@ class ThinkingTerminalTests(unittest.TestCase):
         self.assertIn("▼ 思考", terminal.visible)
         self.assertNotIn(second, terminal.visible)
         self.assertNotIn(answer, terminal.visible)
-        log = self.workspace / ".agent/sessions/terminal/events.jsonl"
+        log = self.session_path / "events.jsonl"
         recorded = log.read_bytes()
         self.assertIn(second.encode(), recorded)
         self.assertIn(answer.encode(), recorded)

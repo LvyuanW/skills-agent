@@ -19,6 +19,13 @@ from skills_agent.session import Session
 from skills_agent.skills import SkillRegistry
 
 
+from tests.runtime_paths import isolated_runtime, runtime_sessions
+
+_runtime_environment = isolated_runtime()
+setUpModule = _runtime_environment.start
+tearDownModule = _runtime_environment.stop
+
+
 class FakeCounter:
     """Prescribed token counts keep model fixtures wholly offline."""
     max_output_tokens = 4096
@@ -301,11 +308,11 @@ class AgentTests(unittest.TestCase):
     def test_history_does_not_require_model_credentials(self):
         with TemporaryDirectory() as directory:
             path = Path(directory)
-            session = Session(path / ".agent" / "sessions", "default")
+            session = Session(runtime_sessions(path), "default")
             session.append({"role": "user", "content": "  unchanged\ntext  "})
             output = io.StringIO()
             with redirect_stdout(output):
-                code = main(["history", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions")])
+                code = main(["history", "--workspace", directory])
             self.assertEqual(code, 0)
             self.assertIn("  unchanged\ntext  ", output.getvalue())
 
@@ -315,7 +322,7 @@ class CLIInteractionTests(unittest.TestCase):
         output, error = io.StringIO(), io.StringIO()
         with patch("skills_agent.runtime.create_provider", return_value=model) as provider, \
                 patch("sys.stdin", io.StringIO(lines)), redirect_stdout(output), redirect_stderr(error):
-            code = main(["run", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions"), "--data-dir", str(Path(directory) / ".test-runtime"), "--model", "test", *options])
+            code = main(["run", "--workspace", directory, "--model", "test", *options])
         provider.assert_called_once()
         return code, output.getvalue(), error.getvalue()
 
@@ -327,7 +334,7 @@ class CLIInteractionTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             code, output, error = self.invoke(directory, Model(), "/exit\n", "--session", "demo")
             self.assertEqual((code, output, error), (0, "", ""))
-            self.assertTrue((Path(directory) / ".agent" / "sessions" / "demo").is_dir())
+            self.assertTrue((runtime_sessions(Path(directory)) / "demo").is_dir())
 
     def test_run_rejects_startup_prompt(self):
         with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as result:
@@ -344,7 +351,7 @@ class CLIInteractionTests(unittest.TestCase):
             model = Model()
             code, output, error = self.invoke(directory, model, "  first turn  \nsecond turn\n")
             self.assertEqual((code, error), (0, ""))
-            messages = Session(Path(directory) / ".agent" / "sessions", "default").messages()
+            messages = Session(runtime_sessions(Path(directory)), "default").messages()
             self.assertEqual([message["role"] for message in messages],
                              ["user", "assistant", "user", "assistant"])
             self.assertEqual(messages[0]["content"], [{"type": "text", "text": "  first turn  "}])
@@ -369,7 +376,7 @@ class CLIInteractionTests(unittest.TestCase):
                 "--file", "data.csv",
             )
             self.assertEqual((code, error), (0, ""))
-            users = [message for message in Session(workspace / ".agent" / "sessions", "default").messages()
+            users = [message for message in Session(runtime_sessions(workspace), "default").messages()
                      if message["role"] == "user"]
             self.assertEqual([block["type"] for block in users[0]["content"]], ["text", "text", "image"])
             self.assertEqual(users[0]["content"][1]["name"], "data.csv")
@@ -513,8 +520,7 @@ class CLIProtocolTests(unittest.TestCase):
                 thread = threading.Thread(target=server.serve_forever, daemon=True)
                 thread.start()
                 try:
-                    command = [sys.executable, "-m", "skills_agent", "run", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions"),
-                               "--data-dir", str(workspace / ".test-runtime"),
+                    command = [sys.executable, "-m", "skills_agent", "run", "--workspace", directory,
                                "--provider", provider, "--model", "test-model", "--base-url",
                                f"http://127.0.0.1:{server.server_port}/v1"]
                     if provider == "openai":
@@ -537,7 +543,7 @@ class CLIProtocolTests(unittest.TestCase):
                     self.assertIn("失败（退出码 1）", first.stdout)
                     self.assertIn("完成", first.stdout)
                     self.assertIn("completed", first.stdout)
-                    session = Session(workspace / ".agent" / "sessions", "default")
+                    session = Session(runtime_sessions(workspace), "default")
                     messages = session.messages()
                     saved_commands = [json.loads(call["arguments"])["command"]
                                       for message in messages for call in message.get("tool_calls", [])]
@@ -556,7 +562,7 @@ class CLIProtocolTests(unittest.TestCase):
                             received = [json.loads(block["content"]) for message in payload["messages"]
                                         for block in message["content"] if block["type"] == "tool_result"]
                         self.assertEqual(received[-1], results[index])
-                    session_log = workspace / ".agent" / "sessions" / "default" / "events.jsonl"
+                    session_log = runtime_sessions(workspace) / "default" / "events.jsonl"
                     before = session_log.read_bytes()
                     second = subprocess.run(command, input="continue via stdin\n/exit\n",
                                             capture_output=True, text=True)
@@ -568,7 +574,7 @@ class CLIProtocolTests(unittest.TestCase):
                     self.assertIn("follow up", json.dumps(requests[-1]))
                     self.assertIn("continue via stdin", json.dumps(requests[-1]))
                     history = subprocess.run(
-                        [sys.executable, "-m", "skills_agent", "history", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions")],
+                        [sys.executable, "-m", "skills_agent", "history", "--workspace", directory],
                         capture_output=True, text=True,
                     )
                     self.assertEqual(history.returncode, 0, history.stderr)
@@ -581,7 +587,7 @@ class CLIProtocolTests(unittest.TestCase):
                     self.assertNotIn("\033[", first.stdout + second.stdout + history.stdout)
                     recorded = session_log.read_bytes()
                     full_history = subprocess.run(
-                        [sys.executable, "-m", "skills_agent", "history", "--full", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions")],
+                        [sys.executable, "-m", "skills_agent", "history", "--full", "--workspace", directory],
                         capture_output=True, text=True,
                     )
                     self.assertEqual(full_history.returncode, 0, full_history.stderr)

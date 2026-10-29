@@ -46,9 +46,9 @@ uv run --env-file .env skills-agent run --session demo
 uv run --env-file .env skills-agent run --session demo --max-output-tokens 32768
 ```
 
-优先级为 **显式命令行参数 > 配置文件 > 已支持的环境变量 > 内置默认值**。`--config /path/to/agent.toml` 可指定另一份文件，只读取这一份，不合并多份配置。相对 `--config` 路径按启动目录解析。会话名、工作目录和输入附件仍通过启动参数指定。
+优先级为 **显式命令行参数 > 配置文件 > 已支持的环境变量 > 内置默认值**。`--config /path/to/agent.toml` 可指定另一份文件，只读取这一份，不合并多份配置。相对 `--config` 路径按所选工作目录解析。会话名、工作目录和输入附件仍通过启动参数指定。
 
-配置文件还可填写 `provider`、`model`、`base_url`、`api_format`、`token_counter`、`skill_dirs` 和 `sandbox_image`。文件中的 `skill_dirs` 相对配置文件所在目录解析；命令行中的路径仍相对启动目录。`--skill-dir` 覆盖文件中的额外技能目录列表。API key 只从环境变量读取，可继续放在 `.env` 中，不写入 TOML。`token_counter` 可选 `auto`、`official` 或 `usage`；旧的 DeepSeek 本地计数器及 tokenizer 配置已移除。
+配置文件还可填写 `provider`、`model`、`base_url`、`api_format`、`token_counter`、`skill_dirs` 和 `sandbox_image`。文件中的 `skill_dirs` 相对配置文件所在目录解析；命令行中的相对技能路径按所选工作目录解析。`--skill-dir` 覆盖文件中的额外技能目录列表。API key 只从环境变量读取，可继续放在 `.env` 中，不写入 TOML。`token_counter` 可选 `auto`、`official` 或 `usage`；旧的 DeepSeek 本地计数器及 tokenizer 配置已移除。
 
 工作上下文默认预算为 **1M（1000000 tokens）**，各项 token 额度均可独立设置为正整数。`usage` 模式仅以网关最近一次有效的主模型返回用量判断是否达到 `min(context_tokens, model_context_window) × 80%`：Chat Completions 直接读取 `usage.total_tokens`，Responses 使用 `usage.input_tokens + usage.output_tokens`；不预留输出额度而提前压缩。其他计数模式的有效输入预算为 `min(context_tokens, model_context_window - max_output_tokens)`，压缩阈值取该预算与上述 80% 阈值的较小值；未设置实际窗口时使用 `context_tokens`。配置数值仍需符合所用模型的实际能力。
 
@@ -133,7 +133,7 @@ macOS 下在输入行按 **Ctrl-V** 粘贴剪贴板中的图片或已复制的�
 
 `--file` 和会话内的 `/file PATH` 将文件加入下一条消息的附件，可添加多个；有附件时直接输入空行也可发送。每个附件先完整复制到会话目录。PNG、JPEG、GIF、WebP 和 PDF 使用模型原生输入，需要所选模型及兼容服务支持该格式。UTF-8 文本作为完整文本附件输入；请求前计数器发现受保护输入超出上下文预算时明确报错，不机械截断。`usage` 模式不预判新增附件的 token 长度。其他格式保留副本路径，由模型编写脚本或使用适合的现有代码读取。
 
-`--workspace` 指定 shell 工作目录，默认当前目录。附件的相对路径按工作目录解析。Agent 的安装目录和任务目录可以分开：
+`--workspace` 指定 Agent 的工作目录，未指定时使用启动时的当前目录；`--session` 指定会话名。运行时向模型提供这一个工作目录，shell 在其中执行，相对编辑、附件、配置和技能路径按它解析。安装目录和任务目录可以分开：
 
 ```sh
 uv run --project /path/to/skills-agent skills-agent run --workspace /path/to/task
@@ -141,22 +141,17 @@ uv run --project /path/to/skills-agent skills-agent run --workspace /path/to/tas
 
 会话、附件、执行日志和文件历史默认保存在 `~/.skills-agent/workspaces/<工作区标识>/`。工作区标识根据规范绝对路径生成，同名但不同位置的目录互不混用。`workspace.json` 记录对应路径；该目录下的 `sessions/<会话名>/` 保存每个会话，`history.git/` 保存同一工作区通过 `edit_file` 编辑的文件版本。
 
-`--data-dir PATH` 可更改运行数据根目录，其优先级高于 `SKILLS_AGENT_DATA_DIR` 环境变量；未设置时使用 `~/.skills-agent`。`--sessions-dir PATH` 仅覆盖会话存储位置，文件历史仍使用运行数据根目录。回放时使用相同的 `--workspace` 和数据位置。
+CLI 不接受会话或文件历史目录参数。runtime 默认使用 `~/.skills-agent`；部署环境可用 `SKILLS_AGENT_DATA_DIR` 配置数据根目录，相对值以所选工作目录解析。继续或回放会话只需使用同一工作目录和会话名，运行数据位置由部署配置统一管理。
 
 普通会话回放使用会话目录中的 `replay-cache.json`，恢复时只解析原始日志中新追加的事件。旧会话首次使用或缓存失效时需要重建一次；删除缓存不会删除原始记录或模型上下文。`history --full` 始终读取原始日志。用户消息先保存并显示，模型和工具仍需等待运行准备完成后才开始。
 
-旧版 `<workspace>/.agent/sessions` 中的会话不会自动搬移，以保留记录中的绝对路径。新位置没有同名会话而旧位置存在时，程序提示显式选择旧位置：
-
-```sh
-skills-agent run --workspace /path/to/task --sessions-dir /path/to/task/.agent/sessions --session demo
-skills-agent history --workspace /path/to/task --sessions-dir /path/to/task/.agent/sessions --session demo
-```
+旧版 `<workspace>/.agent/sessions` 中的会话不会在启动时自动搬移。新位置没有同名会话而旧位置存在时，程序报告原路径和固定迁移目标，保留旧记录。维护人员必须先停止使用旧会话的进程，再调用 `WorkspaceStorage.migrate_legacy_session_offline()` 离线迁移；这不是新的启动参数或 CLI 命令。迁移保持原始日志字节不变，真实数据移至 runtime 目录，旧路径留下指向新位置的符号链接，使历史中的绝对路径仍可访问。正常启动不会调用此维护接口。
 
 运行时在 Agent 初始化时自动采集工作目录、是否位于 Git 仓库、运行平台、实际执行 shell 和操作系统版本，并加入系统提示词，供模型选择适合当前环境的命令。主 Agent 与子 Agent、交互 CLI 与 `benchmark` 共用这套环境信息；执行 shell 以运行时实际使用的 shell 为准（POSIX 通常为 `/bin/sh`，不直接采用登录环境的 `$SHELL`），无法确定的字段为 `unknown`。系统提示还包含下载文件和解压资料的隔离处理、读取它们时使用 Python `-I` 的指导；用户要求制作或运行的代码不受这条资料处理规则限制。
 
 ## 工作区文件历史
 
-runtime 仅为 `edit_file` 的新建、替换、删除和移动操作记录文件历史。操作前保存所操作文件的真实内容，成功后保存修改结果；内容未变时复用已有检查点。操作记录关联会话、工具调用、路径和前后检查点，失败时保留已保存的修改前内容供核查。历史仓库按需建立在运行数据目录，不在工作区创建 `.git`，不修改项目已有仓库的分支、提交或暂存区。
+runtime 仅为 `edit_file` 操作记录文件历史。一个批次可以改动同一文件的多处内容或不同目录中的多个文件；执行前保留涉及文件的真实内容，有改动的成功批次只产生一次 Git 提交。记录关联会话、工具调用、绝对文件路径和修改前后版本，失败时保留已有恢复依据供核查。历史仓库按需建立在 runtime 数据目录，不在任务目录创建 `.git`，不修改项目已有仓库的分支、提交或暂存区。
 
 没有文件监听或启动、退出时的工作区扫描。程序生成物和人工修改不会自动进入历史；之后如果通过 `edit_file` 编辑其中某个文件，会先保存该文件当时的内容。检查点只覆盖已记录的文件状态，不能据此推断整个工作区在那个时刻的内容，也不代表计算正确、测试通过或任务完成。旧版已保存的检查点保留，新操作继续按工具编辑范围记录。
 
@@ -169,7 +164,7 @@ python -m skills_agent.file_history --repository /absolute/history.git diff BEFO
 python -m skills_agent.file_history --repository /absolute/history.git show BEFORE analysis.py
 ```
 
-`status` 提供记录模式、检查点和错误；`mode: editing-only` 表示仅记录编辑工具操作，`monitoring: false` 表示没有文件监听。尚未执行编辑时可能没有历史仓库或检查点。`BEFORE`、`AFTER` 替换为 `log` 返回的检查点编号；文件路径相对工作区。`show` 原样输出保存的内容。先核对旧版本与当前文件的差异，需要恢复文本时通过 `edit_file` 修改相应部分，保留有效的当前工作；不要重定向覆盖文件或通过 Git checkout/reset 绕过编辑工具。文件历史独立于对话历史：查看旧文件不需要回放或删除会话。
+`status` 提供记录模式、检查点和错误；`mode: editing-only` 表示仅记录编辑工具操作，`monitoring: false` 表示没有文件监听。尚未执行编辑时可能没有历史仓库或检查点。`BEFORE`、`AFTER` 使用工具结果或 `log` 中的修改前后版本编号；路径可以是任意目录的绝对路径，或相对记录工作目录的路径。`show` 原样输出保存的内容。先核对旧版本与当前文件的差异，再通过 `edit_file` 恢复需要的部分，保留有效的当前工作；不要重定向覆盖文件或通过 Git checkout/reset 绕过编辑工具。文件历史独立于对话历史：查看旧文件不需要回放或删除会话。
 
 ## 单次任务与 ALE
 
@@ -180,7 +175,7 @@ python -m skills_agent.file_history --repository /absolute/history.git show BEFO
   --log-dir /path/to/run-logs
 ```
 
-完整任务从 UTF-8 文件读取，执行到模型返回最终回答后退出。配置文件的读取规则、模型、技能、附件及 `--data-dir` 参数与 `run` 相同。每次运行在统一运行数据目录中建立独立会话，退出时将会话和已有文件历史的独立副本导出到 `<log-dir>/session` 和 `<log-dir>/history.git`，供 ALE 等环境归档；未产生历史仓库时不导出该仓库，已使用的日志目录不能重用。退出码为成功 `0`、失败 `1`、中断 `130`。正常结束、失败或接到 SIGTERM 时，均清理当前脚本及通过 shell 登记的本任务后台进程，保留日志后退出；benchmark 明确拒绝 `background_lifecycle=service`，不允许创建跨任务保留的服务。容器运行时可将 `--data-dir` 指向持久化挂载目录；销毁容器前也可归档日志目录中的导出副本。
+完整任务从 UTF-8 文件读取，执行到模型返回最终回答后退出。配置文件、模型、技能、附件和 runtime 数据根目录与 `run` 使用同一套规则。相对 `--prompt-file`、`--log-dir` 均按所选工作目录解析。每次运行在统一运行数据目录中建立独立会话，退出时将会话和已有文件历史的独立副本导出到 `<log-dir>/session` 和 `<log-dir>/history.git`，供 ALE 等环境归档；未产生历史仓库时不导出该仓库，已使用的日志目录不能重用。退出码为成功 `0`、失败 `1`、中断 `130`。正常结束、失败或接到 SIGTERM 时，均清理当前脚本及通过 shell 登记的本任务后台进程，保留日志后退出；benchmark 明确拒绝 `background_lifecycle=service`，不允许创建跨任务保留的服务。容器部署可用 `SKILLS_AGENT_DATA_DIR` 指向持久化挂载目录；销毁容器前也可归档日志目录中的导出副本。
 
 [ALE 接入说明](../adapters/ale/README.md) 包含可复制到 ALE 仓库的 Deployer、Agent 配置及单任务 smoke 配置。适配器在 ALE 的任务 sandbox 内安装并运行本项目，产物由 Agent 按题目指定路径写入，日志写入 ALE 的 `executor.work_dir`。
 
@@ -280,9 +275,11 @@ scripts/example.py 提供可复用操作；说明它的参数、输入输出和�
 ```json
 {
   "name": "Save input analysis script",
-  "operation": "create",
-  "path": "analyze.py",
-  "content": "import csv\nfrom pathlib import Path\n\nwith Path(\"data.csv\").open(encoding=\"utf-8\", newline=\"\") as source:\n    rows = list(csv.DictReader(source))\nprint({\"rows\": len(rows), \"columns\": list(rows[0]) if rows else []})\n"
+  "edits": [{
+    "operation": "create",
+    "path": "analyze.py",
+    "content": "import csv\nfrom pathlib import Path\n\nwith Path(\"data.csv\").open(encoding=\"utf-8\", newline=\"\") as source:\n    rows = list(csv.DictReader(source))\nprint({\"rows\": len(rows), \"columns\": list(rows[0]) if rows else []})\n"
+  }]
 }
 ```
 
@@ -333,30 +330,36 @@ API 错误的脱敏诊断保存在对应会话 `events.jsonl` 的 `error.diagnos
 
 系统提示引导模型根据原始需求和已接受的修正，按任务需要适度检查实际结果，并依据观察修正问题。最终回答如实说明结果、相关验证和剩余限制，只对已经取得证据的范围作出结论。这些检查由模型结合当前任务选择，不要求独立 reviewer、额外交接或专门报告。
 
-`edit_file` 是文件编辑的专用工具。传入简短的操作目的 `name`、操作 `operation` 和工作区内路径 `path`：
+`edit_file` 是文件编辑的专用工具。传入简短的操作目的 `name` 和非空数组 `edits`；每个元素包含操作 `operation`、路径 `path` 及对应参数。绝对路径可指向任意目录，相对路径以 Agent 工作目录解析；文件范围仍由用户任务决定。
 
 | 操作 | 额外参数与行为 |
 | --- | --- |
-| `create` | `content` 为完整文本，可为空；不覆盖已有文件。 |
-| `replace` | `old_text` 必须在当前文件中唯一匹配；仅当前文件为空时允许 `old_text` 为空，用于写入空文件。`new_text` 可为空，用于删除匹配内容。 |
+| `create` | 新建文件，不覆盖已有文件。`content` 为完整文本；二进制使用 `content_base64`，两者二选一。 |
+| `write` | 新建文件或完整替换内容；使用 `content` 或 `content_base64`，支持空内容。 |
+| `replace` | 精确替换 `old_text` 为 `new_text`；默认要求唯一匹配，`replace_all: true` 替换全部匹配，`expected_count` 可约束次数。仅空文件允许空 `old_text`。 |
+| `insert` | 在唯一的 `anchor` 前或后插入 `content`；`position` 为 `before` 或 `after`。 |
 | `delete` | 删除指定文件，无需内容参数。 |
-| `move` | `destination` 为工作区内的新路径；不覆盖目标文件。 |
+| `move` / `copy` | `destination` 指定目标路径；默认不覆盖，显式 `overwrite: true` 才覆盖已有目标。 |
 
-新文件和移动目标的父目录须已存在，可以先通过 shell 的 `mkdir` 准备目录。文本创建和替换使用 UTF-8，拒绝 NUL 字节；工具不跟随符号链接编辑文件。
+`content`、`old_text`、`new_text` 和 `anchor` 都支持多行代码，包括 GLSL、HTML、Python 和配置文件，用 JSON 的 `\n` 表示换行，无需 shell 引号或 heredoc。文本默认 UTF-8，可用 `encoding` 指定编码；`content_base64` 直接表示原始字节，不搭配 `encoding`。缺失的父目录会自动创建。内容编辑跟随符号链接；`delete`、`move` 和 `copy` 操作链接本身。runtime 当前会话及正在使用的历史文件受到保护。
 
 例如，先读取现有文件，再针对真实内容调用：
 
 ```json
 {
   "name": "Correct the report heading",
-  "operation": "replace",
-  "path": "report.md",
-  "old_text": "# Anaylsis result",
-  "new_text": "# Analysis result"
+  "edits": [{
+    "operation": "replace",
+    "path": "report.md",
+    "old_text": "# Anaylsis result",
+    "new_text": "# Analysis result"
+  }]
 }
 ```
 
-检查工具结果后再选择依赖该结果的下一步；唯一匹配失败时重新读取相应区域。shell 负责文件读取、程序执行和检查，不得通过 shell、sandbox、内联 Python、重定向或先写脚本再执行的方式，绕过 `edit_file` 直接新建、改写、删除或重命名文件。正常运行程序、测试、编译、分析和渲染仍可生成任务产物；这些产物不自动进入工具编辑历史。
+把相关修改放入同一 `edits` 数组，可以在一次调用中处理同一文件的多个位置或多个文件。操作按顺序使用前面操作的结果；写入前验证整批操作，有实际改动的成功批次只创建一次历史提交。执行错误仍可能留下部分修改，应读取工具返回的实际状态再处理。唯一匹配失败时重新读取相应区域。
+
+shell 负责文件读取、程序执行和检查，不得通过 shell、sandbox、内联 Python、重定向或先写脚本再执行的方式，绕过 `edit_file` 直接新建、改写、删除、复制或重命名文件。正常运行程序、测试、编译、分析和渲染仍可生成任务产物；这些产物不自动进入工具编辑历史。
 
 旧 `file-editing` skill 和 shell 编辑脚本已移除。内置 [read-file-history skill](../skills_agent/builtin_skills/read-file-history/SKILL.md) 提供只读的 `status`、`log`、`diff` 和 `show` 查询，用于比较已记录版本，再通过编辑工具恢复需要的内容。
 

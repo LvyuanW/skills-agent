@@ -708,7 +708,7 @@ class ProcessScope:
         deadline = time.monotonic() + BACKGROUND_STARTUP_TIMEOUT_SECONDS
         launched, launch_error = None, None
         try:
-            launched = subprocess.run(args, env=environment, stdin=subprocess.DEVNULL,
+            launched = subprocess.run(args, cwd=cwd, env=environment, stdin=subprocess.DEVNULL,
                                       capture_output=True, text=True, timeout=BACKGROUND_STARTUP_TIMEOUT_SECONDS + 2)
         except (OSError, subprocess.SubprocessError) as exc:
             launch_error = exc

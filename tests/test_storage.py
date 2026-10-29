@@ -1,4 +1,4 @@
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import chdir, redirect_stderr, redirect_stdout
 import io
 import json
 import os
@@ -11,9 +11,11 @@ import unittest
 from unittest.mock import Mock, patch
 
 from skills_agent.benchmark import export_runtime_logs, main as benchmark_main
-from skills_agent.cli import main
+from skills_agent.cli import main, parser as cli_parser
+from skills_agent.benchmark import parser as benchmark_parser
 from skills_agent.session import Session
 from skills_agent.storage import WorkspaceStorage
+from skills_agent.file_history import WorkspaceHistory
 
 
 class WorkspaceStorageTests(unittest.TestCase):
@@ -24,13 +26,13 @@ class WorkspaceStorageTests(unittest.TestCase):
         self.data = self.root / "data"
         self.enterContext(patch.dict(os.environ, {"SKILLS_AGENT_DATA_DIR": str(self.data)}))
 
-    def test_user_data_default_and_explicit_override(self):
+    def test_user_data_default_and_runtime_environment(self):
         with patch.dict(os.environ, {}, clear=True), patch("pathlib.Path.home", return_value=self.root):
             default = WorkspaceStorage(self.workspace)
         self.assertEqual(default.data_dir, self.root / ".skills-agent")
         self.assertEqual(WorkspaceStorage(self.workspace).data_dir, self.data)
-        self.assertEqual(WorkspaceStorage(self.workspace, self.root / "custom").data_dir,
-                         self.root / "custom")
+        with patch.dict(os.environ, {"SKILLS_AGENT_DATA_DIR": "runtime-state"}), chdir(self.root):
+            self.assertEqual(WorkspaceStorage(self.workspace).data_dir, self.workspace / "runtime-state")
 
     def test_same_named_workspaces_are_separate_and_canonical_aliases_reuse_storage(self):
         first = WorkspaceStorage(self.workspace).ensure()
@@ -70,7 +72,7 @@ class WorkspaceStorageTests(unittest.TestCase):
             self.assertEqual(main(["history", "--workspace", str(self.workspace)]), 1)
         self.assertFalse(self.data.exists())
 
-    def test_old_session_requires_explicit_location_and_remains_readable(self):
+    def test_old_session_requires_offline_migration_without_touching_original_records(self):
         legacy = self.workspace / ".agent/sessions"
         session = Session(legacy, "default")
         session.append({"role": "user", "content": "legacy request"})
@@ -78,13 +80,51 @@ class WorkspaceStorageTests(unittest.TestCase):
         for command in ("run", "history"):
             with redirect_stderr(io.StringIO()) as error:
                 self.assertEqual(main([command, "--workspace", str(self.workspace)]), 1)
-            self.assertIn("--sessions-dir", error.getvalue())
+            self.assertIn("离线迁移", error.getvalue())
+            self.assertNotIn("--sessions-dir", error.getvalue())
+            self.assertEqual((session.path / "events.jsonl").read_bytes(), before)
+            self.assertFalse(session.path.is_symlink())
+        self.assertFalse(self.data.exists())
+        storage = WorkspaceStorage(self.workspace)
+        migrated = storage.migrate_legacy_session_offline("default")
+        self.assertEqual(migrated, storage.sessions / "default")
+        self.assertTrue(session.path.is_symlink())
+        self.assertEqual(session.path.resolve(), migrated)
+        self.assertEqual((migrated / "events.jsonl").read_bytes(), before)
+        self.assertEqual(storage.migrate_legacy_session_offline("default"), migrated)
         with redirect_stdout(io.StringIO()) as output:
-            self.assertEqual(main(["history", "--workspace", str(self.workspace),
-                                   "--sessions-dir", str(legacy)]), 0)
+            self.assertEqual(main(["history", "--workspace", str(self.workspace)]), 0)
         self.assertIn("legacy request", output.getvalue())
         self.assertEqual((session.path / "events.jsonl").read_bytes(), before)
-        self.assertFalse(self.data.exists())
+
+    def test_offline_migration_preserves_absolute_attachment_references_and_rejects_conflicts(self):
+        source = Session(self.workspace / ".agent/sessions", "legacy")
+        attachment = source.path / "attachments/example.txt"
+        attachment.parent.mkdir()
+        attachment.write_text("original evidence")
+        source.append({"role": "user", "content": str(attachment)})
+        original = (source.path / "events.jsonl").read_bytes()
+        storage = WorkspaceStorage(self.workspace)
+        target = storage.migrate_legacy_session_offline("legacy")
+        self.assertEqual((target / "events.jsonl").read_bytes(), original)
+        self.assertEqual(attachment.read_text(), "original evidence")
+        self.assertTrue(attachment.resolve().is_relative_to(storage.sessions))
+        another = Session(self.workspace / ".agent/sessions", "conflict")
+        another.append({"role": "user", "content": "keep"})
+        Session(storage.sessions, "conflict")
+        with self.assertRaisesRegex(ValueError, "目标会话已存在"):
+            storage.migrate_legacy_session_offline("conflict")
+        self.assertFalse(another.path.is_symlink())
+
+    def test_history_directory_flags_are_rejected_by_every_cli_entry(self):
+        for command in ("run", "history"):
+            for option in ("--sessions-dir", "--data-dir"):
+                with self.subTest(command=command, option=option), redirect_stderr(io.StringIO()):
+                    with self.assertRaises(SystemExit) as error:
+                        cli_parser().parse_args([command, option, str(self.data)])
+                    self.assertEqual(error.exception.code, 2)
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            benchmark_parser().parse_args(["--prompt-file", "task.txt", "--log-dir", "logs", "--data-dir", str(self.data)])
 
     def test_benchmark_receipt_and_export_preserve_session_after_failure(self):
         prompt = self.root / "prompt.txt"
@@ -138,6 +178,7 @@ class WorkspaceStorageTests(unittest.TestCase):
         operations = storage.history / "operations"
         operations.mkdir(parents=True)
         (storage.history / "workspace.json").write_text(json.dumps(metadata))
+        (storage.history / "path-map.json").write_text('{"paths": {}}\n')
         record = {"operation_id": "edit-before-init", "operation": "replace", "path": "result.txt",
                   "status": "failed", "applied": False, "before_revision": None,
                   "after_revision": None, "error": "Git initialization failed"}
@@ -151,6 +192,39 @@ class WorkspaceStorageTests(unittest.TestCase):
         self.assertFalse((logs / "history.git/HEAD").exists())
         self.assertEqual((logs / "history.git/operations/edit-before-init.json").read_bytes(), source.read_bytes())
         self.assertEqual(json.loads((logs / "history.git/workspace.json").read_text()), metadata)
+        self.assertEqual((logs / "history.git/path-map.json").read_bytes(), b'{"paths": {}}\n')
+
+    @unittest.skipUnless(shutil.which("git"), "Git required")
+    def test_export_preserves_absolute_path_map_and_batch_preimage_tree(self):
+        storage = WorkspaceStorage(self.workspace).ensure()
+        session = Session(storage.sessions, "batch-history")
+        session.append({"role": "user", "content": "update external file"})
+        external = self.root / "outside-task" / "result.txt"
+        external.parent.mkdir()
+        external.write_bytes(b"original\r\n")
+        history = WorkspaceHistory(self.workspace, storage.history, session_id=str(session.path))
+        result = history.edit_batch([
+            {"operation": "replace", "path": str(external), "old_text": "original", "new_text": "updated"},
+            {"operation": "create", "path": "nested/new.txt", "content": "new"},
+        ], tool_call_id="batch-outside-workspace")
+        history.close()
+        mapping = (storage.history / "path-map.json").read_bytes()
+        logs = self.root / "batch-export"
+        logs.mkdir()
+        export_runtime_logs(logs, session, storage)
+        exported = logs / "history.git"
+        self.assertEqual((exported / "path-map.json").read_bytes(), mapping)
+        shutil.rmtree(self.data)
+        reference = "refs/edit-preimages/" + result["operation_id"]
+        retained = subprocess.check_output(["git", "--git-dir", str(exported), "rev-parse", reference], text=True).strip()
+        self.assertEqual(retained, result["before_revision"])
+        helper = Path(__file__).resolve().parents[1] / "skills_agent/builtin_skills/read-file-history/scripts/history.py"
+        command = [sys.executable, str(helper), "--repository", str(exported)]
+        self.assertEqual(subprocess.check_output([*command, "show", result["before_revision"], str(external)]), b"original\r\n")
+        self.assertEqual(subprocess.check_output([*command, "show", result["after_revision"], str(external)]), b"updated\r\n")
+        records = json.loads(subprocess.check_output([*command, "log", "--path", str(external)], text=True))
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["before_revision"], result["before_revision"])
 
     @unittest.skipUnless(shutil.which("git"), "Git required")
     def test_export_empty_bare_history_preserves_operation_records(self):
