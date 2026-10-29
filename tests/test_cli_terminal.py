@@ -149,7 +149,7 @@ class Terminal:
         # once per submitted message. Check the freshly rendered input instead.
         def ready(output):
             row = self.screen.buffer[self.screen.cursor.y]
-            line = "".join(row[x].data for x in range(self.screen.columns)).rstrip()
+            line = "".join(row[x].data for x in range(self.screen.columns)).strip()
             return len(output) > self._prompt_output and line == ">"
         result = self.wait_for(ready)
         self._prompt_output = len(result)
@@ -336,7 +336,10 @@ class TerminalTests(unittest.TestCase):
 
     def test_ctrl_d_exits_without_model_call_and_resets_prompt_color(self):
         terminal, requests = self.terminal(lambda payload, count: self.response("unexpected"))
-        self.assert_color(terminal.text, ">", USER_COLOR)
+        cursor = terminal.screen.cursor
+        prompt = terminal.screen.buffer[cursor.y][1]
+        self.assertEqual(prompt.data, ">")
+        self.assertEqual((prompt.fg, prompt.bg), ("default", "default"))
         terminal.send("\x04")
         finished = terminal.wait_exit()
         self.assertEqual(terminal.process.returncode, 0)
@@ -354,16 +357,16 @@ class TerminalTests(unittest.TestCase):
         self.addCleanup(release.set)
         self.assertNotIn("耗时", terminal.visible)
         terminal.send("timed request\n")
-        timer_row = terminal.screen.lines - 4
-
         def timer_text():
-            return terminal.screen.display[timer_row].strip()
+            return next((line.strip() for line in terminal.screen.display if line.strip().startswith("耗时 ")), "")
 
         terminal.wait_for(lambda output: timer_text().startswith("耗时 "))
         first = timer_text()
         terminal.wait_for(lambda output: timer_text() != first, timeout=2)
         self.assertRegex(timer_text(), r"^耗时 \d+\.\d 秒  停止$")
-        self.assertEqual(terminal.screen.display[timer_row + 1].strip(), ">")
+        timer_row = next(y for y, line in enumerate(terminal.screen.display) if line.strip().startswith("耗时 "))
+        self.assertGreater(terminal.screen.cursor.y, timer_row)
+        self.assertEqual(terminal.screen.display[terminal.screen.cursor.y].strip(), ">")
         self.assertEqual(terminal.screen.buffer[timer_row][0].bg, "default")
         release.set()
         terminal.prompt("TIMED_RESPONSE")
@@ -473,12 +476,14 @@ class TerminalTests(unittest.TestCase):
         self.assertEqual(requests[-1]["input"][-1]["content"],
                          [{"type": "input_text", "text": message}])
         def viewport(terminal):
+            top_rule = next(y for y, line in enumerate(terminal.screen.display)
+                            if set(line.strip()) == {"─"})
             return [[(terminal.screen.buffer[y][x].data,
                       terminal.screen.buffer[y][x].fg,
                       terminal.screen.buffer[y][x].bg)
                      for x in range(terminal.screen.columns)]
                     # Elapsed time belongs to this run, not replayed messages.
-                    for y in range(terminal.screen.lines) if y != terminal.screen.lines - 4]
+                    for y in range(terminal.screen.lines) if y != top_rule - 1]
 
         live_view = viewport(terminal)
         self.assertIn("粘贴的第二行", terminal.visible)
