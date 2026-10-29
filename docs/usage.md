@@ -143,6 +143,8 @@ uv run --project /path/to/skills-agent skills-agent run --workspace /path/to/tas
 
 `--data-dir PATH` 可更改运行数据根目录，其优先级高于 `SKILLS_AGENT_DATA_DIR` 环境变量；未设置时使用 `~/.skills-agent`。`--sessions-dir PATH` 仅覆盖会话存储位置，文件历史仍使用运行数据根目录。回放时使用相同的 `--workspace` 和数据位置。
 
+普通会话回放使用会话目录中的 `replay-cache.json`，恢复时只解析原始日志中新追加的事件。旧会话首次使用或缓存失效时需要重建一次；删除缓存不会删除原始记录或模型上下文。`history --full` 始终读取原始日志。用户消息先保存并显示，模型和工具仍需等待运行准备完成后才开始。
+
 旧版 `<workspace>/.agent/sessions` 中的会话不会自动搬移，以保留记录中的绝对路径。新位置没有同名会话而旧位置存在时，程序提示显式选择旧位置：
 
 ```sh
@@ -159,6 +161,8 @@ runtime 启动 Python 文件监听，在工作开始前保存初始状态，并�
 历史记录普通文件和符号链接本身，不跟随链接读取工作区外的内容。默认排除 `.git`、`.agent`、`.skills-agent`、`.venv`、`venv`、`node_modules`、`__pycache__`、`.pytest_cache`、`.mypy_cache`、`.ruff_cache` 目录，以及本次运行的数据、会话和日志目录。空目录、套接字等特殊文件不记录。项目 `.gitignore` 中的任务产物仍可进入文件历史。
 
 监听事件会分批处理；短时间内反复覆盖的每个中间版本不一定都被保存。Git 检查点只表明文件内容已记录，不代表计算正确、测试通过或任务已经完成。查看 `status` 的实际检查点及错误状态，判断哪些内容已经保存。
+
+重新启动时仍检查工作区当前文件状态，但会复用未变更文件经过校验的内容哈希。`history.git/file-cache.json` 是可重建的性能缓存，删除或失效后会重新读取文件，不影响已有检查点。
 
 系统提示词提供本次历史仓库的绝对路径和可执行查询命令。可通过现有 shell 使用 file-editing 中的辅助脚本，也可使用运行环境中的 Python 模块：
 
