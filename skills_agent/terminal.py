@@ -3,7 +3,7 @@
 import asyncio
 from collections import deque
 from dataclasses import dataclass
-from functools import wraps
+from functools import lru_cache, wraps
 from io import StringIO
 from math import isfinite
 import os
@@ -44,6 +44,16 @@ _LINE_STYLES = {"user": "fg:ansiwhite bg:ansiblack",
                 "thinking": "fg:ansibrightblack bg:default"}
 _RUNNING_JOB_STATES = {"starting", "running", "stopping"}
 _THINKING_PREVIEW_LINES = 8
+
+
+@lru_cache(maxsize=8192)
+def _cached_fragment_width(fragments):
+    return fragment_list_width(fragments)
+
+
+def _row_width(fragments):
+    # Width depends only on style/text; never retain mouse handlers or views.
+    return _cached_fragment_width(tuple(item[:2] for item in fragments))
 
 
 def _display_only(method):
@@ -785,7 +795,7 @@ class TerminalView:
                         # Window already converts terminal cells to character indices.
                         self._image_links[len(lines) + index] = (start, end, block["image_path"])
             # Paint blank lines and row tails with the message's own background.
-            lines.extend([*row, (style, " " * max(0, width - fragment_list_width(row)))]
+            lines.extend([*row, (style, " " * max(0, width - _row_width(row)))]
                          for row in rows)
         if activity_row is not None:
             lines.append(activity_row)

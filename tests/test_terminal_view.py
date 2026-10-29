@@ -1,5 +1,6 @@
 import os
 import unittest
+import weakref
 from unittest.mock import patch
 
 from prompt_toolkit.data_structures import Point
@@ -10,7 +11,7 @@ from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.utils import get_cwidth
 
 from skills_agent.cli import ConsoleRenderer
-from skills_agent.terminal import TerminalView
+from skills_agent.terminal import TerminalView, _cached_fragment_width, _row_width
 
 
 class TerminalViewTests(unittest.TestCase):
@@ -111,6 +112,63 @@ class TerminalViewTests(unittest.TestCase):
         self.assertTrue(all(fragment_list_width(row) == 60 for row in rows))
         self.assertEqual(fragment_list_to_text(rows[4]), " " * 60)
         self.assertTrue(all("bg:ansiwhite" in style for style, text in rows[4] if text))
+
+    def test_cached_width_preserves_unicode_and_escape_semantics_without_retaining_handlers(self):
+        class Handler:
+            __hash__ = None
+
+            def __call__(self, event):
+                pass
+
+        handler = Handler()
+        reference = weakref.ref(handler)
+        fragments = [("bold", "中文 e\u0301 👩\u200d💻", handler),
+                     ("[ZeroWidthEscape] underline", "\x1b]8;;https://example.com\x1b\\")]
+        expected = fragment_list_width(fragments)
+        _cached_fragment_width.cache_clear()
+        with patch("skills_agent.terminal.fragment_list_width", wraps=fragment_list_width) as measure:
+            self.assertEqual(_row_width(fragments), expected)
+            self.assertEqual(_row_width(fragments), expected)
+            self.assertEqual(measure.call_count, 1)
+            visible = [("underline", fragments[1][1])]
+            self.assertEqual(_row_width(visible), fragment_list_width(visible))
+            self.assertEqual(measure.call_count, 2)
+        del fragments, handler
+        self.assertIsNone(reference())
+        for number in range(8200):
+            _row_width([("", str(number))])
+        self.assertLessEqual(_cached_fragment_width.cache_info().currsize, 8192)
+        _cached_fragment_width.cache_clear()
+
+    def test_cached_width_keeps_resize_role_changes_and_image_positions_current(self):
+        self.view.append_body("**检查** 中文和 e\u0301 👩\u200d💻\n\n" * 3, channel="thinking")
+        self.view.upsert_tool("result", "检查完成", "tool")
+        self.view.append_image_link("查看图片", "/tmp/preview.png")
+
+        def compare(width):
+            cached = self.view._lines(width)
+            headers = dict(self.view._headers)
+            links = dict(self.view._image_links)
+            with patch("skills_agent.terminal._row_width", side_effect=fragment_list_width):
+                self.assertEqual(cached, self.view._lines(width))
+            self.assertEqual(headers, self.view._headers)
+            self.assertEqual(links, self.view._image_links)
+            self.assertEqual(fragment_list_width(cached[-1]), width)
+            return cached, next(iter(links))
+
+        rows, original_link_row = compare(60)
+        self.assertIn("ansiblue", rows[1][0][0])
+        self.mouse(MouseEventType.MOUSE_UP, 0)
+        self.view.upsert_tool("result", "检查失败：参数缺失", "error")
+        rows, expanded_link_row = compare(24)
+        self.assertGreater(expanded_link_row, original_link_row)
+        self.assertIn("ansired", rows[expanded_link_row - 1][0][0])
+        with patch.object(self.view, "open_image") as open_image:
+            self.mouse(MouseEventType.MOUSE_UP, expanded_link_row)
+        open_image.assert_called_once_with("/tmp/preview.png")
+        self.mouse(MouseEventType.MOUSE_UP, 0)
+        _, collapsed_link_row = compare(60)
+        self.assertEqual(collapsed_link_row, original_link_row)
 
     def test_input_thread_edits_and_returns_submitted_text(self):
         with create_pipe_input() as input:
