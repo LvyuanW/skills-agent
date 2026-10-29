@@ -107,7 +107,11 @@ class MessageQueueTerminalTests(unittest.TestCase):
         rows = self.queue_rows(terminal)
         self.assertIn("queued alpha", rows[0][1])
         self.assertIn("queued beta", rows[1][1])
-        self.assertTrue(terminal.screen.display[rows[-1][0] + 1].startswith("> draft ABC"))
+        draft_row = terminal.screen.cursor.y
+        self.assertGreater(draft_row, rows[-1][0])
+        self.assertTrue(terminal.screen.display[draft_row].lstrip().startswith("> draft ABC"))
+        self.assertTrue(any(set(line.strip()) == {"─"}
+                            for line in terminal.screen.display[rows[-1][0] + 1:draft_row]))
 
         release.set()
         terminal.wait_for(lambda output: "ANSWER_3" in terminal.visible
@@ -131,7 +135,8 @@ class MessageQueueTerminalTests(unittest.TestCase):
         self.assertNotIn("TAIL_MARKER", terminal.visible)
         self.assertEqual(terminal.screen.buffer[y][74].data, "排")
         self.assertEqual(terminal.screen.buffer[y][74].fg, "blue")
-        self.assertTrue(terminal.screen.display[y + 1].startswith(">"))
+        self.assertGreater(terminal.screen.cursor.y, y)
+        self.assertEqual(terminal.screen.display[terminal.screen.cursor.y].strip(), ">")
         terminal.send("keep this draft")
         terminal.wait_for(lambda output: "> keep this draft" in terminal.visible)
 

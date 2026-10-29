@@ -1,5 +1,6 @@
 """Interactive terminal transcript with expandable thinking blocks."""
 
+import asyncio
 from collections import deque
 from dataclasses import dataclass
 from functools import wraps
@@ -233,10 +234,25 @@ class TerminalView:
                              accept_handler=self._submit)
         self.control = _Transcript(self)
         self.window = Window(self.control, get_vertical_scroll=lambda _: self._scroll,
+                             height=Dimension(min=1),
                              style="fg:ansiblack bg:ansiwhite")
         editor = Window(BufferControl(self.buffer, input_processors=[BeforeInput("> ")]),
+                        height=lambda: Dimension(min=1, max=max(1, min(8, self.app.output.get_size().rows // 3))),
                         dont_extend_height=True, wrap_lines=True,
-                        style="fg:ansiwhite bg:ansiblack")
+                        style="fg:default bg:default")
+        # The frame supplies the boundary; keep the draft in the terminal's
+        # own colors. Smaller terminals give padding back to the conversation.
+        input_area = VSplit([
+            Window(width=1),
+            HSplit([
+                Window(height=1, char="─", style="fg:ansibrightblack bg:default"),
+                Window(height=self._input_padding),
+                editor,
+                Window(height=self._input_padding),
+                Window(height=1, char="─", style="fg:ansibrightblack bg:default"),
+            ]),
+            Window(width=1),
+        ], style="fg:default bg:default")
         hint = Window(FormattedTextControl(
             lambda: "选择文本（F2 返回）" if self._selecting else "按 F2 选中文本"
         ), height=1, style="fg:ansibrightblack bg:default")
@@ -247,7 +263,8 @@ class TerminalView:
                          style="fg:ansibrightblack bg:default")
         self.queue_control = _MessageQueue(self)
         queued = Window(self.queue_control,
-                        height=lambda: Dimension(min=0, preferred=len(self.queue_control.items())),
+                        height=lambda: Dimension(min=0, max=max(0, self.app.output.get_size().rows // 4),
+                                                 preferred=len(self.queue_control.items())),
                         dont_extend_height=True, wrap_lines=False, style="bg:default")
         bindings = KeyBindings()
 
@@ -309,14 +326,18 @@ class TerminalView:
         self.app = Application(
             layout=Layout(HSplit([
                 self.window, elapsed, queued,
-                editor, Window(height=1, style="bg:default"), VSplit([hint, usage], height=1),
+                input_area, VSplit([hint, usage], height=1),
             ]), focused_element=editor),
             key_bindings=merge_key_bindings(merged), full_screen=True,
             mouse_support=Condition(lambda: not self._selecting),
             after_render=after_render,
             input=input, output=output, min_redraw_interval=0.1,
+            terminal_size_polling_interval=None,
         )
         self.app.key_processor.before_key_press += self._clear_hover
+
+    def _input_padding(self):
+        return 1 if self.app.output.get_size().rows >= 18 else 0
 
     def _clear_hover(self, event):
         if self._hovered is not None and not self._selecting:
@@ -777,8 +798,19 @@ class TerminalView:
         if not self._selecting and not self._closed:
             self.app.invalidate()
 
+    async def _watch_terminal_size(self, size):
+        while True:
+            await asyncio.sleep(0.5)
+            current = self.app.output.get_size()
+            if current != size:
+                size = current
+                self.app.invalidate()
+
     def start(self):
         def ready():
+            # Sample before announcing readiness. The UI runs off the main
+            # thread, so an early resize must not become the poller's baseline.
+            self.app.create_background_task(self._watch_terminal_size(self.app.output.get_size()))
             self._schedule_display()
             self._ready.set()
 
