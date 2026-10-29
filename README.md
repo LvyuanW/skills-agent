@@ -32,9 +32,9 @@ Anthropic 接口使用 `--provider anthropic`，并设置 `ANTHROPIC_API_KEY` �
 
 `run` 和 `benchmark` 自动读取工作目录中的 [skills-agent.toml](skills-agent.toml)；`--config PATH` 可指定另一份配置。优先级为 **命令行参数 > 配置文件 > 已支持的环境变量 > 默认值**。API key 只从环境变量读取。
 
-工作目录默认是当前目录，可以用 `--workspace` 指向独立的任务目录。会话和工具编辑历史统一保存在 `~/.skills-agent/workspaces/<工作区标识>/`；`--data-dir` 或 `SKILLS_AGENT_DATA_DIR` 可更改运行数据根目录。`--sessions-dir` 仍可指定会话位置，包括恢复旧版 `<workspace>/.agent/sessions` 中的会话。模型窗口、上下文预算和输出额度必须与实际模型匹配；完整配置、界面操作、图片附件、后台作业与中断恢复见 [使用说明](docs/usage.md)。
+启动时用 `--workspace` 选择工作目录、`--session` 选择会话；未指定工作目录时使用启动时的当前目录。后续相对任务路径均以所选工作目录解析。会话和工具编辑历史统一保存在 runtime 管理的 `~/.skills-agent/workspaces/<工作区标识>/`，CLI 不提供历史目录参数。部署环境可通过 `SKILLS_AGENT_DATA_DIR` 配置 runtime 数据根目录。模型窗口、上下文预算和输出额度必须与实际模型匹配；完整配置、界面操作、图片附件、后台作业与中断恢复见 [使用说明](docs/usage.md)。
 
-`edit_file` 提供新建、精确替换、删除和移动文件的操作，runtime 保存工具操作前后的文件版本到独立的 `history.git`，不改变项目自身的 Git 分支或暂存区。程序生成物和人工修改不自动记录。系统提示词提供历史仓库路径和查询命令；`read-file-history` skill 说明如何查找、比较旧内容，再通过 `edit_file` 恢复需要的部分。记录范围和查询示例见[工作区文件历史](docs/usage.md#工作区文件历史)。
+`edit_file` 支持任意目录中的多行文本、完整文件和二进制编辑，以及插入、删除、移动和复制。一次调用可编辑一个或多个文件；有改动的成功批次保存一次 Git 提交，并保留修改前内容，不改变项目自身的 Git 分支或暂存区。程序生成物和人工修改不自动记录。系统提示词提供历史仓库路径和查询命令；`read-file-history` skill 说明如何查找、比较旧内容，再通过 `edit_file` 恢复需要的部分。记录范围和查询示例见[工作区文件历史](docs/usage.md#工作区文件历史)。
 
 运行时自动采集工作目录、是否位于 Git 仓库、平台、实际执行 shell 和操作系统版本，加入主 Agent 与子 Agent 的系统提示词；交互 CLI 与 `benchmark` 共用这套环境信息。系统提示引导模型按任务需要适度检查实际结果，并如实说明验证范围、未验证事项和剩余限制。
 

@@ -14,7 +14,7 @@ from tests.sse import frame, stream_response, responses_from_chat
 
 
 PROJECT = Path(__file__).resolve().parents[1]
-ENVIRONMENT = {"PATH": os.defpath, "PYTHONPATH": str(PROJECT)}
+ENVIRONMENT = {"PATH": os.defpath, "PYTHONPATH": str(PROJECT), "SKILLS_AGENT_DATA_DIR": ".test-runtime"}
 FIRST_BODY = "BODY_BEFORE_GATE"
 LAST_BODY = " BODY_AFTER_GATE"
 FINAL = "FINAL_STREAM_ANSWER"
@@ -73,6 +73,13 @@ def gated_response(provider):
     return b"".join(map(frame, beginning)), b"".join(map(frame, ending)), stream_response(final)
 
 
+from tests.runtime_paths import isolated_runtime, runtime_sessions
+
+_runtime_environment = isolated_runtime()
+setUpModule = _runtime_environment.start
+tearDownModule = _runtime_environment.stop
+
+
 class StreamIntegrationTests(unittest.TestCase):
     def test_both_protocols_show_text_before_server_finishes_and_replay_arrival_order(self):
         for provider in ("openai", "anthropic"):
@@ -128,7 +135,7 @@ class StreamIntegrationTests(unittest.TestCase):
                 seen = bytearray()
                 try:
                     process = subprocess.Popen(
-                        [sys.executable, "-m", "skills_agent", "run", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions"), "--data-dir", str(Path(directory) / ".test-runtime"),
+                        [sys.executable, "-m", "skills_agent", "run", "--workspace", directory,
                          "--session", "gated", "--provider", provider, "--model", "test-model",
                          "--base-url", f"http://127.0.0.1:{server.server_port}/v1",
                          *(["--api-format", "responses"] if provider == "openai" else [])],
@@ -167,7 +174,7 @@ class StreamIntegrationTests(unittest.TestCase):
                     self.assertIn(f"· shell「{SUMMARY}」：调用", seen.decode())
                     self.assertNotIn("执行中", seen.decode())
                     self.assertNotIn("执行脚本", seen.decode())
-                    log = workspace / ".agent/sessions/gated/events.jsonl"
+                    log = runtime_sessions(workspace) / "gated/events.jsonl"
                     pending = [json.loads(line) for line in log.read_text().splitlines()]
                     self.assertEqual({k: pending[-1][k] for k in ("type", "text")}, {"type": "text_delta", "text": FIRST_BODY})
                     self.assertFalse(any(event.get("type") == "message"
@@ -206,7 +213,7 @@ class StreamIntegrationTests(unittest.TestCase):
                     self.assertLess(output.index(LAST_BODY), output.index(FINAL))
                     saved = log.read_bytes()
                     for full in (False, True):
-                        command = [sys.executable, "-m", "skills_agent", "history", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions"), "--data-dir", str(Path(directory) / ".test-runtime"),
+                        command = [sys.executable, "-m", "skills_agent", "history", "--workspace", directory,
                                    "--session", "gated"] + (["--full"] if full else [])
                         history = subprocess.run(command, cwd=PROJECT, env=ENVIRONMENT,
                                                  capture_output=True, text=True, timeout=5)

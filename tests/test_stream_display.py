@@ -17,6 +17,13 @@ TOOL_COLOR = "\x1b[34;49m"
 RESET = "\x1b[0m"
 
 
+from tests.runtime_paths import isolated_runtime, runtime_sessions
+
+_runtime_environment = isolated_runtime()
+setUpModule = _runtime_environment.start
+tearDownModule = _runtime_environment.stop
+
+
 class Output(io.StringIO):
     def __init__(self, *, tty=False):
         super().__init__()
@@ -223,7 +230,7 @@ class StreamDisplayTests(unittest.TestCase):
             {"type": "text_delta", "text": "unfinished final"},
         ]
         with TemporaryDirectory() as directory:
-            session = Session(Path(directory) / ".agent/sessions", "default")
+            session = Session(runtime_sessions(Path(directory)), "default")
             for event in events:
                 session.append_event(event)
             log = session.path / "events.jsonl"
@@ -231,7 +238,7 @@ class StreamDisplayTests(unittest.TestCase):
             for full in (False, True):
                 with self.subTest(full=full):
                     output = Output()
-                    command = ["history", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions")] + (["--full"] if full else [])
+                    command = ["history", "--workspace", directory] + (["--full"] if full else [])
                     with redirect_stdout(output):
                         self.assertEqual(main(command), 0)
                     text = output.getvalue()
@@ -350,7 +357,7 @@ class StreamDisplayTests(unittest.TestCase):
                     reasoning_content="readable reasoning"),
         ]
         with TemporaryDirectory() as directory:
-            session = Session(Path(directory) / ".agent/sessions", "default")
+            session = Session(runtime_sessions(Path(directory)), "default")
             for event in events:
                 session.append_event(event)
             path = session.path / "events.jsonl"
@@ -358,7 +365,7 @@ class StreamDisplayTests(unittest.TestCase):
             for full in (False, True):
                 output = Output()
                 with redirect_stdout(output):
-                    self.assertEqual(main(["history", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions")]
+                    self.assertEqual(main(["history", "--workspace", directory]
                                           + (["--full"] if full else [])), 0)
                 self.assertEqual(output.getvalue(), "assistant:\nbefore thinking\n"
                                                    "思考:\nreadable reasoning\n"

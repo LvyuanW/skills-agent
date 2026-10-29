@@ -102,7 +102,7 @@ class CompressionProgressTerminalTests(unittest.TestCase):
         self.assertNotIn("PRIVATE_REVIEW_THOUGHT", main)
         self.assertFalse(any(event.get("type") == "activity" for event in self.events()))
         private = "\n".join(path.read_text() for path in
-                            (self.workspace / ".agent/sessions/terminal/subagents").glob("*/events.jsonl"))
+                            (self.session_path / "subagents").glob("*/events.jsonl"))
         self.assertIn("THOUGHT_TAIL", private)
         self.assertIn("ABANDONED_PREVIEW_SUMMARY", private)
 
@@ -132,7 +132,7 @@ class CompressionProgressTerminalTests(unittest.TestCase):
         (gate / "finish").write_text("release")
         terminal.wait_for(lambda output: "AFTER_COMPRESSION" in terminal.visible
                           and not self.activity_lines(terminal) and "停止" not in terminal.visible)
-        context = json.loads((self.workspace / ".agent/sessions/terminal/context.json").read_text())
+        context = json.loads((self.session_path / "context.json").read_text())
         self.assertIn("SAVED_SUMMARY", context["summary"])
         self.assertEqual(len(requests), 1)
         self.assertNotIn("PRIVATE_REVIEW_THOUGHT", terminal.text)
@@ -146,7 +146,7 @@ class CompressionProgressTerminalTests(unittest.TestCase):
         terminal.wait_for(lambda output: "ABANDONED_PREVIEW_SUMMARY" in terminal.visible)
         terminal.send("queued continuation\n")
         terminal.wait_for(lambda output: "排队中" in terminal.visible)
-        context = json.loads((self.workspace / ".agent/sessions/terminal/context.json").read_text())
+        context = json.loads((self.session_path / "context.json").read_text())
         self.assertEqual(context["summary"], "")
         x, y, _ = self.cell(terminal, "停止")
         terminal.send(f"\x1b[<0;{x + 1};{y + 1}M\x1b[<0;{x + 1};{y + 1}m")
@@ -156,7 +156,7 @@ class CompressionProgressTerminalTests(unittest.TestCase):
         self.assertIsNone(terminal.process.poll())
         self.assertEqual(len(requests), 1)
         self.assertIn("queued continuation", json.dumps(requests[0]))
-        context = json.loads((self.workspace / ".agent/sessions/terminal/context.json").read_text())
+        context = json.loads((self.session_path / "context.json").read_text())
         self.assertIn("SAVED_SUMMARY", context["summary"])
         self.assertNotIn("ABANDONED_PREVIEW_SUMMARY", context["summary"])
         self.assert_private()

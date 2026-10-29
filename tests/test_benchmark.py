@@ -18,6 +18,13 @@ from skills_agent.benchmark import main
 from skills_agent.processes import HELPER
 
 
+from tests.runtime_paths import isolated_runtime, runtime_sessions
+
+_runtime_environment = isolated_runtime()
+setUpModule = _runtime_environment.start
+tearDownModule = _runtime_environment.stop
+
+
 class BenchmarkTests(unittest.TestCase):
     def run_server(self, reply):
         requests = []
@@ -54,7 +61,7 @@ class BenchmarkTests(unittest.TestCase):
 
     def command(self, root, endpoint):
         return [sys.executable, "-m", "skills_agent.benchmark", "--prompt-file", str(root / "prompt.txt"),
-                "--workspace", str(root / "workspace"), "--data-dir", str(root / "runtime-data"), "--log-dir", str(root / "logs"),
+                "--workspace", str(root / "workspace"), "--log-dir", str(root / "logs"),
                 "--model", "test-model", "--base-url", endpoint, "--api-format", "responses"]
 
     def response(self, command=None, text="completed", reason=None):
@@ -116,7 +123,7 @@ class BenchmarkTests(unittest.TestCase):
                 f'model = "from-config"\nbase_url = "{endpoint}"\napi_format = "responses"\n'
                 'max_output_tokens = 64000\nmodel_context_window = 1000000\n')
             command = [sys.executable, "-m", "skills_agent.benchmark",
-                       "--workspace", str(workspace), "--data-dir", str(root / "runtime-data"), "--prompt-file", str(root / "prompt.txt"),
+                       "--workspace", str(workspace), "--prompt-file", str(root / "prompt.txt"),
                        "--log-dir", str(root / "logs")]
             process = subprocess.run(command, text=True, capture_output=True)
             self.assertEqual(process.returncode, 0, process.stderr + process.stdout)
@@ -225,9 +232,7 @@ class BenchmarkTests(unittest.TestCase):
             script = shlex.join([sys.executable, str(HELPER), "start", "--state-dir", str(state),
                                  "--name", "writer", "--service", "--", sys.executable, "-c", "import time; time.sleep(30)"])
             endpoint, requests = self.run_server(lambda count: self.response(script) if count == 1 else self.response())
-            argv = [sys.executable, "-m", "skills_agent", "run", "--workspace", str(root), "--sessions-dir", str(root / ".agent/sessions"),
-                    "--data-dir", str(root / "runtime-data"),
-                    "--model", "test-model", "--base-url", endpoint, "--api-format", "responses"]
+            argv = [sys.executable, "-m", "skills_agent", "run", "--workspace", str(root), "--model", "test-model", "--base-url", endpoint, "--api-format", "responses"]
             process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             try:
                 process.stdin.write("start a service\n")
@@ -236,7 +241,7 @@ class BenchmarkTests(unittest.TestCase):
                 while len(requests) < 2 and process.poll() is None and time.monotonic() < deadline:
                     time.sleep(.02)
                 self.assertEqual(len(requests), 2)
-                events_path = root / ".agent/sessions/default/events.jsonl"
+                events_path = runtime_sessions(root) / "default/events.jsonl"
                 while time.monotonic() < deadline:
                     events = [json.loads(line) for line in events_path.read_text().splitlines()]
                     if any(event.get("type") == "message" and event["message"].get("role") == "assistant"
@@ -310,9 +315,7 @@ class BenchmarkTests(unittest.TestCase):
             script = shlex.join([sys.executable, str(HELPER), "start", "--state-dir", str(state),
                                  "--name", "writer", "--", sys.executable, "-c", "import time; time.sleep(30)"]) + "\nsleep 30"
             endpoint, _ = self.run_server(lambda count: self.response(script))
-            process = subprocess.Popen([sys.executable, "-m", "skills_agent", "run", "--workspace", str(root), "--sessions-dir", str(root / ".agent/sessions"),
-                    "--data-dir", str(root / "runtime-data"),
-                                        "--model", "test-model", "--base-url", endpoint, "--api-format", "responses"],
+            process = subprocess.Popen([sys.executable, "-m", "skills_agent", "run", "--workspace", str(root),                     "--model", "test-model", "--base-url", endpoint, "--api-format", "responses"],
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             try:
                 process.stdin.write("start\n")

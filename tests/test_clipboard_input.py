@@ -109,7 +109,7 @@ class ClipboardInputTests(unittest.TestCase):
                          [PNG, pdf.read_bytes()])
         for block in attachments:
             self.assertEqual(Path(block["path"]).parent,
-                             (self.workspace / ".agent/sessions/terminal/attachments").resolve())
+                             (self.session_path / "attachments").resolve())
         image.write_bytes(b"changed original image")
         pdf.write_bytes(b"changed original PDF")
         self.assertEqual(Path(attachments[0]["path"]).read_bytes(), PNG)

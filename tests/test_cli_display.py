@@ -20,6 +20,13 @@ def call(name="shell", arguments=None, identifier="c1"):
             "arguments": json.dumps(arguments or {"command": "printf RAW_COMMAND"})}
 
 
+from tests.runtime_paths import isolated_runtime, runtime_sessions
+
+_runtime_environment = isolated_runtime()
+setUpModule = _runtime_environment.start
+tearDownModule = _runtime_environment.stop
+
+
 class DisplayTests(unittest.TestCase):
     def render(self, events, **options):
         output = io.StringIO()
@@ -149,6 +156,8 @@ class DisplayTests(unittest.TestCase):
             ({"operation": "replace", "changed": True}, "已修改"),
             ({"operation": "delete", "changed": True}, "已删除"),
             ({"operation": "move", "changed": True}, "已移动"),
+            ({"operation": "batch", "changed": True, "edits": [{}, {}, {}]}, "已完成批量编辑（3 项）"),
+            ({"operation": "batch", "changed": False, "edits": [{}]}, "内容未变化"),
             ({"operation": "replace", "changed": False}, "内容未变化"),
             ({"error": "old text is ambiguous", "executed": False}, "失败：old text is ambiguous"),
             ({"error": "after checkpoint failed", "changed": True}, "文件已变更，后续步骤失败：after checkpoint failed"),
@@ -294,14 +303,14 @@ class DisplayTests(unittest.TestCase):
             workspace = Path(directory)
             attachment = workspace / "input.txt"
             attachment.write_text("ATTACHMENT_BODY")
-            session = Session(workspace / ".agent/sessions", "default")
+            session = Session(runtime_sessions(workspace), "default")
             session.append({"role": "user", "content": "prior user message"})
             session.append({"role": "assistant", "content": "prior answer"})
             output, error = io.StringIO(), io.StringIO()
             with patch("skills_agent.runtime.create_provider", return_value=Model()), \
                     patch("sys.stdin", TTY()), patch("builtins.input", side_effect=["new user message", "/exit"]), \
                     redirect_stdout(output), redirect_stderr(error):
-                status = main(["run", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions"), "--data-dir", str(workspace / ".test-runtime"), "--model", "test", "--file", "input.txt"])
+                status = main(["run", "--workspace", directory, "--model", "test", "--file", "input.txt"])
             self.assertEqual((status, error.getvalue()), (0, ""))
             live = output.getvalue()
             self.assertIn("prior user message", live)
@@ -311,13 +320,13 @@ class DisplayTests(unittest.TestCase):
             self.assertNotIn("ATTACHMENT_BODY", live)
             replay = io.StringIO()
             with redirect_stdout(replay):
-                self.assertEqual(main(["history", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions")]), 0)
+                self.assertEqual(main(["history", "--workspace", directory]), 0)
             self.assertIn("new user message", replay.getvalue())
             self.assertIn("[附件] input.txt", replay.getvalue())
             self.assertNotIn("ATTACHMENT_BODY", replay.getvalue())
             detailed = io.StringIO()
             with redirect_stdout(detailed):
-                self.assertEqual(main(["history", "--full", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions")]), 0)
+                self.assertEqual(main(["history", "--full", "--workspace", directory]), 0)
             self.assertIn("ATTACHMENT_BODY", detailed.getvalue())
 
 

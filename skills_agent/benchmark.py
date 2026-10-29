@@ -10,6 +10,7 @@ import sys
 from uuid import uuid4
 
 from .cli import ConsoleRenderer
+from .config import normalize_paths
 from .runtime import add_agent_arguments, create_agent
 from .session import Session
 from .storage import WorkspaceStorage
@@ -18,7 +19,7 @@ from .storage import WorkspaceStorage
 def parser():
     result = argparse.ArgumentParser(prog="python -m skills_agent.benchmark")
     result.add_argument("--prompt-file", type=Path, required=True)
-    result.add_argument("--workspace", type=Path, required=True)
+    result.add_argument("--workspace", type=Path, help="工作目录，默认启动时的当前目录")
     result.add_argument("--log-dir", type=Path, required=True)
     result.add_argument("--file", type=Path, action="append", default=[])
     add_agent_arguments(result)
@@ -32,14 +33,15 @@ def main(argv=None):
     storage = None
     status = 1
     try:
-        prompt = args.prompt_file.expanduser().read_text(encoding="utf-8")
+        args = normalize_paths(args)
+        prompt = args.prompt_file.read_text(encoding="utf-8")
         if not prompt.strip():
             raise ValueError("任务文件不能为空")
-        root = args.log_dir.expanduser().resolve()
+        root = args.log_dir
         if (root / "session").exists() or (root / "runtime-storage.json").exists():
             raise ValueError("日志目录已包含 session；每次 benchmark 运行需要独立日志目录")
-        workspace = args.workspace.expanduser().resolve()
-        storage = WorkspaceStorage(workspace, getattr(args, "data_dir", None)).ensure()
+        workspace = args.workspace
+        storage = WorkspaceStorage(workspace).ensure()
         root.mkdir(parents=True, exist_ok=True)
         session_id = f"benchmark-{uuid4().hex}"
         # The receipt is created before any model request and survives an abrupt exit.

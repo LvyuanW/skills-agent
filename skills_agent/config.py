@@ -43,8 +43,29 @@ def _validate(values):
             raise ValueError(f"{key} must be one of: {', '.join(sorted(CHOICES[key]))}")
 
 
+def normalize_paths(args):
+    """Resolve task paths once against the selected working directory."""
+    values = dict(vars(args))
+    workspace = Path(values.get("workspace") or Path.cwd()).expanduser().resolve()
+    values["workspace"] = workspace
+
+    def resolve(value):
+        path = Path(value).expanduser()
+        return (path if path.is_absolute() else workspace / path).resolve()
+
+    for key in ("config", "prompt_file", "log_dir"):
+        if values.get(key) is not None:
+            values[key] = resolve(values[key])
+    if values.get("file") is not None:
+        values["file"] = [resolve(path) for path in values["file"]]
+    if values.get("skill_dirs") is not None:
+        values["skill_dirs"] = [str(resolve(path)) for path in values["skill_dirs"]]
+    return Namespace(**values)
+
+
 def load_agent_config(args):
     """Precedence: explicit CLI > TOML > environment > built-in defaults."""
+    args = normalize_paths(args)
     explicit = getattr(args, "config", None)
     path = (explicit or args.workspace / "skills-agent.toml").expanduser().resolve()
     settings = {}

@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 from rich.text import Text
 
 from .runtime import add_agent_arguments, create_agent
+from .config import normalize_paths
 from .input import ClipboardDraft
 from .markdown import MarkdownStream, _console, print_markdown
 from .session import Session
@@ -361,9 +362,13 @@ def render_event(event, output=None, *, full=False, echo_user=True, tool_names=N
                         status = "失败："
                     status += _brief(result["error"])
                 elif message.get("name") == "edit_file" and type(result.get("changed")) is bool:
-                    status = ({"create": "已新建", "replace": "已修改", "delete": "已删除",
-                               "move": "已移动"}.get(result.get("operation"), "完成")
-                              if result["changed"] else "内容未变化")
+                    if result["changed"] and result.get("operation") == "batch":
+                        status = f"已完成批量编辑（{len(result.get('edits', []))} 项）"
+                    else:
+                        status = ({"create": "已新建", "write": "已写入", "replace": "已修改",
+                                   "insert": "已插入", "delete": "已删除", "move": "已移动", "copy": "已复制"}
+                                  .get(result.get("operation"), "完成")
+                                  if result["changed"] else "内容未变化")
                 elif result.get("job_id") and result.get("completed") is False:
                     status = "已返回服务启动回执" if result.get("kind") == "service" else "已返回后台启动回执"
                 elif "exit_code" in result:
@@ -660,10 +665,8 @@ def parser():
     run = commands.add_parser("run", help="进入会话并进行多轮交互")
     history = commands.add_parser("history", help="回放主会话记录")
     history.add_argument("--full", action="store_true", help="展开完整公开消息、命令和工具输出")
-    history.add_argument("--data-dir", type=Path, help="运行数据根目录，默认 ~/.skills-agent 或 SKILLS_AGENT_DATA_DIR")
     for command in (run, history):
-        command.add_argument("--workspace", type=Path, default=Path.cwd())
-        command.add_argument("--sessions-dir", type=Path)
+        command.add_argument("--workspace", type=Path, help="工作目录，默认启动时的当前目录")
         command.add_argument("--session", default="default")
     run.add_argument("--file", action="append", type=Path, default=[], help="作为下一条消息的附件")
     add_agent_arguments(run)
@@ -784,11 +787,12 @@ def _terminate_session(signum, frame):
 def _main(argv=None):
     args = parser().parse_args(argv)
     try:
-        workspace = args.workspace.expanduser().resolve()
+        args = normalize_paths(args)
+        workspace = args.workspace
         if not workspace.is_dir():
             raise ValueError(f"工作目录不存在：{workspace}")
-        storage = WorkspaceStorage(workspace, getattr(args, "data_dir", None))
-        root = storage.session_root(args.session, args.sessions_dir)
+        storage = WorkspaceStorage(workspace)
+        root = storage.session_root(args.session)
         if args.command == "history" and not (root / args.session / "events.jsonl").is_file():
             raise ValueError(f"会话不存在：{args.session}")
         if args.command == "run":

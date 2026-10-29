@@ -31,6 +31,13 @@ def terminal_text(text, *, width=80, height=24):
     return "\n".join(terminal_lines(text, width=width, height=height)).rstrip()
 
 
+from tests.runtime_paths import isolated_runtime, runtime_sessions
+
+_runtime_environment = isolated_runtime()
+setUpModule = _runtime_environment.start
+tearDownModule = _runtime_environment.stop
+
+
 class Output(io.StringIO):
     def isatty(self):
         return True
@@ -141,13 +148,13 @@ class MarkdownTests(unittest.TestCase):
     def test_history_renders_markdown_without_changing_log_and_pipe_keeps_source(self):
         body = "**original** `source`\n\n- item"
         with TemporaryDirectory() as directory:
-            session = Session(Path(directory) / ".agent/sessions", "default")
+            session = Session(runtime_sessions(Path(directory)), "default")
             session.append_event({"type": "text_delta", "text": body})
             session.append_event(completed(body))
             log = session.path / "events.jsonl"
             before = log.read_bytes()
             for full in (False, True):
-                command = ["history", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions")] + (["--full"] if full else [])
+                command = ["history", "--workspace", directory] + (["--full"] if full else [])
                 output = Output()
                 with redirect_stdout(output):
                     self.assertEqual(main(command), 0)
