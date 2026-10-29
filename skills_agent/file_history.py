@@ -7,7 +7,7 @@ changes from any process sharing the workspace; an observer is not an author.
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from datetime import datetime, timezone
 import errno
 import json
@@ -26,6 +26,8 @@ EXCLUDED_NAMES = frozenset({
     "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache",
 })
 HISTORY_REF = "refs/heads/history"
+BLOB_BATCH_SIZE = 64
+BLOB_BATCH_BYTES = 32 * 1024 * 1024
 
 
 class TransientScanError(RuntimeError):
@@ -41,12 +43,12 @@ def _environment():
     return env
 
 
-def _git(repository, *args, input=None, stdin=None, env=None, check=True):
+def _git(repository, *args, input=None, stdin=None, env=None, check=True, pass_fds=()):
     result = subprocess.run(
         ["git", "--literal-pathspecs", "--git-dir", str(repository), "-c", "core.hooksPath=" + os.devnull,
          "-c", "core.autocrlf=false", *map(str, args)],
         input=input, stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        env=env or _environment(), timeout=120,
+        env=env or _environment(), timeout=120, pass_fds=pass_fds,
     )
     if check and result.returncode:
         raise RuntimeError("File history Git operation failed: " +
@@ -121,6 +123,7 @@ class WorkspaceHistory:
         self._stop = threading.Event()
         self._ready = threading.Event()
         self._mutex = threading.RLock()
+        self._lifecycle = threading.RLock()
         self._thread = None
         self._watching = False
         self._closed = False
@@ -188,18 +191,22 @@ class WorkspaceHistory:
                 raise ValueError("History path escaped its workspace")
             yield None, str(path)
 
+    def _open_regular(self, path):
+        # Keep the safe descriptor open until hashing and the final fstat finish.
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        with self._parent_directory(path) as (parent, name):
+            descriptor = os.open(name, flags, dir_fd=parent)
+        return os.fdopen(descriptor, "rb")
+
     def _regular_blob(self, path, info):
+        """Single-file fallback for platforms without inherited /dev/fd paths."""
         relative = path.relative_to(self.workspace).as_posix()
         cached = self._cache.get(relative)
         fingerprint = _fingerprint(info)
         if cached and cached[0] == fingerprint:
             return cached[1]
-        # O_NOFOLLOW prevents replacing a leaf with a symlink during the read.
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
         for _ in range(3):
-            with self._parent_directory(path) as (parent, name):
-                descriptor = os.open(name, flags, dir_fd=parent)
-            with os.fdopen(descriptor, "rb") as stream:
+            with self._open_regular(path) as stream:
                 before = os.fstat(stream.fileno())
                 if not stat.S_ISREG(before.st_mode):
                     raise TransientScanError(f"File changed type during history scan: {relative}")
@@ -210,8 +217,55 @@ class WorkspaceHistory:
                 return oid
         raise TransientScanError(f"File kept changing during history scan: {relative}")
 
+    def _regular_blobs(self, requests):
+        """Hash bounded batches of safely opened files with one Git process each."""
+        results = {}
+        try:
+            if os.name != "posix" or not Path("/dev/fd").is_dir():
+                for path, info in requests:
+                    results[path.relative_to(self.workspace).as_posix()] = self._regular_blob(path, info)
+                return results
+            offset = 0
+            while offset < len(requests):
+                end, size = offset, 0
+                while end < len(requests) and end - offset < BLOB_BATCH_SIZE:
+                    next_size = requests[end][1].st_size
+                    if end > offset and size + next_size > BLOB_BATCH_BYTES:
+                        break
+                    size += next_size
+                    end += 1
+                batch = requests[offset:end]
+                offset = end
+                with ExitStack() as stack:
+                    opened = []
+                    for path, info in batch:
+                        stream = stack.enter_context(self._open_regular(path))
+                        before = os.fstat(stream.fileno())
+                        if not stat.S_ISREG(before.st_mode) or _fingerprint(before) != _fingerprint(info):
+                            raise TransientScanError(f"File changed before history read: {path}")
+                        opened.append((path.relative_to(self.workspace).as_posix(), stream, before))
+                    descriptors = tuple(stream.fileno() for _, stream, _ in opened)
+                    paths = b"".join(f"/dev/fd/{descriptor}\n".encode("ascii") for descriptor in descriptors)
+                    raw = _git(self.repository, "hash-object", "-w", "--no-filters", "--stdin-paths",
+                               input=paths, pass_fds=descriptors)
+                    identifiers = raw.decode("ascii").splitlines()
+                    if len(identifiers) != len(opened):
+                        raise RuntimeError("Git did not return one object for each file history input")
+                    for relative, stream, before in opened:
+                        if _fingerprint(before) != _fingerprint(os.fstat(stream.fileno())):
+                            raise TransientScanError(f"File changed during history read: {relative}")
+                    for (relative, _, before), oid in zip(opened, identifiers):
+                        self._cache[relative] = (_fingerprint(before), oid)
+                        results[relative] = oid
+        except OSError as exc:
+            if exc.errno in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP, errno.EINVAL):
+                raise TransientScanError(f"File changed during history scan: {exc.filename}") from exc
+            raise
+        return results
+
     def _entries(self):
         entries = []
+        requests = []
         present = set()
         def scan_error(error):
             if error.errno in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP):
@@ -243,7 +297,10 @@ class WorkspaceHistory:
                                    input=os.fsencode(target)).strip().decode("ascii")
                         mode = "120000"
                     elif stat.S_ISREG(info.st_mode):
-                        oid = self._regular_blob(path, info)
+                        cached = self._cache.get(relative)
+                        oid = cached[1] if cached and cached[0] == _fingerprint(info) else None
+                        if oid is None:
+                            requests.append((path, info))
                         mode = "100755" if info.st_mode & 0o111 else "100644"
                     else:
                         continue
@@ -252,9 +309,11 @@ class WorkspaceHistory:
                         raise TransientScanError(f"File changed during history scan: {relative}") from exc
                     raise
                 present.add(relative)
-                entries.append(mode.encode() + b" " + oid.encode() + b"\t" + os.fsencode(relative) + b"\0")
+                entries.append((mode, relative, oid))
+        captured = self._regular_blobs(requests)
         self._cache = {key: value for key, value in self._cache.items() if key in present}
-        return b"".join(entries)
+        return b"".join(mode.encode() + b" " + (oid or captured[relative]).encode() + b"\t" +
+                        os.fsencode(relative) + b"\0" for mode, relative, oid in entries)
 
     def checkpoint(self, reason="manual checkpoint"):
         """Save an observed file state. Return its commit, also for a no-op."""
@@ -312,13 +371,17 @@ class WorkspaceHistory:
                 time.sleep(.05)
 
     def start(self):
-        with self._mutex:
+        # Lifecycle state has its own lock: an already-running monitor can be
+        # returned immediately even while its checkpoint holds the scan mutex.
+        with self._lifecycle:
             if self._closed:
                 raise RuntimeError("File history monitor is closed")
             if self._thread is not None:
                 if self.last_error:
                     raise RuntimeError(self.last_error)
-                return self
+                if self._ready.is_set() and self._thread.is_alive():
+                    return self
+                raise RuntimeError("File history monitor is not running")
             # Import before saving, so missing dependencies fail before reporting monitoring.
             from watchfiles import watch
             self._settled_checkpoint("initial state")
@@ -352,15 +415,21 @@ class WorkspaceHistory:
 
             self._thread = threading.Thread(target=monitor, name="workspace-file-history", daemon=True)
             self._thread.start()
-        if not self._ready.wait(10):
-            self._stop.set()
-            raise RuntimeError("File history monitor did not become ready")
-        if self.last_error:
-            self._stop.set()
-            raise RuntimeError("File history monitor failed: " + self.last_error)
-        return self
+            if not self._ready.wait(10):
+                self._stop.set()
+                raise RuntimeError("File history monitor did not become ready")
+            if self.last_error:
+                self._stop.set()
+                raise RuntimeError("File history monitor failed: " + self.last_error)
+            if not self._thread.is_alive():
+                raise RuntimeError("File history monitor stopped during startup")
+            return self
 
     def close(self):
+        with self._lifecycle:
+            self._close()
+
+    def _close(self):
         if self._closed:
             return
         self._stop.set()
