@@ -1,29 +1,24 @@
 import json
-import errno
-import hashlib
-import math
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import threading
-import time
 import unittest
 from unittest.mock import patch
 
 from skills_agent import file_history
-from skills_agent.file_history import BLOB_BATCH_SIZE, TransientScanError, WorkspaceHistory
+from skills_agent.file_editing import EditError
+from skills_agent.file_history import WorkspaceHistory
 
 
 class FileHistoryTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name).resolve()
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
         self.workspace = self.root / "workspace"
         self.workspace.mkdir()
-        self.repository = self.root / "data" / "history.git"
+        self.repository = self.root / "data/history.git"
 
     def history(self, **kwargs):
         instance = WorkspaceHistory(self.workspace, self.repository,
@@ -31,508 +26,273 @@ class FileHistoryTests(unittest.TestCase):
         self.addCleanup(instance.close)
         return instance
 
-    def git(self, *args, check=True):
-        result = subprocess.run(["git", "--git-dir", str(self.repository), *args],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
-        if check:
-            self.assertEqual(result.returncode, 0, result.stderr.decode())
-        return result.stdout
+    def git(self, *args):
+        return subprocess.check_output(["git", "--git-dir", str(self.repository), *args], stderr=subprocess.PIPE)
 
     def content(self, revision, path):
         return self.git("cat-file", "blob", revision + ":" + path)
 
-    def wait_for(self, predicate, timeout=5):
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if predicate():
-                return
-            time.sleep(.02)
-        self.fail("File history watcher did not record the expected state")
-
     def cli(self, *args):
-        return subprocess.run([sys.executable, "-m", "skills_agent.file_history",
-                               "--repository", str(self.repository), *args],
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+        return subprocess.run([sys.executable, "-m", "skills_agent.file_history", "--repository",
+                               str(self.repository), *args], capture_output=True, timeout=10)
 
-    def test_actual_watcher_records_created_modified_deleted_and_renamed_files(self):
-        file = self.workspace / "original.txt"
-        file.write_bytes(b"original\r\n")
-        history = self.history().start()
-        initial = history.last_checkpoint
-        self.assertEqual(self.content(initial, "original.txt"), b"original\r\n")
-        file.write_text("changed")
-        self.wait_for(lambda: history.last_checkpoint != initial)
-        changed = history.last_checkpoint
-        self.assertEqual(self.content(changed, "original.txt"), b"changed")
-        file.rename(self.workspace / "renamed.txt")
-        self.wait_for(lambda: history.last_checkpoint != changed)
-        renamed = history.last_checkpoint
-        self.assertEqual(self.content(renamed, "renamed.txt"), b"changed")
-        (self.workspace / "renamed.txt").unlink()
-        self.wait_for(lambda: history.last_checkpoint != renamed)
-        self.assertEqual(self.git("ls-tree", "--name-only", history.last_checkpoint), b"")
-        self.assertEqual(self.content(renamed, "renamed.txt"), b"changed")
+    def records(self):
+        return [json.loads(path.read_text()) for path in (self.repository / "operations").glob("*.json")]
+
+    def test_start_status_checkpoint_close_never_scan_watch_or_initialize(self):
+        (self.workspace / "input.txt").write_text("input")
+        history = self.history()
+        with patch.object(file_history, "_git", side_effect=AssertionError("unexpected Git")), \
+                patch.object(os, "walk", side_effect=AssertionError("unexpected scan")):
+            self.assertIs(history.start(), history)
+            self.assertIs(history.start(), history)
+            (self.workspace / "generated.txt").write_text("program output")
+            self.assertIsNone(history.checkpoint())
+            self.assertEqual(history.status()["mode"], "editing-only")
+            self.assertFalse(history.status()["monitoring"])
+            history.close()
+        self.assertFalse(self.repository.exists())
         self.assertFalse((self.workspace / ".git").exists())
 
-    def test_dependency_directory_names_do_not_exclude_ordinary_files(self):
-        (self.workspace / "venv").write_bytes(b"task input")
-        (self.workspace / "node_modules").mkdir()
-        (self.workspace / "node_modules" / "cache").write_bytes(b"dependency")
-        checkpoint = self.history().checkpoint()
-        self.assertEqual(self.content(checkpoint, "venv"), b"task input")
-        self.assertEqual(self.git("ls-tree", "--name-only", checkpoint), b"venv\n")
-
-    def test_status_reports_latest_error_by_time_not_observer_id(self):
-        self.history().checkpoint()
-        for name, date, error in (("aaaa", "2026-10-29T12:00:00+00:00", "new error"),
-                                  ("zzzz", "2026-10-28T12:00:00+00:00", "old error")):
-            record = {"recorded_at": date, "last_error": error, "monitoring": False}
-            (self.repository / "runtime" / (name + ".json")).write_text(json.dumps(record))
-        result = self.cli("status")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["last_error"], "new error")
-
-    def test_no_change_does_not_commit_and_close_captures_pending_write(self):
-        history = self.history().start()
-        initial = history.last_checkpoint
-        self.assertIs(history.start(), history)
-        self.assertEqual(history.checkpoint("no change"), initial)
-        (self.workspace / "last.txt").write_text("last write")
-        history.close()
-        self.assertFalse(history.status()["monitoring"])
-        self.assertEqual(self.content(history.last_checkpoint, "last.txt"), b"last write")
-        self.assertEqual(int(self.git("rev-list", "--count", "HEAD")), 2)
-        self.assertFalse(history._thread.is_alive())
-
-    def test_reopening_reuses_verified_hashes_but_detects_changes_with_restored_mtime(self):
-        path = self.workspace / "result.bin"
-        path.write_bytes(b"before")
-        (self.workspace / "unchanged.txt").write_bytes(b"unchanged\r\n")
-        first = self.history().checkpoint()
-        original = file_history._git
-        operations = []
-        def measured(repository, *args, **kwargs):
-            operations.append(args[0])
-            return original(repository, *args, **kwargs)
-        with patch.object(file_history, "_git", side_effect=measured):
-            self.assertEqual(self.history().checkpoint(), first)
-        self.assertNotIn("hash-object", operations)
-        self.assertIn("cat-file", operations)
-        saved = path.stat()
-        path.write_bytes(b"after!")
-        os.utime(path, ns=(saved.st_atime_ns, saved.st_mtime_ns))
-        operations.clear()
-        with patch.object(file_history, "_git", side_effect=measured):
-            updated = self.history().checkpoint()
-        self.assertIn("hash-object", operations)
-        self.assertEqual(self.content(updated, "result.bin"), b"after!")
-        self.assertEqual(self.content(updated, "unchanged.txt"), b"unchanged\r\n")
-
-    def test_bad_hash_cache_falls_back_to_reading_current_files(self):
-        (self.workspace / "result.txt").write_bytes(b"current result")
-        self.history().checkpoint()
-        cache_path = self.repository / "file-cache.json"
-        for damage in ("invalid_json", "checksum", "missing_blob", "not_a_blob"):
-            with self.subTest(damage=damage):
-                cached = json.loads(cache_path.read_text())
-                if damage == "invalid_json":
-                    cache_path.write_text("{")
-                else:
-                    if damage in {"checksum", "missing_blob"}:
-                        cached["payload"]["entries"]["result.txt"][1] = "1" * 40
-                    else:
-                        cached["payload"]["entries"]["result.txt"][1] = self.git("rev-parse", "HEAD").strip().decode()
-                    if damage != "checksum":
-                        cached["sha256"] = file_history._cache_digest(cached["payload"])
-                    cache_path.write_text(json.dumps(cached))
-                recovered = self.history()
-                with patch.object(recovered, "_open_regular", wraps=recovered._open_regular) as read:
-                    commit = recovered.checkpoint()
-                self.assertTrue(read.called)
-                self.assertIsNone(recovered.last_error)
-                self.assertEqual(self.content(commit, "result.txt"), b"current result")
-
-    def test_optional_hash_cache_write_failure_does_not_fail_snapshot(self):
-        (self.workspace / "result.txt").write_bytes(b"saved")
-        original = file_history._atomic_json
-        def write(path, value, **options):
-            if path.name == "file-cache.json":
-                raise PermissionError("cache is not writable")
-            return original(path, value, **options)
+    def test_first_edit_records_only_target_before_and_after_and_noop_adds_nothing(self):
+        (self.workspace / "untouched.txt").write_text("private input")
+        (self.workspace / "target.txt").write_bytes(b"old\r\n")
         history = self.history()
-        with patch.object(file_history, "_atomic_json", side_effect=write):
-            commit = history.checkpoint()
-        self.assertIsNone(history.last_error)
-        self.assertEqual(self.content(commit, "result.txt"), b"saved")
+        result = history.edit("replace", "target.txt", old_text="old", new_text="new")
+        self.assertEqual(self.content(result["before_revision"], "target.txt"), b"old\r\n")
+        self.assertEqual(self.content(result["after_revision"], "target.txt"), b"new\r\n")
+        self.assertEqual(self.git("ls-tree", "-r", "--name-only", "HEAD"), b"target.txt\n")
+        commits = self.git("rev-list", "--count", "HEAD")
+        history.edit("replace", "target.txt", old_text="new", new_text="new")
+        self.assertEqual(self.git("rev-list", "--count", "HEAD"), commits)
+        self.assertEqual(len(self.records()), 1)
 
-    @unittest.skipUnless(os.name == "posix", "POSIX byte filenames")
-    def test_hash_cache_preserves_non_utf8_filenames(self):
-        name = os.fsdecode(b"result-\xff.bin")
-        try:
-            (self.workspace / name).write_bytes(b"exact bytes")
-        except OSError as exc:
-            if exc.errno == errno.EILSEQ:
-                self.skipTest("This filesystem requires valid UTF-8 filenames")
-            raise
-        first = self.history().checkpoint()
-        second = self.history()
-        with patch.object(second, "_open_regular", side_effect=AssertionError("unexpected rehash")):
-            self.assertEqual(second.checkpoint(), first)
-        self.assertIsNone(second.last_error)
-        self.assertEqual(self.content(first, name), b"exact bytes")
-
-    def test_hash_cache_serializes_surrogate_path_keys_without_encoding_errors(self):
-        (self.workspace / "valid.txt").write_bytes(b"content")
-        first = self.history()
-        first.checkpoint()
-        name = "result-\udcff.bin"
-        first._cache[name] = first._cache["valid.txt"]
-        first._save_blob_cache()
-        second = self.history()
-        second._initialize()
-        self.assertEqual(second._cache[name], first._cache[name])
-
-    @unittest.skipUnless(os.name == "posix" and Path("/dev/fd").is_dir(), "Inherited file descriptors")
-    def test_small_files_are_hashed_in_bounded_batches_with_exact_git_objects(self):
-        expected = {}
-        count = BLOB_BATCH_SIZE * 2 + 3
-        for index in range(count):
-            name = f"file {index}.txt"
-            content = f"line {index}\r\n".encode() + b"\0binary"
-            (self.workspace / name).write_bytes(content)
-            expected[name] = hashlib.sha1(b"blob " + str(len(content)).encode() + b"\0" + content).hexdigest()
+    def test_sequential_edits_reuse_matching_preimage_and_preserve_operation_metadata(self):
         history = self.history()
-        original = file_history._git
-        batches = []
-        def measured(repository, *args, **kwargs):
-            if args[0] == "hash-object":
-                batches.append((args, kwargs))
-            return original(repository, *args, **kwargs)
-        with patch.object(file_history, "_git", side_effect=measured):
-            commit = history.checkpoint()
-        self.assertEqual(len(batches), math.ceil(count / BLOB_BATCH_SIZE))
-        for args, kwargs in batches:
-            self.assertIn("--no-filters", args)
-            self.assertIn("--stdin-paths", args)
-            self.assertLessEqual(len(kwargs["pass_fds"]), BLOB_BATCH_SIZE)
-            self.assertTrue(all(path.startswith(b"/dev/fd/") for path in kwargs["input"].splitlines()))
-        entries = self.git("ls-tree", "-r", "-z", commit).split(b"\0")
-        actual = {}
-        for entry in filter(None, entries):
-            metadata, name = entry.split(b"\t", 1)
-            actual[name.decode()] = metadata.split()[2].decode()
-        self.assertEqual(actual, expected)
+        first = history.edit("create", "new.txt", content="one", tool_call_id="call-one")
+        second = history.edit("replace", "new.txt", old_text="one", new_text="two",
+                              tool_call_id="child-call", session_id="child-session")
+        self.assertEqual(second["before_revision"], first["after_revision"])
+        records = {item["tool_call_id"]: item for item in self.records()}
+        self.assertEqual(records["child-call"]["session_id"], "child-session")
+        self.assertEqual(records["child-call"]["status"], "succeeded")
+        self.assertEqual(records["child-call"]["after_revision"], second["after_revision"])
+        self.assertTrue(records["child-call"]["applied"])
 
-    @unittest.skipUnless(os.name == "posix" and Path("/dev/fd").is_dir(), "Inherited file descriptors")
-    def test_hash_batches_limit_total_bytes_and_isolate_oversized_files(self):
-        for index, size in enumerate((6, 6, 40, 6, 6)):
-            (self.workspace / f"file-{index}").write_bytes(bytes([index]) * size)
+    def test_delete_and_move_binary_contents_can_be_read_from_both_revisions(self):
+        (self.workspace / "binary.bin").write_bytes(b"\xff\x00binary\r\n")
         history = self.history()
-        original = file_history._git
-        batches = []
-        def measured(repository, *args, **kwargs):
-            if args[0] == "hash-object":
-                batches.append([os.fstat(fd).st_size for fd in kwargs["pass_fds"]])
-            return original(repository, *args, **kwargs)
-        with patch.object(file_history, "BLOB_BATCH_BYTES", 16), \
-                patch.object(file_history, "_git", side_effect=measured):
-            commit = history.checkpoint()
-        self.assertEqual(sum(map(len, batches)), 5)
-        self.assertIn([40], batches)
-        self.assertTrue(all(sum(batch) <= 16 or len(batch) == 1 for batch in batches))
-        for index, size in enumerate((6, 6, 40, 6, 6)):
-            self.assertEqual(self.content(commit, f"file-{index}"), bytes([index]) * size)
+        moved = history.edit("move", "binary.bin", destination="renamed.bin")
+        self.assertEqual(self.content(moved["before_revision"], "binary.bin"), b"\xff\x00binary\r\n")
+        self.assertEqual(self.content(moved["after_revision"], "renamed.bin"), b"\xff\x00binary\r\n")
+        removed = history.edit("delete", "renamed.bin")
+        self.assertEqual(self.content(removed["before_revision"], "renamed.bin"), b"\xff\x00binary\r\n")
+        self.assertEqual(self.git("ls-tree", "-r", "--name-only", removed["after_revision"]), b"")
 
-    @unittest.skipUnless(os.name == "posix" and Path("/dev/fd").is_dir(), "Inherited file descriptors")
-    def test_changed_file_during_batch_hash_rejects_checkpoint_and_retries(self):
-        file = self.workspace / "file.txt"
-        file.write_bytes(b"before")
-        history = self.history()
-        original = file_history._git
-        changed = False
-        def race(repository, *args, **kwargs):
-            nonlocal changed
-            if args[0] == "hash-object" and "--stdin-paths" in args and not changed:
-                changed = True
-                file.write_bytes(b"after")
-            return original(repository, *args, **kwargs)
-        with patch.object(file_history, "_git", side_effect=race):
-            with self.assertRaises(TransientScanError):
-                history.checkpoint()
-        self.assertIsNone(history.last_checkpoint)
-        self.assertFalse(history._cache)
-        self.assertEqual(self.content(history.checkpoint(), "file.txt"), b"after")
-
-    def test_repeated_start_does_not_wait_for_background_checkpoint(self):
-        history = self.history().start()
-        entered = threading.Event()
-        release = threading.Event()
-        returned = threading.Event()
-        errors = []
-        original = history._entries
-        def slow_scan():
-            entered.set()
-            release.wait(5)
-            return original()
-        def call_start():
-            try:
-                history.start()
-            except Exception as exc:
-                errors.append(exc)
-            finally:
-                returned.set()
-        with patch.object(history, "_entries", side_effect=slow_scan):
-            (self.workspace / "changed.txt").write_text("saved")
-            try:
-                self.assertTrue(entered.wait(5))
-                caller = threading.Thread(target=call_start)
-                caller.start()
-                self.assertTrue(returned.wait(.5), "start() waited for an unrelated active scan")
-            finally:
-                release.set()
-                if "caller" in locals(): caller.join(5)
-        self.assertFalse(errors)
-
-    def test_concurrent_starts_wait_for_initial_snapshot_and_monitor_readiness(self):
-        history = self.history()
-        entered = threading.Event()
-        release = threading.Event()
-        first_returned = threading.Event()
-        second_returned = threading.Event()
-        errors = []
-        original = history._entries
-        def slow_scan():
-            if not entered.is_set():
-                entered.set()
-                release.wait(5)
-            return original()
-        def call_start(done):
-            try:
-                history.start()
-            except Exception as exc:
-                errors.append(exc)
-            finally:
-                done.set()
-        with patch.object(history, "_entries", side_effect=slow_scan):
-            first = threading.Thread(target=call_start, args=(first_returned,))
-            second = threading.Thread(target=call_start, args=(second_returned,))
-            first.start()
-            try:
-                self.assertTrue(entered.wait(5))
-                second.start()
-                self.assertFalse(second_returned.wait(.1), "concurrent start falsely reported readiness")
-            finally:
-                release.set()
-                first.join(5)
-                if second.ident is not None: second.join(5)
-        self.assertFalse(errors)
-        self.assertTrue(first_returned.is_set())
-        self.assertTrue(second_returned.is_set())
-        self.assertTrue(history._ready.is_set())
-        self.assertTrue(history.status()["monitoring"])
-
-    def test_user_git_index_head_and_uncommitted_contents_remain_unchanged(self):
-        def project_git(*args):
-            result = subprocess.run(["git", "-C", str(self.workspace), *args],
-                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
-            self.assertEqual(result.returncode, 0, result.stderr.decode())
-            return result.stdout
-        project_git("init")
-        project_git("config", "user.name", "User")
-        project_git("config", "user.email", "user@example.invalid")
-        file = self.workspace / "work.txt"
-        file.write_text("committed")
-        project_git("add", "work.txt")
-        project_git("commit", "-m", "user commit")
-        file.write_text("staged")
-        project_git("add", "work.txt")
-        file.write_text("unstaged")
-        before_head = project_git("rev-parse", "HEAD")
-        before_index = (self.workspace / ".git/index").read_bytes()
-        before_status = project_git("status", "--porcelain")
-        history = self.history()
-        commit = history.checkpoint("capture user work")
-        self.assertEqual(self.content(commit, "work.txt"), b"unstaged")
-        self.assertEqual(before_head, project_git("rev-parse", "HEAD"))
-        self.assertEqual(before_index, (self.workspace / ".git/index").read_bytes())
-        self.assertEqual(before_status, project_git("status", "--porcelain"))
-        self.assertNotIn(b".git/", self.git("ls-tree", "-r", "--name-only", commit))
-
-    def test_ignored_outputs_exact_bytes_symlinks_and_unusual_names_are_preserved(self):
+    def test_ignored_outputs_and_unusual_names_preserve_exact_bytes_without_filters(self):
         (self.workspace / ".gitignore").write_text("*.csv\n")
         (self.workspace / ".gitattributes").write_text("* text eol=lf\n")
         name = "数据 [1]\t\n.csv"
-        content = b"a\r\nb\0binary"
-        (self.workspace / name).write_bytes(content)
-        outside = self.root / "outside"
-        outside.mkdir()
-        (outside / "secret.txt").write_text("outside content")
-        (self.workspace / "external").symlink_to(outside, target_is_directory=True)
-        history = self.history()
-        commit = history.checkpoint()
-        self.assertEqual(self.content(commit, name), content)
-        self.assertEqual(self.content(commit, "external"), os.fsencode(outside))
-        paths = self.git("ls-tree", "-r", "-z", "--name-only", commit).split(b"\0")
-        self.assertNotIn(b"external/secret.txt", paths)
-        log = self.cli("log", "--path", name)
-        self.assertEqual(log.returncode, 0, log.stderr)
-        self.assertEqual(len(json.loads(log.stdout)), 1)
+        before = b"a\r\nold\r\nlast"
+        (self.workspace / name).write_bytes(before)
+        result = self.history().edit("replace", name, old_text="old", new_text="new")
+        self.assertEqual(self.content(result["before_revision"], name), before)
+        self.assertEqual(self.content(result["after_revision"], name), before.replace(b"old", b"new"))
+        self.assertEqual(self.git("ls-tree", "-r", "-z", "--name-only", "HEAD"), name.encode() + b"\0")
 
-    def test_runtime_storage_and_cache_directories_are_excluded_without_gitignore(self):
-        storage = self.workspace / "runtime-data"
-        for relative in [".agent/session.log", ".venv/a.py", "node_modules/b.js", "__pycache__/c.pyc",
-                         "runtime-data/session/events.jsonl"]:
-            path = self.workspace / relative
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("not task content")
-        (self.workspace / "result.csv").write_text("keep")
-        history = self.history(excluded_roots=[storage])
-        history.checkpoint()
-        self.assertEqual(self.git("ls-tree", "-r", "--name-only", "HEAD"), b"result.csv\n")
+    def test_user_git_index_head_and_unrelated_work_remain_unchanged(self):
+        def project_git(*args):
+            return subprocess.check_output(["git", "-C", str(self.workspace), *args], stderr=subprocess.PIPE)
+        project_git("init")
+        project_git("config", "user.name", "User")
+        project_git("config", "user.email", "user@example.invalid")
+        target = self.workspace / "work.txt"
+        target.write_text("committed")
+        project_git("add", "work.txt")
+        project_git("commit", "-m", "user commit")
+        target.write_text("staged")
+        project_git("add", "work.txt")
+        target.write_text("unstaged keep")
+        index = (self.workspace / ".git/index").read_bytes()
+        head = project_git("rev-parse", "HEAD")
+        self.history().edit("replace", "work.txt", old_text="unstaged", new_text="edited")
+        self.assertEqual((self.workspace / ".git/index").read_bytes(), index)
+        self.assertEqual(project_git("rev-parse", "HEAD"), head)
+        self.assertEqual(target.read_text(), "edited keep")
 
-    def test_two_observers_serialize_updates_and_share_one_history(self):
-        one = self.history(session_id="one").start()
-        two = self.history(session_id="two").start()
-        (self.workspace / "result.txt").write_text("shared result")
+    def test_two_instances_serialize_edits_to_one_file(self):
+        (self.workspace / "shared.txt").write_text("left right")
+        one, two = self.history(session_id="one"), self.history(session_id="two")
         errors = []
-        def save(instance):
+        def edit(history, old, new):
             try:
-                instance.checkpoint("concurrent capture")
+                history.edit("replace", "shared.txt", old_text=old, new_text=new)
             except Exception as exc:
                 errors.append(exc)
-        threads = [threading.Thread(target=save, args=(instance,)) for instance in (one, two)]
+        threads = [threading.Thread(target=edit, args=(one, "left", "LEFT")),
+                   threading.Thread(target=edit, args=(two, "right", "RIGHT"))]
         for thread in threads: thread.start()
-        for thread in threads: thread.join(timeout=5)
-        self.assertFalse(errors)
-        self.assertTrue(all(not thread.is_alive() for thread in threads))
-        one.close()
-        two.close()
-        self.assertEqual(int(self.git("rev-list", "--count", "HEAD")), 2)
-        self.assertEqual(self.content("HEAD", "result.txt"), b"shared result")
-        self.assertIn(b"any writer", self.git("log", "-1", "--format=%B"))
+        for thread in threads: thread.join(10)
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(errors, [])
+        self.assertEqual((self.workspace / "shared.txt").read_text(), "LEFT RIGHT")
+        self.assertEqual(self.content("HEAD", "shared.txt"), b"LEFT RIGHT")
+        self.assertEqual({record["session_id"] for record in self.records()}, {"one", "two"})
 
-    def test_separate_processes_share_repository_without_index_conflicts(self):
-        history = self.history()
-        history.checkpoint("initial")
-        (self.workspace / "file.txt").write_text("new value")
-        script = ("import sys; from skills_agent.file_history import WorkspaceHistory; "
-                  "h=WorkspaceHistory(sys.argv[1],sys.argv[2],session_id=sys.argv[3]); "
-                  "h.checkpoint('another process')")
+    def test_separate_processes_serialize_edits_without_index_conflicts(self):
+        (self.workspace / "shared.txt").write_text("left right")
+        script = ("import sys;from skills_agent.file_history import WorkspaceHistory;"
+                  "h=WorkspaceHistory(sys.argv[1],sys.argv[2],session_id=sys.argv[3]);"
+                  "h.edit('replace','shared.txt',old_text=sys.argv[3],new_text=sys.argv[3].upper())")
         children = [subprocess.Popen([sys.executable, "-c", script, str(self.workspace),
-                                      str(self.repository), str(index)],
-                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    for index in range(2)]
+                                      str(self.repository), word], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    for word in ("left", "right")]
         for child in children:
             stdout, stderr = child.communicate(timeout=10)
             self.assertEqual(child.returncode, 0, stdout + stderr)
-        self.assertEqual(int(self.git("rev-list", "--count", "HEAD")), 2)
-        self.assertEqual(self.content("HEAD", "file.txt"), b"new value")
+        self.assertEqual(self.content("HEAD", "shared.txt"), b"LEFT RIGHT")
+        self.assertEqual(list(self.repository.glob("runtime-index-*")), [])
 
-    def test_busy_file_is_retried_without_stopping_watcher(self):
-        history = self.history().start()
-        initial = history.last_checkpoint
-        original = history._entries
-        attempted = threading.Event()
-        def scan():
-            if not attempted.is_set():
-                attempted.set()
-                raise TransientScanError("writer is still updating file")
-            return original()
-        with patch.object(history, "_entries", side_effect=scan):
-            (self.workspace / "busy.txt").write_text("settled content")
-            self.assertTrue(attempted.wait(5))
-            self.wait_for(lambda: history.last_checkpoint != initial)
-        self.assertTrue(history.status()["monitoring"])
-        self.assertIsNone(history.last_error)
-        self.assertIsNone(history.pending_error)
-        self.assertEqual(self.content(history.last_checkpoint, "busy.txt"), b"settled content")
-
-    @unittest.skipUnless(os.open in os.supports_dir_fd and hasattr(os, "O_NOFOLLOW"), "POSIX directory fds")
-    def test_parent_directory_replaced_by_symlink_cannot_capture_outside_file(self):
-        folder = self.workspace / "subdir"
-        folder.mkdir()
-        (folder / "file.txt").write_text("inside")
-        outside = self.root / "outside"
-        outside.mkdir()
-        (outside / "file.txt").write_text("outside")
+    def test_failure_before_mutation_keeps_preimage_and_failed_operation(self):
+        (self.workspace / "target.txt").write_text("old")
         history = self.history()
-        original = history._open_regular
-        def race(path):
-            folder.rename(self.workspace / "moved")
-            folder.symlink_to(outside, target_is_directory=True)
-            return original(path)
-        with patch.object(history, "_open_regular", side_effect=race):
-            with self.assertRaises(TransientScanError):
-                history.checkpoint()
-        self.assertIsNone(history.last_error)
-        commit = history.checkpoint()
-        self.assertEqual(self.content(commit, "moved/file.txt"), b"inside")
-        self.assertEqual(self.content(commit, "subdir"), os.fsencode(outside))
-        self.assertNotIn(b"subdir/file.txt", self.git("ls-tree", "-r", "--name-only", commit))
+        with patch("skills_agent.file_editing.PreparedEdit.apply", side_effect=PermissionError("cannot write")):
+            with self.assertRaises(EditError) as failure:
+                history.edit("replace", "target.txt", old_text="old", new_text="new")
+        details = failure.exception.details
+        self.assertFalse(details["applied"])
+        self.assertEqual(self.content(details["before_revision"], "target.txt"), b"old")
+        self.assertEqual((self.workspace / "target.txt").read_text(), "old")
+        self.assertEqual(self.records()[0]["status"], "failed")
 
-    def test_read_commands_show_raw_content_and_compare_checkpoints(self):
-        path = self.workspace / "file.txt"
-        path.write_bytes(b"one\r\n")
+    def test_history_failure_after_write_reports_applied_and_preserves_recovery_revision(self):
+        (self.workspace / "target.txt").write_text("old")
         history = self.history()
-        before = history.checkpoint()
-        path.write_bytes(b"two\r\n")
-        after = history.checkpoint()
-        result = self.cli("show", before, "file.txt")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, b"one\r\n")
-        result = self.cli("diff", before, after, "--path", "file.txt")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(b"+two", result.stdout)
-        result = self.cli("log", "--limit", "1")
-        self.assertEqual(json.loads(result.stdout)[0]["checkpoint"], after)
-        self.assertEqual(json.loads(self.cli("status").stdout)["workspace"], str(self.workspace))
-        self.assertNotEqual(self.cli("show", after, "../outside").returncode, 0)
+        commit = history._commit_paths
+        def fail(states, metadata, phase):
+            if phase != "before":
+                raise OSError("history disk failure")
+            return commit(states, metadata, phase)
+        with patch.object(history, "_commit_paths", side_effect=fail):
+            with self.assertRaises(EditError) as failure:
+                history.edit("replace", "target.txt", old_text="old", new_text="new")
+        details = failure.exception.details
+        self.assertTrue(details["applied"])
+        self.assertIsNone(details["after_revision"])
+        self.assertEqual(self.content(details["before_revision"], "target.txt"), b"old")
+        self.assertEqual((self.workspace / "target.txt").read_text(), "new")
+        self.assertEqual(self.records()[0]["status"], "failed")
+        self.assertTrue(self.records()[0]["applied"])
 
-    def test_failure_is_visible_and_cannot_be_reported_as_success_on_close(self):
-        history = self.history().start()
-        with patch.object(history, "_entries", side_effect=OSError("cannot read workspace")):
-            with self.assertRaisesRegex(OSError, "cannot read workspace"):
-                history.checkpoint()
-        self.assertIn("cannot read workspace", history.last_error)
-        with self.assertRaisesRegex(RuntimeError, "cannot read workspace"):
-            history.close()
-        status = json.loads(self.cli("status").stdout)
-        self.assertFalse(status["monitoring"])
-        self.assertIn("cannot read workspace", status["last_error"])
+    def test_foreign_repository_without_owner_marker_is_not_modified(self):
+        subprocess.run(["git", "init", "--bare", str(self.repository)], check=True, capture_output=True)
+        before = {path.relative_to(self.repository): path.read_bytes()
+                  for path in self.repository.rglob("*") if path.is_file()}
+        with self.assertRaises(EditError):
+            self.history().edit("create", "target.txt", content="new")
+        self.assertFalse((self.workspace / "target.txt").exists())
+        after = {path.relative_to(self.repository): path.read_bytes()
+                 for path in self.repository.rglob("*") if path.is_file()}
+        self.assertEqual(before, after)
 
-    def test_existing_repository_without_runtime_marker_is_not_modified(self):
-        subprocess.run(["git", "init", "--bare", str(self.repository)],
-                       check=True, capture_output=True)
-        def contents():
-            return {path.relative_to(self.repository): path.read_bytes()
-                    for path in self.repository.rglob("*") if path.is_file()}
-        before = contents()
-        history = WorkspaceHistory(self.workspace, self.repository, session_id="misconfigured")
-        with self.assertRaisesRegex(ValueError, "Refuse to take over"):
-            history.checkpoint()
-        with self.assertRaisesRegex(RuntimeError, "Refuse to take over"):
-            history.close()
-        self.assertEqual(contents(), before)
-        self.assertFalse((self.repository / "workspace.json").exists())
-        self.assertFalse((self.repository / "runtime").exists())
+    def test_interruption_before_and_after_publication_is_recorded_then_reraised(self):
+        target = self.workspace / "target.txt"
+        target.write_text("old")
+        history = self.history()
+        with patch("skills_agent.file_editing.PreparedEdit.apply", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                history.edit("replace", "target.txt", old_text="old", new_text="new")
+        interrupted = self.records()[0]
+        self.assertEqual(interrupted["status"], "interrupted")
+        self.assertFalse(interrupted["applied"])
+        self.assertEqual(target.read_text(), "old")
+        commit = history._commit_paths
+        def interrupt(states, metadata, phase):
+            if phase == "after": raise SystemExit(2)
+            return commit(states, metadata, phase)
+        with patch.object(history, "_commit_paths", side_effect=interrupt):
+            with self.assertRaises(SystemExit):
+                history.edit("replace", "target.txt", old_text="old", new_text="new")
+        applied = next(record for record in self.records() if record["applied"])
+        self.assertEqual(applied["status"], "interrupted")
+        self.assertIsNotNone(applied["after_revision"])
+        self.assertEqual(target.read_text(), "new")
+        self.assertEqual(self.content(applied["before_revision"], "target.txt"), b"old")
 
-    def test_owner_marker_precedes_git_init_and_allows_retry_after_interruption(self):
-        history = WorkspaceHistory(self.workspace, self.repository, session_id="interrupted")
+    def test_initialization_failure_has_metadata_but_no_commit_and_remains_inspectable(self):
+        history = self.history()
         original = file_history._git
-        def interrupted(repository, *args, **kwargs):
-            if args[0] == "init":
-                self.assertEqual(json.loads((repository / "workspace.json").read_text())["workspace"],
-                                 str(self.workspace))
-                raise OSError("initialization interrupted")
+        def fail(repository, *args, **kwargs):
+            if args[0] == "init": raise OSError("initialization interrupted")
             return original(repository, *args, **kwargs)
-        with patch.object(file_history, "_git", side_effect=interrupted):
-            with self.assertRaisesRegex(OSError, "initialization interrupted"):
-                history.checkpoint()
-        with self.assertRaisesRegex(RuntimeError, "initialization interrupted"):
-            history.close()
-        resumed = self.history()
-        commit = resumed.checkpoint("resumed initialization")
-        self.assertEqual(self.git("rev-parse", "HEAD").strip().decode(), commit)
+        with patch.object(file_history, "_git", side_effect=fail):
+            with self.assertRaises(EditError) as failure:
+                history.edit("create", "target.txt", content="new")
+        self.assertFalse(failure.exception.details["applied"])
+        self.assertFalse((self.workspace / "target.txt").exists())
+        self.assertEqual(self.records()[0]["status"], "failed")
+        status = self.cli("status")
+        self.assertEqual(status.returncode, 0, status.stderr)
+        self.assertFalse(json.loads(status.stdout)["initialized"])
+        self.assertIsNone(json.loads(status.stdout)["checkpoint"])
+        self.assertEqual(json.loads(self.cli("log").stdout), [])
+        self.history().edit("create", "target.txt", content="resumed")
+        self.assertEqual(self.content("HEAD", "target.txt"), b"resumed")
+
+    def test_interrupt_after_syscall_before_callback_records_uncertainty_and_actual_result(self):
+        target = self.workspace / "target.txt"
+        target.write_text("old")
+        original = os.replace
+        interrupted = False
+        def interrupt_after_replace(source, destination, **kwargs):
+            nonlocal interrupted
+            result = original(source, destination, **kwargs)
+            if kwargs.get("src_dir_fd") is not None and not interrupted:
+                interrupted = True
+                raise KeyboardInterrupt
+            return result
+        with patch("skills_agent.file_editing.os.replace", side_effect=interrupt_after_replace):
+            with self.assertRaises(KeyboardInterrupt):
+                self.history().edit("replace", "target.txt", old_text="old", new_text="new")
+        record = self.records()[0]
+        self.assertEqual(record["status"], "interrupted")
+        self.assertIsNone(record["applied"])
+        self.assertTrue(record["changed"])
+        self.assertEqual(record["application_state"], "uncertain")
+        self.assertEqual(record["attempted_paths"], ["target.txt"])
+        self.assertEqual(target.read_text(), "new")
+        self.assertEqual(self.content(record["after_revision"], "target.txt"), b"new")
+
+    def test_legacy_history_remains_readable_and_only_new_target_is_added(self):
+        subprocess.run(["git", "init", "--bare", "--initial-branch=history", str(self.repository)],
+                       check=True, capture_output=True)
+        (self.repository / "workspace.json").write_text(json.dumps({"format": 1, "workspace": str(self.workspace)}))
+        blob = file_history._git(self.repository, "hash-object", "-w", "--stdin", input=b"legacy bytes").strip()
+        tree = file_history._git(self.repository, "mktree", input=b"100644 blob " + blob + b"\tlegacy.txt\n").strip()
+        old = file_history._git(self.repository, "commit-tree", tree.decode(), input=b"old full snapshot\n").strip().decode()
+        file_history._git(self.repository, "update-ref", "refs/heads/history", old)
+        self.assertEqual(self.cli("show", old, "legacy.txt").stdout, b"legacy bytes")
+        result = self.history().edit("create", "new.txt", content="new tool file")
+        self.assertEqual(self.content(result["after_revision"], "legacy.txt"), b"legacy bytes")
+        self.assertEqual(self.content(old, "legacy.txt"), b"legacy bytes")
+        self.assertEqual(json.loads(self.cli("status").stdout)["mode"], "editing-only")
+
+    def test_cli_status_log_diff_and_raw_show_are_read_only_and_work_before_first_edit(self):
+        status = self.cli("status")
+        self.assertEqual(status.returncode, 0, status.stderr)
+        self.assertFalse(json.loads(status.stdout)["initialized"])
+        self.assertFalse(json.loads(status.stdout)["monitoring"])
+        self.assertEqual(json.loads(self.cli("log").stdout), [])
+        self.assertFalse(self.repository.exists())
+        history = self.history()
+        first = history.edit("create", "file.txt", content="one\r\n")
+        second = history.edit("replace", "file.txt", old_text="one", new_text="two")
+        self.assertEqual(self.cli("show", first["after_revision"], "file.txt").stdout, b"one\r\n")
+        diff = self.cli("diff", second["before_revision"], second["after_revision"], "--path", "file.txt")
+        self.assertEqual(diff.returncode, 0, diff.stderr)
+        self.assertIn(b"+two", diff.stdout)
+        self.assertEqual(len(json.loads(self.cli("log", "--path", "file.txt", "--limit", "1").stdout)), 1)
+        self.assertNotEqual(self.cli("show", "HEAD", "../outside").returncode, 0)
 
 
 if __name__ == "__main__":

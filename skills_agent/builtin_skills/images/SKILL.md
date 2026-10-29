@@ -44,7 +44,7 @@ Images are visible for one assistant response, including a response that request
 
 ## Generate an image while printing logs
 
-Adapt this script in the task workspace, for example as `/absolute/workspace/draw.py`:
+Use `edit_file` to save or adapt this script in the task workspace, for example as `/absolute/workspace/draw.py`, then run it through shell:
 
 ```python
 import importlib.util
