@@ -71,6 +71,24 @@ class FileHistoryTests(unittest.TestCase):
         self.assertEqual(self.content(renamed, "renamed.txt"), b"changed")
         self.assertFalse((self.workspace / ".git").exists())
 
+    def test_dependency_directory_names_do_not_exclude_ordinary_files(self):
+        (self.workspace / "venv").write_bytes(b"task input")
+        (self.workspace / "node_modules").mkdir()
+        (self.workspace / "node_modules" / "cache").write_bytes(b"dependency")
+        checkpoint = self.history().checkpoint()
+        self.assertEqual(self.content(checkpoint, "venv"), b"task input")
+        self.assertEqual(self.git("ls-tree", "--name-only", checkpoint), b"venv\n")
+
+    def test_status_reports_latest_error_by_time_not_observer_id(self):
+        self.history().checkpoint()
+        for name, date, error in (("aaaa", "2026-10-29T12:00:00+00:00", "new error"),
+                                  ("zzzz", "2026-10-28T12:00:00+00:00", "old error")):
+            record = {"recorded_at": date, "last_error": error, "monitoring": False}
+            (self.repository / "runtime" / (name + ".json")).write_text(json.dumps(record))
+        result = self.cli("status")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["last_error"], "new error")
+
     def test_no_change_does_not_commit_and_close_captures_pending_write(self):
         history = self.history().start()
         initial = history.last_checkpoint

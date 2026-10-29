@@ -129,7 +129,9 @@ class WorkspaceHistory:
 
     def _excluded(self, path):
         relative = path.relative_to(self.workspace)
-        return (any(part in EXCLUDED_NAMES for part in relative.parts)
+        return (any(part in EXCLUDED_NAMES for part in relative.parts[:-1])
+                or path.name in {".git", ".agent", ".skills-agent"}
+                or (path.name in EXCLUDED_NAMES and path.is_dir())
                 or any(path == root or path.is_relative_to(root) for root in self.excluded_roots))
 
     def _initialize(self):
@@ -421,6 +423,7 @@ def main(argv=None):
                     except ProcessLookupError:
                         item["monitoring"] = False
                 observers.append(item)
+            observers.sort(key=lambda item: item.get("recorded_at", ""))
             head = _git(repository, "rev-parse", "--verify", HISTORY_REF).strip().decode("ascii")
             print(json.dumps({**metadata, "repository": str(repository), "checkpoint": head,
                               "monitoring": any(item["monitoring"] for item in observers),
