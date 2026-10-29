@@ -311,7 +311,7 @@ class Agent:
             record["pending_direct"] = True
         return record
 
-    def _message(self, message, *, streamed=False):
+    def _message(self, message, *, streamed=False, sync=True):
         event = {"type": "message", "message": message}
         if streamed:
             event["streamed"] = True
@@ -319,7 +319,8 @@ class Agent:
         background_result = message.get("runtime_event") in {RUNTIME_EVENT, UNCERTAINTY_EVENT}
         if not background_result:
             self.on_event(event)
-        self.context.sync(self._select)
+        if sync:
+            self.context.sync(self._select)
         if background_result:
             # The chat completion row represents context delivery, rather than
             # the earlier supervisor exit. Reuse the existing observation.
@@ -408,6 +409,13 @@ class Agent:
                          "background_owner_session_id": child._background_results.owner})
 
     def run(self, user_message):
+        # Acknowledge input before preparing runtime services. Context selection
+        # can itself call the model, so defer it until file history is ready.
+        try:
+            self._message(user_message, sync=False)
+        except (Exception, KeyboardInterrupt, SystemExit) as exc:
+            self._record_turn_error(exc)
+            raise
         if self._owns_file_history:
             try:
                 self.file_history.start()
@@ -418,7 +426,7 @@ class Agent:
         if self._inherited_process_scope:
             self.tools.process_scope = self.process_scope
             try:
-                return self._run(user_message)
+                return self._run()
             except BaseException:
                 try:
                     self.process_scope.close_owner(self._background_results.owner)
@@ -431,7 +439,7 @@ class Agent:
         self.process_scope = self.tools.process_scope = scope
         try:
             self._background_jobs.start_turn()
-            result = self._run(user_message)
+            result = self._run()
             scope.mark_successful()
             return result
         except BaseException:
@@ -470,11 +478,11 @@ class Agent:
             self._event({"type": "error", "message": message})
             raise RuntimeError(message)
 
-    def _run(self, user_message):
+    def _run(self):
         pending = []
         receiving_response = False
         try:
-            self._message(user_message)
+            self.context.sync(self._select)
             while True:
                 self._background_results.drain(self._message)
                 system, messages = self.context.prepare(self._system(), self.tools.schemas)
@@ -546,28 +554,31 @@ class Agent:
                             message["child_session_id"] = self._subagent_report_id
                     self._message(message)
         except (Exception, KeyboardInterrupt, SystemExit) as exc:
-            # Keep the protocol usable after cancellation, without rerunning a script.
-            for call in pending:
-                self.session.append(interrupted_result(call))
-            interrupted = isinstance(exc, (KeyboardInterrupt, SystemExit))
-            event = {"type": "error", "message": "Interrupted" if interrupted else str(exc)}
-            if isinstance(exc, ProviderError):
-                event.update(category=exc.category, http_status=exc.http_status,
-                             provider_code=exc.provider_code, provider_type=exc.provider_type,
-                             finish_reason=exc.finish_reason, retryable=exc.retryable)
-            if getattr(exc, "diagnostics", None) is not None:
-                event["diagnostics"] = deepcopy(exc.diagnostics)
-            if receiving_response:
-                if getattr(exc, "raw", None) is not None:
-                    event["_raw"] = exc.raw
-                if getattr(exc, "partial_content", None):
-                    event["partial_content"] = exc.partial_content
-            if receiving_response and interrupted:
-                event["response_interrupted"] = True
-            self._event(event)
-            if event.get("response_interrupted"):
-                # Only stream events followed the last sync, so no tool report
-                # or other model call is needed to preserve the unfinished body.
-                # A stopped tool/report remains in raw history for next-turn selection.
-                self.context.sync()
+            self._record_turn_error(exc, pending=pending, receiving_response=receiving_response)
             raise
+
+    def _record_turn_error(self, exc, *, pending=(), receiving_response=False):
+        # Keep the protocol usable after cancellation, without rerunning a script.
+        for call in pending:
+            self.session.append(interrupted_result(call))
+        interrupted = isinstance(exc, (KeyboardInterrupt, SystemExit))
+        event = {"type": "error", "message": "Interrupted" if interrupted else str(exc)}
+        if isinstance(exc, ProviderError):
+            event.update(category=exc.category, http_status=exc.http_status,
+                         provider_code=exc.provider_code, provider_type=exc.provider_type,
+                         finish_reason=exc.finish_reason, retryable=exc.retryable)
+        if getattr(exc, "diagnostics", None) is not None:
+            event["diagnostics"] = deepcopy(exc.diagnostics)
+        if receiving_response:
+            if getattr(exc, "raw", None) is not None:
+                event["_raw"] = exc.raw
+            if getattr(exc, "partial_content", None):
+                event["partial_content"] = exc.partial_content
+        if receiving_response and interrupted:
+            event["response_interrupted"] = True
+        self._event(event)
+        if event.get("response_interrupted"):
+            # Only stream events followed the last sync, so no tool report
+            # or other model call is needed to preserve the unfinished body.
+            # A stopped tool/report remains in raw history for next-turn selection.
+            self.context.sync()
