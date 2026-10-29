@@ -84,10 +84,11 @@ def export_runtime_logs(root, session, storage):
         if temporary.exists():
             shutil.rmtree(temporary)
     metadata = storage.history / "workspace.json"
+    path_map = storage.history / "path-map.json"
     operations = sorted((storage.history / "operations").glob("*.json"))
     observers = sorted((storage.history / "runtime").glob("*.json"))
     initialized = (storage.history / "HEAD").is_file()
-    if initialized or metadata.is_file() or operations or observers:
+    if initialized or metadata.is_file() or path_map.is_file() or operations or observers:
         exported_history = root / "history.git"
         if initialized:
             # An empty bare repository is valid too: a failed edit can have
@@ -101,6 +102,8 @@ def export_runtime_logs(root, session, storage):
             exported_history.mkdir()
         if metadata.is_file():
             shutil.copyfile(metadata, exported_history / "workspace.json")
+        if path_map.is_file():
+            shutil.copyfile(path_map, exported_history / "path-map.json")
         for source in operations:
             target = exported_history / "operations" / source.name
             target.parent.mkdir(exist_ok=True)
