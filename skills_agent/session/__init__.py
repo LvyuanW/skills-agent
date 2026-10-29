@@ -13,6 +13,13 @@ from datetime import datetime, timezone
 from ..images import MAX_REQUEST_IMAGES, image_bytes
 
 
+_STREAM_EVENT_TYPES = frozenset({"text_delta", "thinking_delta", "tool_call_delta"})
+_STANDARD_STREAM_HEADER = re.compile(
+    rb'^\{"timestamp":"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}'
+    rb'(?:\.[0-9]{6})?\+00:00","type":"(?:text_delta|thinking_delta|tool_call_delta)",'
+)
+
+
 class Session:
     def __init__(self, root: Path, session_id: str):
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", session_id):
@@ -47,6 +54,50 @@ class Session:
                     event = json.loads(line)
                     event.setdefault("event_id", f"event-{offset}")
                     yield stream.tell(), event
+
+    def iter_receipt_events(self, after: int = 0):
+        """Read raw semantic events, with a trailing (cursor, None) for skipped bytes.
+
+        Standard stream fragments cannot contain a background receipt. Recognize
+        their append_event header without decoding their payload; legacy or
+        nonstandard headers still go through the complete JSON decoder.
+        """
+        if not self._events_path.exists():
+            return
+        cursor = delivered = after
+        with self._events_path.open("rb") as stream:
+            stream.seek(after)
+            while True:
+                line = stream.readline()
+                if not line:
+                    break
+                offset = cursor
+                if not line.endswith(b"\n"):
+                    # Legacy logs can end with a complete JSON value but no
+                    # newline. An unfinished concurrent append must be retried.
+                    try:
+                        event = json.loads(line)
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        break
+                    cursor += len(line)
+                else:
+                    cursor += len(line)
+                    header = _STANDARD_STREAM_HEADER.match(line)
+                    if (header and line.find(b'"type"', header.end()) < 0
+                            and line.find(b"\\u", header.end()) < 0):
+                        continue
+                    # A duplicate or escaped type key is not a standard runtime
+                    # fragment; decode it rather than trusting the first type.
+                    if not line.strip():
+                        continue
+                    event = json.loads(line)
+                if event.get("type") in _STREAM_EVENT_TYPES:
+                    continue
+                event.setdefault("event_id", f"event-{offset}")
+                delivered = cursor
+                yield cursor, event
+            if cursor != delivered:
+                yield cursor, None
 
     def events(self) -> list[dict]:
         return [event for _, event in self.iter_events()]
