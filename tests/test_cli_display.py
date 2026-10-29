@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from skills_agent.cli import main, render_event
+from skills_agent.cli import ConsoleRenderer, main, render_event
 from skills_agent.session import Session
 
 
@@ -142,6 +142,58 @@ class DisplayTests(unittest.TestCase):
         output = self.render([message("tool", '{"exit_code":0,"stdout":"","stderr":""}',
                                      name="shell", task_name="检查配置", tool_call_id="c1")])
         self.assertEqual(output, "· shell「检查配置」：完成\n")
+
+    def test_file_edit_status_distinguishes_changes_noop_and_failure_after_mutation(self):
+        cases = [
+            ({"operation": "create", "changed": True}, "已新建"),
+            ({"operation": "replace", "changed": True}, "已修改"),
+            ({"operation": "delete", "changed": True}, "已删除"),
+            ({"operation": "move", "changed": True}, "已移动"),
+            ({"operation": "replace", "changed": False}, "内容未变化"),
+            ({"error": "old text is ambiguous", "executed": False}, "失败：old text is ambiguous"),
+            ({"error": "after checkpoint failed", "changed": True}, "文件已变更，后续步骤失败：after checkpoint failed"),
+            ({"error": "after checkpoint failed", "applied": True}, "文件已变更，后续步骤失败：after checkpoint failed"),
+            ({"error": "publication interrupted", "applied": None, "changed": True,
+              "application_state": "uncertain"}, "文件变更状态待核对：publication interrupted"),
+        ]
+        for result, expected in cases:
+            with self.subTest(result=result):
+                output = self.render([message("tool", json.dumps(result), name="edit_file",
+                                             task_name="修改配置", tool_call_id="edit1")])
+                self.assertEqual(output, f"· edit_file「修改配置」：{expected}\n")
+
+    def test_file_edit_streaming_and_cached_replay_keep_call_and_result(self):
+        arguments = json.dumps({"name": "保存配置", "operation": "create", "path": "config.txt",
+                                "content": "PRIVATE_FILE_CONTENT"}, ensure_ascii=False)
+        tool_call = call("edit_file", identifier="edit1")
+        tool_call["arguments"] = arguments
+        events = [
+            {"type": "tool_call_delta", "index": 0, "id": "edit1", "name": "edit_file"},
+            *[{"type": "tool_call_delta", "index": 0, "arguments": chunk}
+              for chunk in (arguments[:14], arguments[14:])],
+            {**message("assistant", "", tool_calls=[tool_call]), "streamed": True},
+            message("tool", json.dumps({"operation": "create", "path": "config.txt", "changed": True}),
+                    name="edit_file", task_name="保存配置", tool_call_id="edit1"),
+        ]
+        def replay(events):
+            output = io.StringIO()
+            renderer = ConsoleRenderer(output, live=False)
+            for event in events:
+                renderer(event)
+            renderer.close()
+            return output.getvalue()
+        with TemporaryDirectory() as directory:
+            session = Session(Path(directory), "editing")
+            for event in events:
+                session.append_event(event)
+            original = replay(session.events())
+            self.assertIn("edit_file：接收调用", original)
+            self.assertIn("edit_file「保存配置」：调用", original)
+            self.assertIn("edit_file「保存配置」：已新建", original)
+            self.assertNotIn("PRIVATE_FILE_CONTENT", original)
+            self.assertEqual(replay(session.replay_events()), original)
+            detailed = self.render(session.events(), full=True)
+            self.assertIn("PRIVATE_FILE_CONTENT", detailed)
 
     def test_multimodal_tool_result_preserves_exit_status_without_dumping_feedback(self):
         for exit_code in (0, 7):

@@ -351,7 +351,19 @@ def render_event(event, output=None, *, full=False, echo_user=True, tool_names=N
             status = "结果已记录"
             if isinstance(result, dict):
                 if result.get("error"):
-                    status = f"失败：{_brief(result['error'])}"
+                    if (message.get("name") == "edit_file"
+                            and result.get("application_state") == "uncertain"):
+                        status = "文件变更状态待核对："
+                    elif (message.get("name") == "edit_file"
+                          and (result.get("changed") is True or result.get("applied") is True)):
+                        status = "文件已变更，后续步骤失败："
+                    else:
+                        status = "失败："
+                    status += _brief(result["error"])
+                elif message.get("name") == "edit_file" and type(result.get("changed")) is bool:
+                    status = ({"create": "已新建", "replace": "已修改", "delete": "已删除",
+                               "move": "已移动"}.get(result.get("operation"), "完成")
+                              if result["changed"] else "内容未变化")
                 elif result.get("job_id") and result.get("completed") is False:
                     status = "已返回服务启动回执" if result.get("kind") == "service" else "已返回后台启动回执"
                 elif "exit_code" in result:
@@ -485,7 +497,7 @@ class ConsoleRenderer:
         })
         for key in ("id", "name", "arguments"):
             call[key] += event.get(key) or ""
-        if call["name"] not in {"shell", "sandbox", "subagent"}:
+        if call["name"] not in {"shell", "sandbox", "subagent", "edit_file"}:
             return
         label = "sub-agent" if call["name"] == "subagent" else call["name"]
         receiving = f"· {label}：接收调用"
