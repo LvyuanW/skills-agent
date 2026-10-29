@@ -18,6 +18,12 @@ _STANDARD_STREAM_HEADER = re.compile(
     rb'^\{"timestamp":"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}'
     rb'(?:\.[0-9]{6})?\+00:00","type":"(?:text_delta|thinking_delta|tool_call_delta)",'
 )
+_STANDARD_EVENT_HEADER = re.compile(
+    rb'^\{"timestamp":"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}'
+    rb'(?:\.[0-9]{6})?\+00:00","type":"[A-Za-z_]+",'
+)
+_RECEIPT_MARKERS = (b'"tool"', b'"background_job_result"', b'"background_job_uncertainty"',
+                    b'"subagent_summary"', b"\\u")
 
 
 class Session:
@@ -56,11 +62,13 @@ class Session:
                     yield stream.tell(), event
 
     def iter_receipt_events(self, after: int = 0):
-        """Read raw semantic events, with a trailing (cursor, None) for skipped bytes.
+        """Read potential raw receipts, with (cursor, None) for a skipped tail.
 
         Standard stream fragments cannot contain a background receipt. Recognize
-        their append_event header without decoding their payload; legacy or
-        nonstandard headers still go through the complete JSON decoder.
+        their append_event header without decoding their payload. Other standard
+        events need a tool role, runtime receipt marker or subagent summary to
+        matter. Search the entire line conservatively; nested markers still cause
+        decoding. Legacy headers and escaped keys/values use the full decoder.
         """
         if not self._events_path.exists():
             return
@@ -85,6 +93,9 @@ class Session:
                     header = _STANDARD_STREAM_HEADER.match(line)
                     if (header and line.find(b'"type"', header.end()) < 0
                             and line.find(b"\\u", header.end()) < 0):
+                        continue
+                    if (_STANDARD_EVENT_HEADER.match(line)
+                            and not any(marker in line for marker in _RECEIPT_MARKERS)):
                         continue
                     # A duplicate or escaped type key is not a standard runtime
                     # fragment; decode it rather than trusting the first type.
