@@ -14,6 +14,7 @@ from .runtime import add_agent_arguments, create_agent
 from .input import ClipboardDraft
 from .markdown import MarkdownStream, _console, print_markdown
 from .session import Session
+from .storage import WorkspaceStorage
 
 
 _COLORS = {"user": "\033[97;40m", "assistant": "\033[30;107m", "tool": "\033[34;49m",
@@ -647,6 +648,7 @@ def parser():
     run = commands.add_parser("run", help="进入会话并进行多轮交互")
     history = commands.add_parser("history", help="回放主会话记录")
     history.add_argument("--full", action="store_true", help="展开完整公开消息、命令和工具输出")
+    history.add_argument("--data-dir", type=Path, help="运行数据根目录，默认 ~/.skills-agent 或 SKILLS_AGENT_DATA_DIR")
     for command in (run, history):
         command.add_argument("--workspace", type=Path, default=Path.cwd())
         command.add_argument("--sessions-dir", type=Path)
@@ -773,9 +775,12 @@ def _main(argv=None):
         workspace = args.workspace.expanduser().resolve()
         if not workspace.is_dir():
             raise ValueError(f"工作目录不存在：{workspace}")
-        root = (args.sessions_dir or workspace / ".agent" / "sessions").expanduser().resolve()
+        storage = WorkspaceStorage(workspace, getattr(args, "data_dir", None))
+        root = storage.session_root(args.session, args.sessions_dir)
         if args.command == "history" and not (root / args.session / "events.jsonl").is_file():
             raise ValueError(f"会话不存在：{args.session}")
+        if args.command == "run":
+            storage.ensure()
         session = Session(root, args.session)
         if args.command == "history" or not (sys.stdin.isatty() and sys.stdout.isatty()):
             replay = ConsoleRenderer(full=args.command == "history" and args.full, live=False)

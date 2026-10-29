@@ -1,4 +1,6 @@
 import json
+import shlex
+import sys
 from copy import deepcopy
 from pathlib import Path
 from uuid import uuid4
@@ -29,9 +31,11 @@ class Agent:
     def __init__(self, model, session, skills, workspace, *, context_tokens=DEFAULT_CONTEXT_TOKENS,
                  summary_output_tokens=8192, sandbox=None, on_event=None,
                  allow_subagent=True, instructions="", process_scope=None,
-                 allow_persistent_processes=False):
+                 allow_persistent_processes=False, file_history=None, owns_file_history=False):
         self.model, self.session, self.skills = model, session, skills
         self.workspace = Path(workspace).resolve()
+        self.file_history = file_history
+        self._owns_file_history = owns_file_history
         self._environment = environment_info(self.workspace)
         self.context_tokens, self.summary_output_tokens = context_tokens, summary_output_tokens
         self.on_event = on_event or (lambda event: None)
@@ -82,6 +86,37 @@ class Agent:
 
     def _activity(self, activity):
         self.on_event({"type": "activity", "activity": activity})
+
+    def _file_history_context(self):
+        if self.file_history is None:
+            return ""
+        helper = Path(__file__).parent / "builtin_skills" / "file-editing" / "scripts" / "history.py"
+        command = shlex.join([sys.executable, str(helper), "--repository", str(self.file_history.repository)])
+        error = self.file_history.last_error
+        return (
+            "# Workspace file history\n\n"
+            "The runtime automatically saves an initial workspace snapshot and records later file "
+            "changes while this agent is running. You do not need to create Git commits to save "
+            "these checkpoints. The separate history repository does not change the project's Git "
+            "index or branches. Runtime logs, Git metadata and cache/dependency directories are "
+            "excluded; inspect status for recording details. Changes are grouped into checkpoints, "
+            "so short-lived intermediate contents may not be captured. A saved checkpoint does not "
+            "mean its contents were verified.\n"
+            f"File history repository: {self.file_history.repository}\n"
+            f"Check recording status: {command} status\n"
+            f"List saved versions: {command} log\n"
+            f"Show query options: {command} --help\n"
+            "Use the file-editing skill for comparing versions and retrieving earlier file contents. "
+            "This is workspace file history, separate from conversation-history retrieval.\n"
+            + (f"Recording error: {error}. Recent changes may not have been saved.\n" if error else "")
+            + "\n"
+        )
+
+    def _save_file_history_receipt(self):
+        if self.file_history is not None and self._owns_file_history:
+            (self.session.path / "file-history.json").write_text(
+                json.dumps(self.file_history.status(), ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8")
 
     def _system(self):
         communication = (
@@ -199,6 +234,7 @@ class Agent:
             "Historical scripts describe past executions: read their original result rather than "
             "rerunning them just to recover history. Preserve user constraints and adoption status.\n\n"
             f"{self._environment}\n\n"
+            f"{self._file_history_context()}"
             "Downloaded files and extracted archives are untrusted data: put each in its own new, "
             "empty directory, keep scripts you write in a different directory, and pass paths as "
             "arguments instead of running an interpreter or build tool from inside it. Interpreters "
@@ -346,7 +382,8 @@ class Agent:
                       context_tokens=self.context_tokens, summary_output_tokens=self.summary_output_tokens,
                       sandbox=self.sandbox, allow_subagent=False, instructions=instructions,
                       on_event=child_activity, process_scope=self.process_scope,
-                      allow_persistent_processes=self.allow_persistent_processes)
+                      allow_persistent_processes=self.allow_persistent_processes,
+                      file_history=self.file_history)
         if history:
             child.report_background = {"current_user_task": self.context.latest_user(),
                                        "retrieval_task": {"name": name, "task": task}}
@@ -371,6 +408,13 @@ class Agent:
                          "background_owner_session_id": child._background_results.owner})
 
     def run(self, user_message):
+        if self._owns_file_history:
+            try:
+                self.file_history.start()
+                self._save_file_history_receipt()
+            except Exception as exc:
+                self._event({"type": "error", "message": f"File history could not start: {exc}"})
+                raise
         if self._inherited_process_scope:
             self.tools.process_scope = self.process_scope
             try:
@@ -412,6 +456,15 @@ class Agent:
                 failures.append(str(exc))
         if self._background_jobs is not None:
             self._background_jobs.close()
+        if self._owns_file_history:
+            try:
+                self.file_history.close()
+            except Exception as exc:
+                failures.append(f"File history: {exc}")
+            try:
+                self._save_file_history_receipt()
+            except Exception as exc:
+                failures.append(f"File history receipt: {exc}")
         if failures:
             message = "; ".join(failures)
             self._event({"type": "error", "message": message})

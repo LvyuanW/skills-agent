@@ -147,7 +147,7 @@ class MarkdownTests(unittest.TestCase):
             log = session.path / "events.jsonl"
             before = log.read_bytes()
             for full in (False, True):
-                command = ["history", "--workspace", directory] + (["--full"] if full else [])
+                command = ["history", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions")] + (["--full"] if full else [])
                 output = Output()
                 with redirect_stdout(output):
                     self.assertEqual(main(command), 0)

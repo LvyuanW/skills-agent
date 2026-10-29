@@ -249,7 +249,7 @@ class DisplayTests(unittest.TestCase):
             with patch("skills_agent.runtime.create_provider", return_value=Model()), \
                     patch("sys.stdin", TTY()), patch("builtins.input", side_effect=["new user message", "/exit"]), \
                     redirect_stdout(output), redirect_stderr(error):
-                status = main(["run", "--workspace", directory, "--model", "test", "--file", "input.txt"])
+                status = main(["run", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions"), "--data-dir", str(workspace / ".test-runtime"), "--model", "test", "--file", "input.txt"])
             self.assertEqual((status, error.getvalue()), (0, ""))
             live = output.getvalue()
             self.assertIn("prior user message", live)
@@ -259,13 +259,13 @@ class DisplayTests(unittest.TestCase):
             self.assertNotIn("ATTACHMENT_BODY", live)
             replay = io.StringIO()
             with redirect_stdout(replay):
-                self.assertEqual(main(["history", "--workspace", directory]), 0)
+                self.assertEqual(main(["history", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions")]), 0)
             self.assertIn("new user message", replay.getvalue())
             self.assertIn("[附件] input.txt", replay.getvalue())
             self.assertNotIn("ATTACHMENT_BODY", replay.getvalue())
             detailed = io.StringIO()
             with redirect_stdout(detailed):
-                self.assertEqual(main(["history", "--full", "--workspace", directory]), 0)
+                self.assertEqual(main(["history", "--full", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions")]), 0)
             self.assertIn("ATTACHMENT_BODY", detailed.getvalue())
 
 
