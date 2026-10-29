@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from skills_agent.background import BackgroundResults, RUNTIME_EVENT
+from skills_agent.background import BackgroundResults, RUNTIME_EVENT, UNCERTAINTY_EVENT
 from skills_agent.session import Session
 
 
@@ -14,13 +14,17 @@ class SessionReceiptTests(unittest.TestCase):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.session = Session(self.root, "main")
 
-    def test_stream_fragments_skip_decoding_without_changing_raw_semantic_events(self):
+    def test_stream_fragments_skip_decoding_without_changing_raw_receipts(self):
         expected = []
-        for index, kind in enumerate(("message", "error", "subagent_summary")):
+        receipts = [
+            {"type": "message", "message": {"role": "tool", "name": "shell", "content": "done"}},
+            {"type": "message", "message": {"role": "user", "runtime_event": RUNTIME_EVENT}},
+            {"type": "subagent_summary", "name": "child"},
+        ]
+        for index, event in enumerate(receipts):
             for stream_kind in ("text_delta", "thinking_delta", "tool_call_delta"):
                 self.session.append_event({"type": stream_kind, "text": f"chunk {index}"})
-            expected.append(self.session.append_event({"type": kind, "message": {"role": "user"},
-                                                       "detail": "preserve every semantic field"}))
+            expected.append(self.session.append_event(event))
         self.session.append_event({"type": "text_delta", "text": "stream-only tail"})
         before = self.session._events_path.read_bytes()
         with patch("skills_agent.session.json.loads", wraps=json.loads) as decode:
@@ -31,13 +35,96 @@ class SessionReceiptTests(unittest.TestCase):
         self.assertEqual(self.session._events_path.read_bytes(), before)
         self.assertEqual(len(self.session.events()), 13)
 
+    def test_large_standard_assistant_raw_payload_is_not_decoded(self):
+        self.session.append({"role": "user", "content": "hello"})
+        self.session.append({"role": "assistant", "content": "done",
+                             "_raw": {"payload": "x" * (4 * 1024 * 1024)}})
+        self.session.append_event({"type": "error", "message": "unrelated failure"})
+        before = self.session._events_path.read_bytes()
+        with patch("skills_agent.session.json.loads", wraps=json.loads) as decode:
+            events = list(self.session.iter_receipt_events())
+        decode.assert_not_called()
+        self.assertEqual(events, [(len(before), None)])
+        self.assertEqual(self.session._events_path.read_bytes(), before)
+
+    def test_legacy_tool_without_call_id_and_all_runtime_receipt_kinds_are_retained(self):
+        expected = [self.session.append({"role": "tool", "name": "shell", "content": json.dumps({
+            "status": "started", "completed": False, "job_id": "legacy-job"})})]
+        for kind in (RUNTIME_EVENT, UNCERTAINTY_EVENT):
+            expected.append(self.session.append({"role": "user", "runtime_event": kind,
+                                                  "detail": "all fields retained"}))
+        expected.append(self.session.append_event({"type": "subagent_summary", "status": "failed"}))
+        self.assertEqual([event for _, event in self.session.iter_receipt_events()], expected)
+        results = BackgroundResults(self.session, lambda: [])
+        results._receipts()
+        self.assertIn("legacy-job", results._known)
+
+    def test_nested_text_and_escaped_markers_conservatively_use_full_decoder(self):
+        expected = [
+            self.session.append({"role": "assistant", "content": "background_job_result"}),
+            self.session.append({"role": "assistant", "content": "done", "_raw": {"nested": "tool"}}),
+        ]
+        stamp = '"timestamp":"2026-10-30T01:02:03.123456+00:00"'
+        legacy = [
+            ('{' + stamp + ',"type":"message","message":{"role":"to\\u006fl","name":"shell"}}\n').encode(),
+            ('{' + stamp + ',"type":"message","message":{"runtime_ev\\u0065nt":"background_job_res\\u0075lt"}}\n').encode(),
+        ]
+        with self.session._events_path.open("ab") as stream:
+            for line in legacy:
+                offset = stream.tell()
+                expected.append({**json.loads(line), "event_id": f"event-{offset}"})
+                stream.write(line)
+        with patch("skills_agent.session.json.loads", wraps=json.loads) as decode:
+            events = list(self.session.iter_receipt_events())
+        self.assertEqual(decode.call_count, len(expected))
+        self.assertEqual([event for _, event in events], expected)
+
+    def test_filtered_parent_and_child_state_matches_full_raw_decode(self):
+        child = Session(self.session.path / "subagents", "child")
+        owner = hashlib.sha256(str(child.path).encode()).hexdigest()
+        for session, prefix in ((self.session, "main"), (child, "child")):
+            session.append({"role": "assistant", "content": "working", "_raw": "x" * 10000})
+            session.append({"role": "tool", "name": "shell", "content": json.dumps({
+                "status": "started", "completed": False, "job_id": prefix + "-pending"})})
+            session.append({"role": "user", "runtime_event": UNCERTAINTY_EVENT,
+                            "background_uncertainty_id": prefix + "-uncertainty",
+                            "background_uncertainty_job": {"id": prefix + "-unknown", "state": "unknown"}})
+            session.append({"role": "user", "runtime_event": RUNTIME_EVENT,
+                            "background_job_id": prefix + "-finished",
+                            "background_result_id": prefix + "-terminal"})
+        self.session.append_event({"type": "subagent_summary", "name": "child", "status": "completed",
+                                   "child_session_id": "child", "child_session_path": str(child.path),
+                                   "background_owner_session_id": owner})
+        self.session.append({"role": "tool", "name": "subagent", "child_session_id": "child",
+                             "content": "child completed"})
+        for session in (self.session, child):
+            session.append_event({"type": "thinking_delta", "text": "tail"})
+        before = {session.path: session._events_path.read_bytes() for session in (self.session, child)}
+        baseline = BackgroundResults(self.session, lambda: [])
+        with patch.object(Session, "iter_receipt_events", Session.iter_events):
+            baseline._receipts()
+        filtered = BackgroundResults(self.session, lambda: [])
+        filtered._receipts()
+        def normalize(value):
+            if isinstance(value, Session): return str(value.path)
+            if isinstance(value, set): return sorted(value)
+            if isinstance(value, dict): return {key: normalize(item) for key, item in value.items()
+                                               if key != "scope_paths"}
+            return value
+        self.assertEqual(normalize(vars(filtered)), normalize(vars(baseline)))
+        self.assertEqual(filtered._delivered, {"main-terminal", "child-terminal"})
+        self.assertIn("main-pending", filtered._known)
+        self.assertIn("child-pending", filtered._known)
+        for session in (self.session, child):
+            self.assertEqual(session._events_path.read_bytes(), before[session.path])
+
     def test_stream_only_cursor_advances_and_later_appends_are_not_skipped(self):
         self.session.append_event({"type": "thinking_delta", "text": "still thinking"})
         first = list(self.session.iter_receipt_events())
         self.assertEqual(first, [(self.session._events_path.stat().st_size, None)])
         cursor = first[-1][0]
         self.assertEqual(list(self.session.iter_receipt_events(cursor)), [])
-        expected = self.session.append_event({"type": "message", "message": {"role": "assistant",
+        expected = self.session.append_event({"type": "message", "message": {"role": "tool",
                                                                                 "content": "done"}})
         self.session.append_event({"type": "tool_call_delta", "index": 0, "arguments": "next"})
         later = list(self.session.iter_receipt_events(cursor))
@@ -51,8 +138,8 @@ class SessionReceiptTests(unittest.TestCase):
             b'{"type":"text_delta",' + stamp + b',"text":"legacy"}\n',
             b'{' + stamp + b', "type": "thinking_delta", "text": "spaced"}\n',
             b'{' + stamp + b',"payload":{"type":"text_delta"},"type":"message"}\n',
-            b'{' + stamp + b',"type":"text_delta_more","message":"not a fragment"}\n',
-            b'{' + stamp + b',"type":"text_delta","text":"first","type":"message"}\n',
+            b'{' + stamp + b',"type":"text_delta_more","message":{"role":"tool"}}\n',
+            b'{' + stamp + b',"type":"text_delta","type":"message","message":{"role":"tool"}}\n',
             b'{' + stamp + b',"type":"text_delta","text":"first","ty\\u0070e":"error"}\n',
         ]
         self.session._events_path.write_bytes(b"".join(lines))
