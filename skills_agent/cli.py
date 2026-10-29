@@ -679,7 +679,7 @@ def interact(agent, files):
                                 context_usage=lambda: agent.context.state.get("last_usage"))
             draft.on_error = lambda message: _print(f"error: {message}", "assistant", view)
             replay = ConsoleRenderer(view, live=False)
-            for event in agent.session.events():
+            for event in agent.session.replay_events():
                 replay(event)
             replay.close()
             renderer = ConsoleRenderer(view)
@@ -784,7 +784,8 @@ def _main(argv=None):
         session = Session(root, args.session)
         if args.command == "history" or not (sys.stdin.isatty() and sys.stdout.isatty()):
             replay = ConsoleRenderer(full=args.command == "history" and args.full, live=False)
-            for event in session.events():
+            events = session.events() if args.command == "history" and args.full else session.replay_events()
+            for event in events:
                 replay(event)
             replay.close()
         if args.command == "history":

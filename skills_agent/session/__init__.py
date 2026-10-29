@@ -51,6 +51,11 @@ class Session:
     def events(self) -> list[dict]:
         return [event for _, event in self.iter_events()]
 
+    def replay_events(self) -> list[dict]:
+        """Read the rebuildable display projection, leaving raw events intact."""
+        from .replay import replay_events
+        return replay_events(self._events_path)
+
     def messages(self) -> list[dict]:
         return [event["message"] for event in self.events() if event.get("type") == "message"]
 
