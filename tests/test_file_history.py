@@ -1,4 +1,5 @@
 import json
+import errno
 import hashlib
 import math
 import os
@@ -102,6 +103,94 @@ class FileHistoryTests(unittest.TestCase):
         self.assertEqual(self.content(history.last_checkpoint, "last.txt"), b"last write")
         self.assertEqual(int(self.git("rev-list", "--count", "HEAD")), 2)
         self.assertFalse(history._thread.is_alive())
+
+    def test_reopening_reuses_verified_hashes_but_detects_changes_with_restored_mtime(self):
+        path = self.workspace / "result.bin"
+        path.write_bytes(b"before")
+        (self.workspace / "unchanged.txt").write_bytes(b"unchanged\r\n")
+        first = self.history().checkpoint()
+        original = file_history._git
+        operations = []
+        def measured(repository, *args, **kwargs):
+            operations.append(args[0])
+            return original(repository, *args, **kwargs)
+        with patch.object(file_history, "_git", side_effect=measured):
+            self.assertEqual(self.history().checkpoint(), first)
+        self.assertNotIn("hash-object", operations)
+        self.assertIn("cat-file", operations)
+        saved = path.stat()
+        path.write_bytes(b"after!")
+        os.utime(path, ns=(saved.st_atime_ns, saved.st_mtime_ns))
+        operations.clear()
+        with patch.object(file_history, "_git", side_effect=measured):
+            updated = self.history().checkpoint()
+        self.assertIn("hash-object", operations)
+        self.assertEqual(self.content(updated, "result.bin"), b"after!")
+        self.assertEqual(self.content(updated, "unchanged.txt"), b"unchanged\r\n")
+
+    def test_bad_hash_cache_falls_back_to_reading_current_files(self):
+        (self.workspace / "result.txt").write_bytes(b"current result")
+        self.history().checkpoint()
+        cache_path = self.repository / "file-cache.json"
+        for damage in ("invalid_json", "checksum", "missing_blob", "not_a_blob"):
+            with self.subTest(damage=damage):
+                cached = json.loads(cache_path.read_text())
+                if damage == "invalid_json":
+                    cache_path.write_text("{")
+                else:
+                    if damage in {"checksum", "missing_blob"}:
+                        cached["payload"]["entries"]["result.txt"][1] = "1" * 40
+                    else:
+                        cached["payload"]["entries"]["result.txt"][1] = self.git("rev-parse", "HEAD").strip().decode()
+                    if damage != "checksum":
+                        cached["sha256"] = file_history._cache_digest(cached["payload"])
+                    cache_path.write_text(json.dumps(cached))
+                recovered = self.history()
+                with patch.object(recovered, "_open_regular", wraps=recovered._open_regular) as read:
+                    commit = recovered.checkpoint()
+                self.assertTrue(read.called)
+                self.assertIsNone(recovered.last_error)
+                self.assertEqual(self.content(commit, "result.txt"), b"current result")
+
+    def test_optional_hash_cache_write_failure_does_not_fail_snapshot(self):
+        (self.workspace / "result.txt").write_bytes(b"saved")
+        original = file_history._atomic_json
+        def write(path, value, **options):
+            if path.name == "file-cache.json":
+                raise PermissionError("cache is not writable")
+            return original(path, value, **options)
+        history = self.history()
+        with patch.object(file_history, "_atomic_json", side_effect=write):
+            commit = history.checkpoint()
+        self.assertIsNone(history.last_error)
+        self.assertEqual(self.content(commit, "result.txt"), b"saved")
+
+    @unittest.skipUnless(os.name == "posix", "POSIX byte filenames")
+    def test_hash_cache_preserves_non_utf8_filenames(self):
+        name = os.fsdecode(b"result-\xff.bin")
+        try:
+            (self.workspace / name).write_bytes(b"exact bytes")
+        except OSError as exc:
+            if exc.errno == errno.EILSEQ:
+                self.skipTest("This filesystem requires valid UTF-8 filenames")
+            raise
+        first = self.history().checkpoint()
+        second = self.history()
+        with patch.object(second, "_open_regular", side_effect=AssertionError("unexpected rehash")):
+            self.assertEqual(second.checkpoint(), first)
+        self.assertIsNone(second.last_error)
+        self.assertEqual(self.content(first, name), b"exact bytes")
+
+    def test_hash_cache_serializes_surrogate_path_keys_without_encoding_errors(self):
+        (self.workspace / "valid.txt").write_bytes(b"content")
+        first = self.history()
+        first.checkpoint()
+        name = "result-\udcff.bin"
+        first._cache[name] = first._cache["valid.txt"]
+        first._save_blob_cache()
+        second = self.history()
+        second._initialize()
+        self.assertEqual(second._cache[name], first._cache[name])
 
     @unittest.skipUnless(os.name == "posix" and Path("/dev/fd").is_dir(), "Inherited file descriptors")
     def test_small_files_are_hashed_in_bounded_batches_with_exact_git_objects(self):

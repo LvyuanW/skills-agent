@@ -10,6 +10,7 @@ import argparse
 from contextlib import ExitStack, contextmanager
 from datetime import datetime, timezone
 import errno
+import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -83,12 +84,12 @@ def _repository_lock(repository):
                 fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
-def _atomic_json(path, value):
+def _atomic_json(path, value, *, ensure_ascii=False):
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + "." + uuid4().hex + ".tmp")
     try:
         with temporary.open("w", encoding="utf-8") as stream:
-            json.dump(value, stream, ensure_ascii=False, indent=2)
+            json.dump(value, stream, ensure_ascii=ensure_ascii, indent=2)
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
@@ -99,6 +100,11 @@ def _atomic_json(path, value):
 
 def _fingerprint(info):
     return (info.st_dev, info.st_ino, info.st_mode, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _cache_digest(payload):
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                                    ensure_ascii=True).encode("ascii")).hexdigest()
 
 
 class WorkspaceHistory:
@@ -120,6 +126,7 @@ class WorkspaceHistory:
         self.pending_error = None
         self.last_checkpoint = None
         self._cache = {}
+        self._cache_loaded = False
         self._stop = threading.Event()
         self._ready = threading.Event()
         self._mutex = threading.RLock()
@@ -155,6 +162,52 @@ class WorkspaceHistory:
         self._owns_repository = True
         if not (self.repository / "HEAD").exists():
             _git(self.repository, "init", "--bare", "--initial-branch=history", self.repository)
+        if not self._cache_loaded:
+            self._cache_loaded = True
+            self._load_blob_cache()
+
+    def _load_blob_cache(self):
+        """Reuse unchanged file hashes across starts; validate the referenced blobs."""
+        try:
+            saved = json.loads((self.repository / "file-cache.json").read_text(encoding="utf-8"))
+            payload = saved["payload"]
+            if (payload["version"] != 1 or payload["workspace"] != str(self.workspace)
+                    or saved["sha256"] != _cache_digest(payload)):
+                return
+            entries = {}
+            for name, value in payload["entries"].items():
+                if (not isinstance(name, str) or not name or PurePosixPath(name).is_absolute()
+                        or ".." in PurePosixPath(name).parts
+                        or not isinstance(value, list) or len(value) != 2):
+                    return
+                fingerprint, oid = value
+                if (not isinstance(fingerprint, list) or len(fingerprint) != 6
+                        or not all(type(part) is int for part in fingerprint)
+                        or not isinstance(oid, str) or len(oid) != 40
+                        or any(char not in "0123456789abcdef" for char in oid)):
+                    return
+                entries[name] = (tuple(fingerprint), oid)
+            if not entries:
+                return
+            identifiers = sorted({value[1] for value in entries.values()})
+            result = _git(self.repository, "cat-file", "--batch-check=%(objectname) %(objecttype)",
+                          input=("\n".join(identifiers) + "\n").encode("ascii"), check=False)
+            if result.returncode:
+                return
+            verified = {line.split()[0].decode("ascii") for line in result.stdout.splitlines()
+                        if len(line.split()) == 2 and line.split()[1] == b"blob"}
+            self._cache.update({name: value for name, value in entries.items() if value[1] in verified})
+        except (OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.SubprocessError):
+            # The cache is optional; a miss takes the normal safe file-read path.
+            return
+
+    def _save_blob_cache(self):
+        payload = {"version": 1, "workspace": str(self.workspace), "entries": self._cache}
+        try:
+            _atomic_json(self.repository / "file-cache.json",
+                         {"payload": payload, "sha256": _cache_digest(payload)}, ensure_ascii=True)
+        except OSError:
+            pass  # The committed snapshot remains valid without this optimization.
 
     def _record_status(self):
         if not self._owns_repository:
@@ -346,6 +399,7 @@ class WorkspaceHistory:
                 else:
                     self.last_checkpoint = parent
                 self.pending_error = None
+                self._save_blob_cache()
                 self._record_status()
                 return self.last_checkpoint
             except TransientScanError as exc:
