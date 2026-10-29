@@ -1,4 +1,6 @@
 import json
+import hashlib
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -10,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from skills_agent import file_history
-from skills_agent.file_history import TransientScanError, WorkspaceHistory
+from skills_agent.file_history import BLOB_BATCH_SIZE, TransientScanError, WorkspaceHistory
 
 
 class FileHistoryTests(unittest.TestCase):
@@ -100,6 +102,145 @@ class FileHistoryTests(unittest.TestCase):
         self.assertEqual(self.content(history.last_checkpoint, "last.txt"), b"last write")
         self.assertEqual(int(self.git("rev-list", "--count", "HEAD")), 2)
         self.assertFalse(history._thread.is_alive())
+
+    @unittest.skipUnless(os.name == "posix" and Path("/dev/fd").is_dir(), "Inherited file descriptors")
+    def test_small_files_are_hashed_in_bounded_batches_with_exact_git_objects(self):
+        expected = {}
+        count = BLOB_BATCH_SIZE * 2 + 3
+        for index in range(count):
+            name = f"file {index}.txt"
+            content = f"line {index}\r\n".encode() + b"\0binary"
+            (self.workspace / name).write_bytes(content)
+            expected[name] = hashlib.sha1(b"blob " + str(len(content)).encode() + b"\0" + content).hexdigest()
+        history = self.history()
+        original = file_history._git
+        batches = []
+        def measured(repository, *args, **kwargs):
+            if args[0] == "hash-object":
+                batches.append((args, kwargs))
+            return original(repository, *args, **kwargs)
+        with patch.object(file_history, "_git", side_effect=measured):
+            commit = history.checkpoint()
+        self.assertEqual(len(batches), math.ceil(count / BLOB_BATCH_SIZE))
+        for args, kwargs in batches:
+            self.assertIn("--no-filters", args)
+            self.assertIn("--stdin-paths", args)
+            self.assertLessEqual(len(kwargs["pass_fds"]), BLOB_BATCH_SIZE)
+            self.assertTrue(all(path.startswith(b"/dev/fd/") for path in kwargs["input"].splitlines()))
+        entries = self.git("ls-tree", "-r", "-z", commit).split(b"\0")
+        actual = {}
+        for entry in filter(None, entries):
+            metadata, name = entry.split(b"\t", 1)
+            actual[name.decode()] = metadata.split()[2].decode()
+        self.assertEqual(actual, expected)
+
+    @unittest.skipUnless(os.name == "posix" and Path("/dev/fd").is_dir(), "Inherited file descriptors")
+    def test_hash_batches_limit_total_bytes_and_isolate_oversized_files(self):
+        for index, size in enumerate((6, 6, 40, 6, 6)):
+            (self.workspace / f"file-{index}").write_bytes(bytes([index]) * size)
+        history = self.history()
+        original = file_history._git
+        batches = []
+        def measured(repository, *args, **kwargs):
+            if args[0] == "hash-object":
+                batches.append([os.fstat(fd).st_size for fd in kwargs["pass_fds"]])
+            return original(repository, *args, **kwargs)
+        with patch.object(file_history, "BLOB_BATCH_BYTES", 16), \
+                patch.object(file_history, "_git", side_effect=measured):
+            commit = history.checkpoint()
+        self.assertEqual(sum(map(len, batches)), 5)
+        self.assertIn([40], batches)
+        self.assertTrue(all(sum(batch) <= 16 or len(batch) == 1 for batch in batches))
+        for index, size in enumerate((6, 6, 40, 6, 6)):
+            self.assertEqual(self.content(commit, f"file-{index}"), bytes([index]) * size)
+
+    @unittest.skipUnless(os.name == "posix" and Path("/dev/fd").is_dir(), "Inherited file descriptors")
+    def test_changed_file_during_batch_hash_rejects_checkpoint_and_retries(self):
+        file = self.workspace / "file.txt"
+        file.write_bytes(b"before")
+        history = self.history()
+        original = file_history._git
+        changed = False
+        def race(repository, *args, **kwargs):
+            nonlocal changed
+            if args[0] == "hash-object" and "--stdin-paths" in args and not changed:
+                changed = True
+                file.write_bytes(b"after")
+            return original(repository, *args, **kwargs)
+        with patch.object(file_history, "_git", side_effect=race):
+            with self.assertRaises(TransientScanError):
+                history.checkpoint()
+        self.assertIsNone(history.last_checkpoint)
+        self.assertFalse(history._cache)
+        self.assertEqual(self.content(history.checkpoint(), "file.txt"), b"after")
+
+    def test_repeated_start_does_not_wait_for_background_checkpoint(self):
+        history = self.history().start()
+        entered = threading.Event()
+        release = threading.Event()
+        returned = threading.Event()
+        errors = []
+        original = history._entries
+        def slow_scan():
+            entered.set()
+            release.wait(5)
+            return original()
+        def call_start():
+            try:
+                history.start()
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                returned.set()
+        with patch.object(history, "_entries", side_effect=slow_scan):
+            (self.workspace / "changed.txt").write_text("saved")
+            try:
+                self.assertTrue(entered.wait(5))
+                caller = threading.Thread(target=call_start)
+                caller.start()
+                self.assertTrue(returned.wait(.5), "start() waited for an unrelated active scan")
+            finally:
+                release.set()
+                if "caller" in locals(): caller.join(5)
+        self.assertFalse(errors)
+
+    def test_concurrent_starts_wait_for_initial_snapshot_and_monitor_readiness(self):
+        history = self.history()
+        entered = threading.Event()
+        release = threading.Event()
+        first_returned = threading.Event()
+        second_returned = threading.Event()
+        errors = []
+        original = history._entries
+        def slow_scan():
+            if not entered.is_set():
+                entered.set()
+                release.wait(5)
+            return original()
+        def call_start(done):
+            try:
+                history.start()
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                done.set()
+        with patch.object(history, "_entries", side_effect=slow_scan):
+            first = threading.Thread(target=call_start, args=(first_returned,))
+            second = threading.Thread(target=call_start, args=(second_returned,))
+            first.start()
+            try:
+                self.assertTrue(entered.wait(5))
+                second.start()
+                self.assertFalse(second_returned.wait(.1), "concurrent start falsely reported readiness")
+            finally:
+                release.set()
+                first.join(5)
+                if second.ident is not None: second.join(5)
+        self.assertFalse(errors)
+        self.assertTrue(first_returned.is_set())
+        self.assertTrue(second_returned.is_set())
+        self.assertTrue(history._ready.is_set())
+        self.assertTrue(history.status()["monitoring"])
 
     def test_user_git_index_head_and_uncommitted_contents_remain_unchanged(self):
         def project_git(*args):
@@ -226,12 +367,12 @@ class FileHistoryTests(unittest.TestCase):
         outside.mkdir()
         (outside / "file.txt").write_text("outside")
         history = self.history()
-        original = history._regular_blob
-        def race(path, info):
+        original = history._open_regular
+        def race(path):
             folder.rename(self.workspace / "moved")
             folder.symlink_to(outside, target_is_directory=True)
-            return original(path, info)
-        with patch.object(history, "_regular_blob", side_effect=race):
+            return original(path)
+        with patch.object(history, "_open_regular", side_effect=race):
             with self.assertRaises(TransientScanError):
                 history.checkpoint()
         self.assertIsNone(history.last_error)
