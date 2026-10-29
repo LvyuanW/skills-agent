@@ -24,3 +24,5 @@ Keep the source and selection options unchanged while following cursors; re-read
 Choose `result_mode: direct` for exact source, structured values and cursors. Inspect returned content and failure status before using it as evidence; finding an executable or module does not establish that it runs correctly.
 
 The main agent retrieves original conversation evidence through a named `subagent` with `history: true` and a concrete question. Ordinary subagents report missing historical input to the parent; dedicated history retrieval subagents follow their assigned instructions. Keep workspace searches outside session directories.
+
+Earlier file contents are available separately when the runtime provides automatic workspace history. Use the [file-editing skill's history instructions](../file-editing/SKILL.md#use-automatic-file-history) to inspect or compare those versions. Conversation retrieval answers what was said or executed; file history supplies the saved file contents at a checkpoint.

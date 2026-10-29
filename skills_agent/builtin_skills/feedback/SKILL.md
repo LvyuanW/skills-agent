@@ -9,6 +9,8 @@ description: >-
 
 Choose the observation needed for the next decision: actual execution for behavior, saved text or values for content, and pixels for appearance. A successful write, file path or screenshot command alone does not establish the contents or visual result.
 
+Automatic workspace checkpoints preserve saved versions; they are not verification results. When you need to establish what changed since a check, compare the relevant file versions using the [file-editing skill's history instructions](../file-editing/SKILL.md#use-automatic-file-history). Apply earlier evidence only to contents and execution conditions for which it still holds.
+
 [scripts/feedback.py](scripts/feedback.py) supplies reference acquisition methods. Reuse them, read/adapt the source, or write task-specific checks when appropriate. Direct invocation requires Python 3.11 or newer and an absolute script path resolved from this SKILL.md; variables do not persist across shell calls.
 
 | Operation | Result |

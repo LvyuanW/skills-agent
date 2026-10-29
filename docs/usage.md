@@ -4,7 +4,7 @@ Python CLI Agent。模型阅读 `SKILL.md` 和参考脚本源码，针对任务�
 
 ## 运行
 
-需要 Python 3.11+，运行依赖为 PyYAML、Rich 和 prompt-toolkit。
+需要 Python 3.11+ 和 Git。Python 运行依赖及锁定版本见 `pyproject.toml` 和 `uv.lock`；文件变动监听使用 watchfiles。
 
 ```sh
 python3 -m venv .venv
@@ -133,9 +133,43 @@ macOS 下在输入行按 **Ctrl-V** 粘贴剪贴板中的图片或已复制的�
 
 `--file` 和会话内的 `/file PATH` 将文件加入下一条消息的附件，可添加多个；有附件时直接输入空行也可发送。每个附件先完整复制到会话目录。PNG、JPEG、GIF、WebP 和 PDF 使用模型原生输入，需要所选模型及兼容服务支持该格式。UTF-8 文本作为完整文本附件输入；请求前计数器发现受保护输入超出上下文预算时明确报错，不机械截断。`usage` 模式不预判新增附件的 token 长度。其他格式保留副本路径，由模型编写脚本或使用适合的现有代码读取。
 
-`--workspace` 指定 shell 工作目录，默认当前目录。附件的相对路径按工作目录解析。`--sessions-dir` 指定会话存储位置，默认 `<workspace>/.agent/sessions`。
+`--workspace` 指定 shell 工作目录，默认当前目录。附件的相对路径按工作目录解析。Agent 的安装目录和任务目录可以分开：
+
+```sh
+uv run --project /path/to/skills-agent skills-agent run --workspace /path/to/task
+```
+
+会话、附件、执行日志和文件历史默认保存在 `~/.skills-agent/workspaces/<工作区标识>/`。工作区标识根据规范绝对路径生成，同名但不同位置的目录互不混用。`workspace.json` 记录对应路径；该目录下的 `sessions/<会话名>/` 保存每个会话，`history.git/` 保存同一工作区共享的文件版本。
+
+`--data-dir PATH` 可更改运行数据根目录，其优先级高于 `SKILLS_AGENT_DATA_DIR` 环境变量；未设置时使用 `~/.skills-agent`。`--sessions-dir PATH` 仅覆盖会话存储位置，文件历史仍使用运行数据根目录。回放时使用相同的 `--workspace` 和数据位置。
+
+旧版 `<workspace>/.agent/sessions` 中的会话不会自动搬移，以保留记录中的绝对路径。新位置没有同名会话而旧位置存在时，程序提示显式选择旧位置：
+
+```sh
+skills-agent run --workspace /path/to/task --sessions-dir /path/to/task/.agent/sessions --session demo
+skills-agent history --workspace /path/to/task --sessions-dir /path/to/task/.agent/sessions --session demo
+```
 
 运行时在 Agent 初始化时自动采集工作目录、是否位于 Git 仓库、运行平台、实际执行 shell 和操作系统版本，并加入系统提示词，供模型选择适合当前环境的命令。主 Agent 与子 Agent、交互 CLI 与 `benchmark` 共用这套环境信息；执行 shell 以运行时实际使用的 shell 为准（POSIX 通常为 `/bin/sh`，不直接采用登录环境的 `$SHELL`），无法确定的字段为 `unknown`。系统提示还包含下载文件和解压资料的隔离处理、读取它们时使用 Python `-I` 的指导；用户要求制作或运行的代码不受这条资料处理规则限制。
+
+## 工作区文件历史
+
+runtime 启动 Python 文件监听，在工作开始前保存初始状态，并在检测到变化后自动创建 Git 检查点。关闭监听前再扫描一次，保存当时的变化。模型无需主动提交，也不增加模型工具。历史仓库位于运行数据目录，不在工作区创建 `.git`，不修改项目已有仓库的分支、提交或暂存区。
+
+历史记录普通文件和符号链接本身，不跟随链接读取工作区外的内容。默认排除 `.git`、`.agent`、`.skills-agent`、`.venv`、`venv`、`node_modules`、`__pycache__`、`.pytest_cache`、`.mypy_cache`、`.ruff_cache` 目录，以及本次运行的数据、会话和日志目录。空目录、套接字等特殊文件不记录。项目 `.gitignore` 中的任务产物仍可进入文件历史。
+
+监听事件会分批处理；短时间内反复覆盖的每个中间版本不一定都被保存。Git 检查点只表明文件内容已记录，不代表计算正确、测试通过或任务已经完成。查看 `status` 的实际检查点及错误状态，判断哪些内容已经保存。
+
+系统提示词提供本次历史仓库的绝对路径和可执行查询命令。可通过现有 shell 使用 file-editing 中的辅助脚本，也可使用运行环境中的 Python 模块：
+
+```sh
+python -m skills_agent.file_history --repository /absolute/history.git status
+python -m skills_agent.file_history --repository /absolute/history.git log --path analysis.py --limit 10
+python -m skills_agent.file_history --repository /absolute/history.git diff BEFORE AFTER --path analysis.py
+python -m skills_agent.file_history --repository /absolute/history.git show BEFORE analysis.py > /path/to/new-comparison-file.py
+```
+
+`BEFORE`、`AFTER` 替换为 `log` 返回的检查点编号；文件路径相对工作区。`show` 原样输出保存的内容，可以取回文本或二进制文件。先写到新的比较文件，核对差异，再决定需要恢复的部分。文件历史独立于对话历史：查看旧文件不需要回放或删除会话。
 
 ## 单次任务与 ALE
 
@@ -146,7 +180,7 @@ macOS 下在输入行按 **Ctrl-V** 粘贴剪贴板中的图片或已复制的�
   --log-dir /path/to/run-logs
 ```
 
-完整任务从 UTF-8 文件读取，执行到模型返回最终回答后退出。配置文件的读取规则、模型、技能和附件参数与 `run` 相同。每次运行使用独立的 `<log-dir>/session`，已存在时直接报错。退出码为成功 `0`、失败 `1`、中断 `130`。正常结束、失败或接到 SIGTERM 时，均清理当前脚本及通过 shell 登记的本任务后台进程，再退出；benchmark 明确拒绝 `background_lifecycle=service`，不允许创建跨任务保留的服务。
+完整任务从 UTF-8 文件读取，执行到模型返回最终回答后退出。配置文件的读取规则、模型、技能、附件及 `--data-dir` 参数与 `run` 相同。每次运行在统一运行数据目录中建立独立会话，退出时将会话和文件历史的独立副本导出到 `<log-dir>/session` 和 `<log-dir>/history.git`，供 ALE 等环境归档；已使用的日志目录不能重用。退出码为成功 `0`、失败 `1`、中断 `130`。正常结束、失败或接到 SIGTERM 时，均清理当前脚本及通过 shell 登记的本任务后台进程，关闭文件监听并保留日志，再退出；benchmark 明确拒绝 `background_lifecycle=service`，不允许创建跨任务保留的服务。容器运行时可将 `--data-dir` 指向持久化挂载目录；销毁容器前也可归档日志目录中的导出副本。
 
 [ALE 接入说明](../adapters/ale/README.md) 包含可复制到 ALE 仓库的 Deployer、Agent 配置及单任务 smoke 配置。适配器在 ALE 的任务 sandbox 内安装并运行本项目，产物由 Agent 按题目指定路径写入，日志写入 ALE 的 `executor.work_dir`。
 
@@ -163,6 +197,8 @@ skills_agent/
   benchmark.py       从任务文件运行一次并退出
   config.py          TOML 配置读取、校验与参数优先级
   runtime.py         两个入口共用的参数与 Agent 构造
+  storage.py         工作区标识与统一运行数据目录
+  file_history.py    Python 文件监听、独立 Git 检查点和历史查询
   agent.py           同步模型/工具循环、独立子会话
   session/           追加式事件日志、输入附件副本
   context/           持久化工作上下文、模型压缩与程序检查、原始历史检索及专用 history_skill
@@ -290,7 +326,7 @@ API 错误的脱敏诊断保存在对应会话 `events.jsonl` 的 `error.diagnos
 
 系统提示引导模型根据原始需求和已接受的修正，按任务需要适度检查实际结果，并依据观察修正问题。最终回答如实说明结果、相关验证和剩余限制，只对已经取得证据的范围作出结论。这些检查由模型结合当前任务选择，不要求独立 reviewer、额外交接或专门报告。
 
-内置 [file-editing skill](../skills_agent/builtin_skills/file-editing/SKILL.md) 提供新建、精确替换、锚点前后插入、删除内容和删除文件的 Python 脚本，通过现有 shell 调用，不新增 tools。替换和插入要求原文或锚点唯一匹配，失败不写入；成功返回改动位置与有限行号片段。它还提供[跨回合渐进编辑示例](../skills_agent/builtin_skills/file-editing/references/incremental-editing.md)：先保存有用产物，读取操作结果，再选择下一段扩展。
+内置 [file-editing skill](../skills_agent/builtin_skills/file-editing/SKILL.md) 提供新建、精确替换、锚点前后插入、删除内容和删除文件的 Python 脚本，通过现有 shell 调用，不新增 tools。替换和插入要求原文或锚点唯一匹配，失败不写入；成功返回改动位置与有限行号片段。它还提供[跨回合渐进编辑示例](../skills_agent/builtin_skills/file-editing/references/incremental-editing.md)：先保存有用产物，读取操作结果，再选择下一段扩展。 [文件历史说明](../skills_agent/builtin_skills/file-editing/references/file-history.md) 和 `scripts/history.py` 提供检查点查询、差异比较及旧内容读取；自动记录由 runtime 完成，不依赖模型是否调用编辑脚本。
 
 内置 [feedback skill](../skills_agent/builtin_skills/feedback/SKILL.md) 提供获取实际工作结果的基础能力，同样通过现有 shell 调用：`file` 读取文件或目录元数据，`text` 按行列读取实际 UTF-8 文本，`run` 执行检查并保存完整、分离的 stdout／stderr 日志，`render` 使用已安装的 Chrome／Chromium 截取本地 HTML 或 SVG。附图统一使用下面的 images 技能和 shell 的 `images` 参数，截图命令负责准备文件。长文本返回续读行列；命令失败和超时保留真实状态。[跨回合反馈示例](../skills_agent/builtin_skills/feedback/references/feedback-loop.md) 展示保存、获取、观察和修改之间的衔接。
 
