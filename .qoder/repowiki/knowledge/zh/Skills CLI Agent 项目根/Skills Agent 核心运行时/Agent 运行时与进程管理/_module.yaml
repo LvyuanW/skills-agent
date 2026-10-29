@@ -1,0 +1,26 @@
+schema_version: 1
+module_path: skills_agent_core/agent_runtime
+title: Agent 运行时与进程管理
+scope:
+    - skills_agent/agent.py
+    - skills_agent/execution.py
+    - skills_agent/background.py
+    - skills_agent/processes.py
+    - skills_agent/terminal.py
+source_files: []
+depends_on: []
+related_to: []
+kk_module_id: 5067db3e-b7a1-4d07-9ec1-3f7e971f2b6b
+kk_cards:
+    architecture_design:
+        id: 05d7e9b3-edb0-4afa-8e3f-bb5acf56ed4d
+        title: Agent 运行时与进程管理
+    coding_conventions:
+        id: c6f5ffc1-226e-41aa-af09-df4d56f2636a
+        title: Agent 运行时与进程管理
+    overview:
+        id: 6285e3cf-09ae-4b32-92be-d84fe2f15d59
+        title: Agent 运行时与进程管理
+    tech_stack:
+        id: da338e52-c764-4e6d-9aa4-5c1567947946
+        title: Agent 运行时与进程管理

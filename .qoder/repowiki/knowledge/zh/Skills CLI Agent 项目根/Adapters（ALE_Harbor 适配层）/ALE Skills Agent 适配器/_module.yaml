@@ -1,0 +1,25 @@
+schema_version: 1
+module_path: adapters/ale
+title: ALE Skills Agent 适配器
+scope:
+    - adapters/ale/
+source_files: []
+depends_on: []
+related_to: []
+kk_module_id: c0dafdfd-ad7b-4e5d-911a-4f11c543e19b
+kk_cards:
+    architecture_design:
+        id: 8895b95b-5f87-47c6-b73b-51363997c973
+        title: ALE Skills Agent 适配器
+    coding_conventions:
+        id: eecb8c4b-17b8-43e7-a3ab-be5b07d313a6
+        title: ALE Skills Agent 适配器
+    overview:
+        id: 2932d55b-3d49-4ac8-81bf-afaada0bdbb3
+        title: ALE Skills Agent 适配器
+    tech_stack:
+        id: 8fd0bbb4-ed68-41c2-b3ee-630711dcd2a0
+        title: ALE Skills Agent 适配器
+    unique_setup_and_commands:
+        id: cc52bef4-a7b6-48ec-8fd1-dc61be2f3c14
+        title: ALE Skills Agent 适配器

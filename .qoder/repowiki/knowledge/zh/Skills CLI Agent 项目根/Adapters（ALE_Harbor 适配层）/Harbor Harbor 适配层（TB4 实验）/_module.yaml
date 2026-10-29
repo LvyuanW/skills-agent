@@ -1,0 +1,26 @@
+schema_version: 1
+module_path: adapters/harbor
+title: Harbor Harbor 适配层（TB4 实验）
+scope:
+    - adapters/harbor/
+source_files: []
+depends_on: []
+related_to: []
+kk_module_id: f1976c1e-a113-4703-bb1a-f6de5151f58f
+kk_ordinal: 1
+kk_cards:
+    architecture_design:
+        id: 62873a43-1ebb-437b-918f-dc756068d8bd
+        title: Harbor Harbor 适配层（TB4 实验）
+    coding_conventions:
+        id: c99ddcd9-8b01-4ec9-a30a-3792c10cc5ba
+        title: Harbor Harbor 适配层（TB4 实验）
+    overview:
+        id: 4a8bf211-acdf-447a-9e82-a87592445b2c
+        title: Harbor Harbor 适配层（TB4 实验）
+    tech_stack:
+        id: 6195782d-4688-47ce-978e-e2f90b41d66d
+        title: Harbor Harbor 适配层（TB4 实验）
+    unique_setup_and_commands:
+        id: 0b63ecc6-8efa-4870-8b6f-ff75241dc41b
+        title: Harbor Harbor 适配层（TB4 实验）

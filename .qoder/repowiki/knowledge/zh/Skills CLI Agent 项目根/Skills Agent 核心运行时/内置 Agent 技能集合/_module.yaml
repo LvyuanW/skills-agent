@@ -1,0 +1,23 @@
+schema_version: 1
+module_path: skills_agent_core/builtin_skills
+title: 内置 Agent 技能集合
+scope:
+    - skills_agent/builtin_skills/
+source_files: []
+depends_on: []
+related_to: []
+kk_module_id: abc60747-ae0c-45c4-ab0a-6e9048a5a77b
+kk_ordinal: 2
+kk_cards:
+    architecture_design:
+        id: b7eb1dfa-d360-46da-b58d-8abf36c2c36d
+        title: 内置 Agent 技能集合
+    coding_conventions:
+        id: a79e414a-ee08-49da-9ba0-f87f9f711349
+        title: 内置 Agent 技能集合
+    overview:
+        id: ca7c1cc1-5fde-4a86-8073-55ab7d7185a9
+        title: 内置 Agent 技能集合
+    tech_stack:
+        id: ad65a7d7-78eb-40f1-bcc9-9767ece69144
+        title: 内置 Agent 技能集合

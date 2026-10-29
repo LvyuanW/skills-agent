@@ -1,0 +1,26 @@
+schema_version: 1
+module_path: docs
+title: 技能提示词与 Terminal-Bench 4 评测资料
+scope:
+    - docs/
+source_files: []
+depends_on: []
+related_to: []
+kk_module_id: 66bdde5a-17eb-4104-b0e4-c2ee9841b830
+kk_ordinal: 3
+kk_cards:
+    architecture_design:
+        id: b431470e-5346-467b-9ab2-39ba6c6af140
+        title: 技能提示词与 Terminal-Bench 4 评测资料
+    coding_conventions:
+        id: 986d4fad-3658-489a-ae71-1033226e8244
+        title: 技能提示词与 Terminal-Bench 4 评测资料
+    overview:
+        id: fad4b02b-69e7-44f3-867a-c8a4a564415b
+        title: 技能提示词与 Terminal-Bench 4 评测资料
+    tech_stack:
+        id: 26575933-e1a9-4da3-b503-bfe13f36f52f
+        title: 技能提示词与 Terminal-Bench 4 评测资料
+    unique_setup_and_commands:
+        id: 10d374c7-53e5-4c6e-8e73-bad68d848676
+        title: 技能提示词与 Terminal-Bench 4 评测资料

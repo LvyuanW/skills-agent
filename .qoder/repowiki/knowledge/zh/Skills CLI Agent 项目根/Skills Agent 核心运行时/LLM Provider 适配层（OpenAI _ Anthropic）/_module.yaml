@@ -1,0 +1,26 @@
+schema_version: 1
+module_path: skills_agent_core/provider_adapters
+title: LLM Provider 适配层（OpenAI / Anthropic）
+scope:
+    - skills_agent/providers/
+source_files: []
+depends_on: []
+related_to: []
+kk_module_id: f3a631e1-c9c9-4b32-95a2-73d81848ebe0
+kk_ordinal: 1
+kk_cards:
+    architecture_design:
+        id: e2186377-b3bd-4a72-98d4-2b53dac83390
+        title: LLM Provider 适配层（OpenAI / Anthropic）
+    coding_conventions:
+        id: 706da8e3-6b6a-4f2f-ac0e-3cf96276347a
+        title: LLM Provider 适配层（OpenAI / Anthropic）
+    overview:
+        id: 4c7fc7e7-c79a-41d5-8842-942242b36074
+        title: LLM Provider 适配层（OpenAI / Anthropic）
+    tech_stack:
+        id: df781189-3ae6-4ed3-b908-7fb13d80f3fb
+        title: LLM Provider 适配层（OpenAI / Anthropic）
+    unique_setup_and_commands:
+        id: 07ee05bd-9224-4a9e-ae9f-8d011bda3b77
+        title: LLM Provider 适配层（OpenAI / Anthropic）

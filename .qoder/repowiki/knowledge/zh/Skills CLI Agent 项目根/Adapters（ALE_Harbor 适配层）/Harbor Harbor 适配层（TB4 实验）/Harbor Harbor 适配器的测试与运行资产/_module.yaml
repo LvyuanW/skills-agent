@@ -1,0 +1,26 @@
+schema_version: 1
+module_path: adapters/harbor/test_assets
+title: Harbor Harbor 适配器的测试与运行资产
+scope:
+    - adapters/harbor/assets/
+source_files: []
+depends_on: []
+related_to: []
+kk_module_id: 66948f85-cbba-4349-8d45-e831fc8cb33d
+kk_ordinal: 2
+kk_cards:
+    architecture_design:
+        id: f627f48a-2be6-45f9-b79a-51330abc574f
+        title: Harbor Harbor 适配器的测试与运行资产
+    coding_conventions:
+        id: 5095b08f-a153-44bf-a6a9-303643a3561c
+        title: Harbor Harbor 适配器的测试与运行资产
+    overview:
+        id: 5243287b-3dc1-44e6-adea-13fba8928249
+        title: Harbor Harbor 适配器的测试与运行资产
+    tech_stack:
+        id: 5b1e7410-cc3e-4072-8bc2-4376af30151d
+        title: Harbor Harbor 适配器的测试与运行资产
+    unique_setup_and_commands:
+        id: 443f9896-373c-4cbd-ae6f-47b97ce22d06
+        title: Harbor Harbor 适配器的测试与运行资产

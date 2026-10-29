@@ -1,0 +1,33 @@
+schema_version: 1
+module_path: skills_agent_core/runtime_support
+title: 运行时支撑与工具子系统
+scope:
+    - skills_agent/runtime.py
+    - skills_agent/environment.py
+    - skills_agent/input.py
+    - skills_agent/markdown.py
+    - skills_agent/clipboard.py
+    - skills_agent/images.py
+    - skills_agent/feedback.py
+    - skills_agent/benchmark.py
+source_files: []
+depends_on: []
+related_to: []
+kk_module_id: 7cfa279f-9267-4422-bdf1-ebc3aa4f38d5
+kk_ordinal: 4
+kk_cards:
+    architecture_design:
+        id: 3d8345e7-d2d7-41e3-93fd-afeadc358833
+        title: 运行时支撑与工具子系统
+    coding_conventions:
+        id: 013d80fe-2a20-44bb-88bc-5b2c7c975d59
+        title: 运行时支撑与工具子系统
+    overview:
+        id: b38e3145-8c81-4316-8a48-15d31f02537e
+        title: 运行时支撑与工具子系统
+    tech_stack:
+        id: e5f2e723-43b9-4f01-b1b2-74be5d3fa332
+        title: 运行时支撑与工具子系统
+    unique_setup_and_commands:
+        id: 29d9002a-18bc-4dec-80dc-f951ac77f3c6
+        title: 运行时支撑与工具子系统

@@ -1,0 +1,25 @@
+schema_version: 1
+module_path: skills_agent_core
+title: Skills Agent 核心运行时
+scope:
+    - skills_agent/
+source_files: []
+depends_on: []
+related_to: []
+kk_module_id: 0dcd34b2-d446-4520-8fb8-d60e74917da7
+kk_cards:
+    architecture_design:
+        id: b78f761b-8dd6-42b0-86e8-0a4ad194b6ac
+        title: Skills Agent 核心运行时
+    coding_conventions:
+        id: 1a93964b-1b41-4f7b-9699-ed3b9a658dbc
+        title: Skills Agent 核心运行时
+    overview:
+        id: 2d8ff99a-534f-4fb3-be0c-9e34a544211f
+        title: Skills Agent 核心运行时
+    tech_stack:
+        id: ff0ee556-85c2-44fd-ad95-cd6b11a9c9f7
+        title: Skills Agent 核心运行时
+    unique_setup_and_commands:
+        id: efbdc35b-2ee5-46cf-b5b1-092c6752c261
+        title: Skills Agent 核心运行时

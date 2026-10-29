@@ -1,0 +1,201 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: zh-CN
+commit: 1dd2267b2be0888c9b5f9f9c0242a44e85fab03e
+branch: main
+exported_at: "2026-10-28T18:03:55Z"
+modules:
+    adapters:
+        dir_name: Adapters（ALE_Harbor 适配层）
+        title: Adapters（ALE/Harbor 适配层）
+        scope:
+            - adapters/
+        source_files: []
+        children:
+            - adapters/ale
+            - adapters/harbor
+        depends_on: []
+        related_to: []
+    adapters/ale:
+        dir_name: ALE Skills Agent 适配器
+        title: ALE Skills Agent 适配器
+        scope:
+            - adapters/ale/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    adapters/harbor:
+        dir_name: Harbor Harbor 适配层（TB4 实验）
+        title: Harbor Harbor 适配层（TB4 实验）
+        scope:
+            - adapters/harbor/
+        source_files: []
+        children:
+            - adapters/harbor/tb4_agents
+            - adapters/harbor/tb4_control
+            - adapters/harbor/test_assets
+        depends_on: []
+        related_to: []
+    adapters/harbor/tb4_agents:
+        dir_name: TB4 Harbor Agent 适配层（Skills _ Claude _ Codex）
+        title: TB4 Harbor Agent 适配层（Skills / Claude / Codex）
+        scope:
+            - adapters/harbor/tb4_agents/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: adapters/harbor/test_assets
+              reason: harbor/test_assets 下 smoke/preflight 脚本 import tb4_agents.codex/gateway，作为运行时测试资产调用对应 Agent 适配器。
+            - path: skills_agent_core/provider_adapters
+              reason: tb4_agents/sitecustomize.py 在 agent.json 沙箱中 import openai、anthropic providers，将 skills-agent 的 Provider 适配层注入到 Harbor 的 Skills/Claude/Codex 原生 Agent 执行环境。
+    adapters/harbor/tb4_control:
+        dir_name: Terminal-Bench v5 预准备与正式评估控制器
+        title: Terminal-Bench v5 预准备与正式评估控制器
+        scope:
+            - adapters/harbor/tb4_control/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: adapters/harbor/tb4_agents
+              reason: tb4_agents 的 vision task 预检脚本 run_vision_task.py 直接 import tb4_control.control.verify_boundary，通过 Harbor DockerEnvironment API 验证环境边界。
+            - path: adapters/harbor/test_assets
+              reason: harbor/test_assets 下 assets/claude/setup-only-preflight.py 与 assets/codex/run-capability-preflight.py 直接 import tb4_control.control.trial_worker，复用 TB4 控制器逻辑。
+    adapters/harbor/test_assets:
+        dir_name: Harbor Harbor 适配器的测试与运行资产
+        title: Harbor Harbor 适配器的测试与运行资产
+        scope:
+            - adapters/harbor/assets/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    docs:
+        dir_name: 技能提示词与 Terminal-Bench 4 评测资料
+        title: 技能提示词与 Terminal-Bench 4 评测资料
+        scope:
+            - docs/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    root:
+        dir_name: Skills CLI Agent 项目根
+        title: Skills CLI Agent 项目根
+        scope:
+            - README.md
+            - pyproject.toml
+            - skills-agent.toml
+            - uv.lock
+            - draft.json
+            - .gitignore
+        source_files: []
+        children:
+            - adapters
+            - docs
+            - skills_agent_core
+            - tests
+        depends_on: []
+        related_to: []
+    skills_agent_core:
+        dir_name: Skills Agent 核心运行时
+        title: Skills Agent 核心运行时
+        scope:
+            - skills_agent/
+        source_files: []
+        children:
+            - skills_agent_core/agent_runtime
+            - skills_agent_core/builtin_skills
+            - skills_agent_core/cli_and_config
+            - skills_agent_core/provider_adapters
+            - skills_agent_core/runtime_support
+            - skills_agent_core/thin_packages
+        depends_on: []
+        related_to: []
+    skills_agent_core/agent_runtime:
+        dir_name: Agent 运行时与进程管理
+        title: Agent 运行时与进程管理
+        scope:
+            - skills_agent/agent.py
+            - skills_agent/execution.py
+            - skills_agent/background.py
+            - skills_agent/processes.py
+            - skills_agent/terminal.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    skills_agent_core/builtin_skills:
+        dir_name: 内置 Agent 技能集合
+        title: 内置 Agent 技能集合
+        scope:
+            - skills_agent/builtin_skills/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    skills_agent_core/cli_and_config:
+        dir_name: CLI 入口、配置加载与显示队列
+        title: CLI 入口、配置加载与显示队列
+        scope:
+            - skills_agent/cli.py
+            - skills_agent/config.py
+            - skills_agent/display.py
+            - skills_agent/__main__.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    skills_agent_core/provider_adapters:
+        dir_name: LLM Provider 适配层（OpenAI _ Anthropic）
+        title: LLM Provider 适配层（OpenAI / Anthropic）
+        scope:
+            - skills_agent/providers/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    skills_agent_core/runtime_support:
+        dir_name: 运行时支撑与工具子系统
+        title: 运行时支撑与工具子系统
+        scope:
+            - skills_agent/runtime.py
+            - skills_agent/environment.py
+            - skills_agent/input.py
+            - skills_agent/markdown.py
+            - skills_agent/clipboard.py
+            - skills_agent/images.py
+            - skills_agent/feedback.py
+            - skills_agent/benchmark.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    skills_agent_core/thin_packages:
+        dir_name: 工作上下文与历史检索
+        title: 工作上下文与历史检索
+        scope:
+            - skills_agent/context/
+            - skills_agent/sandbox/
+            - skills_agent/session/
+            - skills_agent/skills/
+            - skills_agent/tools/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    tests:
+        dir_name: 测试套件
+        title: 测试套件
+        scope:
+            - tests/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: skills_agent_core/cli_and_config
+              reason: tests/test_display_queue.py、test_markdown.py、test_compression_progress.py 等直接 import skills_agent.display.DisplayQueue 与 cli.main/parser，覆盖 CLI 入口和渲染队列。
+            - path: skills_agent_core/provider_adapters
+              reason: tests/test_feedback_providers.py import AnthropicProvider/OpenAIProvider 并基于 base.tool_feedback_messages 验证消息编组与错误分类。

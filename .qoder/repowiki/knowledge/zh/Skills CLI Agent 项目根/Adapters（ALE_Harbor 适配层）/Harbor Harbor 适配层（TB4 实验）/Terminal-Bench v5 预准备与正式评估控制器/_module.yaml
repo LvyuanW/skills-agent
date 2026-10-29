@@ -1,0 +1,30 @@
+schema_version: 1
+module_path: adapters/harbor/tb4_control
+title: Terminal-Bench v5 预准备与正式评估控制器
+scope:
+    - adapters/harbor/tb4_control/
+source_files: []
+depends_on: []
+related_to:
+    - path: adapters/harbor/tb4_agents
+      reason: tb4_agents 的 vision task 预检脚本 run_vision_task.py 直接 import tb4_control.control.verify_boundary，通过 Harbor DockerEnvironment API 验证环境边界。
+    - path: adapters/harbor/test_assets
+      reason: harbor/test_assets 下 assets/claude/setup-only-preflight.py 与 assets/codex/run-capability-preflight.py 直接 import tb4_control.control.trial_worker，复用 TB4 控制器逻辑。
+kk_module_id: 0a9c5578-7531-424d-a312-aab456db7840
+kk_ordinal: 1
+kk_cards:
+    architecture_design:
+        id: 9828cf31-049c-42f7-ad08-adf228ebbeba
+        title: Terminal-Bench v5 预准备与正式评估控制器
+    coding_conventions:
+        id: 7584960d-06a6-4f58-9305-59162388424d
+        title: Terminal-Bench v5 预准备与正式评估控制器
+    overview:
+        id: d61a1b30-9e69-437c-9fa0-db45c0982891
+        title: Terminal-Bench v5 预准备与正式评估控制器
+    tech_stack:
+        id: e13eaf90-178d-46ed-b912-1a77234e651a
+        title: Terminal-Bench v5 预准备与正式评估控制器
+    unique_setup_and_commands:
+        id: 3ef647f9-7403-4c72-a0e4-92fb1bb145b8
+        title: Terminal-Bench v5 预准备与正式评估控制器

@@ -1,0 +1,27 @@
+schema_version: 1
+module_path: skills_agent_core/thin_packages
+title: 工作上下文与历史检索
+scope:
+    - skills_agent/context/
+    - skills_agent/sandbox/
+    - skills_agent/session/
+    - skills_agent/skills/
+    - skills_agent/tools/
+source_files: []
+depends_on: []
+related_to: []
+kk_module_id: 862cc309-fdd7-40e8-9c6f-b6904fbcbdf6
+kk_ordinal: 5
+kk_cards:
+    architecture_design:
+        id: f99f7fc1-cbea-422f-a5e6-c17e6deef1e6
+        title: 工作上下文与历史检索
+    coding_conventions:
+        id: 85d6475a-c345-4045-8ec5-5e263e436c4b
+        title: 工作上下文与历史检索
+    overview:
+        id: 4e7fb8f7-6d9c-409b-917e-893bce1f1c56
+        title: 工作上下文与历史检索
+    tech_stack:
+        id: c7271fbb-28fb-411d-adb6-9eb5b1f5d9e2
+        title: 工作上下文与历史检索

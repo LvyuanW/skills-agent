@@ -1,0 +1,51 @@
+schema_version: 1
+module_path: root
+title: Skills CLI Agent 项目根
+scope:
+    - README.md
+    - pyproject.toml
+    - skills-agent.toml
+    - uv.lock
+    - draft.json
+    - .gitignore
+source_files: []
+depends_on: []
+related_to: []
+kk_module_id: 2856028d-153d-4e81-b29b-53accb057bb9
+kk_cards:
+    architecture_design:
+        id: 8fbf003c-0f56-425d-864c-69a2b49e5909
+        title: Skills CLI Agent 项目根
+    coding_conventions:
+        id: 95ffa9e7-87de-4d7e-9cda-0d7a6b8ffc09
+        title: Skills CLI Agent 项目根
+    overview:
+        id: c752fb9d-c37e-4bcc-bbf6-1c682bff04f6
+        title: Skills CLI Agent 项目根
+    tech_stack:
+        id: 5751e6f1-2c73-4e3e-9472-2171992c4556
+        title: Skills CLI Agent 项目根
+    unique_setup_and_commands:
+        id: 873eb6b8-1717-4fa4-9010-fb1336c52971
+        title: Skills CLI Agent 项目根
+    build_system:
+        id: 7d75d57e-8eae-40df-80be-0b010ce050e2
+        title: 构建与打包体系：setuptools + uv 锁定、Docker 化评测环境
+    configuration_system:
+        id: d707054a-6083-4687-aa20-cb39fe2807ce
+        title: Skills Agent 配置系统：TOML + 环境变量 + CLI 三层覆盖
+    dependency_management:
+        id: 61a26878-0dbb-4a6e-8d56-b9bcfe932768
+        title: Python 依赖管理：uv + pyproject.toml + requirements.lock 双轨锁定
+    error_handling:
+        id: ee33a344-4a1e-401d-839e-a8b70da2e66f
+        title: Skills Agent 错误处理体系：ProviderError 分类、重试与诊断
+    logging_system:
+        id: 25efc329-eb7d-4bce-8618-2e3dc3c2f875
+        title: 无专用日志框架，使用 stdout/文件输出与结构化 run-dir
+kk_repo_cards:
+    - build_system
+    - configuration_system
+    - dependency_management
+    - error_handling
+    - logging_system

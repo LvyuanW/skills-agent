@@ -1,0 +1,23 @@
+schema_version: 1
+module_path: adapters
+title: Adapters（ALE/Harbor 适配层）
+scope:
+    - adapters/
+source_files: []
+depends_on: []
+related_to: []
+kk_module_id: 5b21c77f-2666-4f59-85b3-7c5152ca249f
+kk_ordinal: 1
+kk_cards:
+    architecture_design:
+        id: 6d61d706-4ca5-4f64-b12d-b1024f328d65
+        title: Adapters（ALE/Harbor 适配层）
+    coding_conventions:
+        id: d4fbbed1-1985-41ee-bdcb-d74d716bb5ce
+        title: Adapters（ALE/Harbor 适配层）
+    overview:
+        id: 7af813c6-9023-4df5-bcda-2cbba88c691a
+        title: Adapters（ALE/Harbor 适配层）
+    tech_stack:
+        id: b4bbbca5-bd46-4944-b307-28a2c11d3350
+        title: Adapters（ALE/Harbor 适配层）

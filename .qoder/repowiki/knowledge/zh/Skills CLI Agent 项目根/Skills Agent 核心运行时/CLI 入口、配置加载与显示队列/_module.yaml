@@ -1,0 +1,26 @@
+schema_version: 1
+module_path: skills_agent_core/cli_and_config
+title: CLI 入口、配置加载与显示队列
+scope:
+    - skills_agent/cli.py
+    - skills_agent/config.py
+    - skills_agent/display.py
+    - skills_agent/__main__.py
+source_files: []
+depends_on: []
+related_to: []
+kk_module_id: 6da57ddb-7a10-4e0f-be04-429ca55946ef
+kk_ordinal: 3
+kk_cards:
+    architecture_design:
+        id: 5e948613-472c-434f-b354-0aea9307b2cd
+        title: CLI 入口、配置加载与显示队列
+    coding_conventions:
+        id: c480f570-e063-49b5-a5d6-61e2bfe46448
+        title: CLI 入口、配置加载与显示队列
+    overview:
+        id: 6b1049d6-67de-4ecc-b374-c04bcd4e46cc
+        title: CLI 入口、配置加载与显示队列
+    tech_stack:
+        id: f0fa409e-167e-4f45-bc08-3207d1ae15a4
+        title: CLI 入口、配置加载与显示队列

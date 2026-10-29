@@ -1,0 +1,27 @@
+schema_version: 1
+module_path: tests
+title: 测试套件
+scope:
+    - tests/
+source_files: []
+depends_on: []
+related_to:
+    - path: skills_agent_core/cli_and_config
+      reason: tests/test_display_queue.py、test_markdown.py、test_compression_progress.py 等直接 import skills_agent.display.DisplayQueue 与 cli.main/parser，覆盖 CLI 入口和渲染队列。
+    - path: skills_agent_core/provider_adapters
+      reason: tests/test_feedback_providers.py import AnthropicProvider/OpenAIProvider 并基于 base.tool_feedback_messages 验证消息编组与错误分类。
+kk_module_id: 6601eb3c-80a3-43cc-8419-f3a2616f08be
+kk_ordinal: 2
+kk_cards:
+    architecture_design:
+        id: 3b30000a-42ed-4b65-a972-19cc7f67a846
+        title: 测试套件
+    coding_conventions:
+        id: 374b55f4-774d-4f09-8af9-4cb28600f947
+        title: 测试套件
+    overview:
+        id: dda5df60-930d-46e7-969f-5246c89c8dd2
+        title: 测试套件
+    tech_stack:
+        id: 46756a64-7d0b-4835-97e5-ea80f2b2f184
+        title: 测试套件
