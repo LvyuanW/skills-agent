@@ -113,6 +113,60 @@ class WorkspaceStorageTests(unittest.TestCase):
             self.assertEqual(benchmark_main(argv), 1)
         factory.assert_not_called()
 
+    def test_export_without_file_edits_keeps_session_without_creating_history(self):
+        storage = WorkspaceStorage(self.workspace).ensure()
+        session = Session(storage.sessions, "no-edits")
+        session.append({"role": "user", "content": "hello"})
+        for empty_directory in (False, True):
+            with self.subTest(empty_directory=empty_directory):
+                if empty_directory:
+                    storage.history.mkdir()
+                logs = self.root / f"no-history-{empty_directory}"
+                logs.mkdir()
+                with patch("skills_agent.benchmark.subprocess.run") as git:
+                    export_runtime_logs(logs, session, storage)
+                git.assert_not_called()
+                self.assertFalse((logs / "history.git").exists())
+                self.assertEqual((logs / "session/events.jsonl").read_bytes(),
+                                 (session.path / "events.jsonl").read_bytes())
+
+    def test_export_preserves_failed_operation_before_git_initialization(self):
+        storage = WorkspaceStorage(self.workspace).ensure()
+        session = Session(storage.sessions, "failed-edit")
+        session.append({"role": "user", "content": "edit"})
+        metadata = {"workspace": str(self.workspace), "format": 1}
+        operations = storage.history / "operations"
+        operations.mkdir(parents=True)
+        (storage.history / "workspace.json").write_text(json.dumps(metadata))
+        record = {"operation_id": "edit-before-init", "operation": "replace", "path": "result.txt",
+                  "status": "failed", "applied": False, "before_revision": None,
+                  "after_revision": None, "error": "Git initialization failed"}
+        source = operations / "edit-before-init.json"
+        source.write_text(json.dumps(record))
+        logs = self.root / "failed-edit-export"
+        logs.mkdir()
+        with patch("skills_agent.benchmark.subprocess.run") as git:
+            export_runtime_logs(logs, session, storage)
+        git.assert_not_called()
+        self.assertFalse((logs / "history.git/HEAD").exists())
+        self.assertEqual((logs / "history.git/operations/edit-before-init.json").read_bytes(), source.read_bytes())
+        self.assertEqual(json.loads((logs / "history.git/workspace.json").read_text()), metadata)
+
+    @unittest.skipUnless(shutil.which("git"), "Git required")
+    def test_export_empty_bare_history_preserves_operation_records(self):
+        storage = WorkspaceStorage(self.workspace).ensure()
+        session = Session(storage.sessions, "empty-history")
+        subprocess.run(["git", "init", "--bare", "--initial-branch=history", str(storage.history)],
+                       check=True, capture_output=True)
+        (storage.history / "operations").mkdir()
+        operation = storage.history / "operations/prepared.json"
+        operation.write_text(json.dumps({"operation_id": "prepared", "status": "failed", "applied": False}))
+        logs = self.root / "empty-history-export"
+        logs.mkdir()
+        export_runtime_logs(logs, session, storage)
+        self.assertTrue((logs / "history.git/HEAD").is_file())
+        self.assertEqual((logs / "history.git/operations/prepared.json").read_bytes(), operation.read_bytes())
+
     @unittest.skipUnless(shutil.which("git"), "Git required")
     def test_export_has_independent_git_objects_and_survives_runtime_data_removal(self):
         storage = WorkspaceStorage(self.workspace).ensure()
@@ -129,6 +183,10 @@ class WorkspaceStorageTests(unittest.TestCase):
         subprocess.run([*command, "add", "result.txt"], check=True, capture_output=True)
         subprocess.run([*command, "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
                         "commit", "-m", "checkpoint"], check=True, capture_output=True)
+        (storage.history / "operations").mkdir()
+        operation = {"operation_id": "completed-edit", "operation": "create", "path": "result.txt",
+                     "status": "completed", "applied": True}
+        (storage.history / "operations/completed-edit.json").write_text(json.dumps(operation))
         logs = self.root / "logs"
         logs.mkdir()
         export_runtime_logs(logs, session, storage)
@@ -137,6 +195,7 @@ class WorkspaceStorageTests(unittest.TestCase):
                                           "show", "HEAD:result.txt"], text=True)
         self.assertEqual(result, "kept result")
         self.assertTrue((logs / "session/events.jsonl").is_file())
+        self.assertEqual(json.loads((logs / "history.git/operations/completed-edit.json").read_text()), operation)
         archived = json.loads((logs / "history.git/runtime/observer.json").read_text())
         self.assertFalse(archived["monitoring"])
         self.assertTrue(archived["archived"])

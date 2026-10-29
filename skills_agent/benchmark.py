@@ -83,17 +83,31 @@ def export_runtime_logs(root, session, storage):
     finally:
         if temporary.exists():
             shutil.rmtree(temporary)
-    if storage.history.is_dir():
+    metadata = storage.history / "workspace.json"
+    operations = sorted((storage.history / "operations").glob("*.json"))
+    observers = sorted((storage.history / "runtime").glob("*.json"))
+    initialized = (storage.history / "HEAD").is_file()
+    if initialized or metadata.is_file() or operations or observers:
         exported_history = root / "history.git"
-        subprocess.run(["git", "clone", "--mirror", "--no-hardlinks", "--quiet",
-                        str(storage.history), str(exported_history)],
-                       check=True, capture_output=True, text=True)
-        metadata = storage.history / "workspace.json"
+        if initialized:
+            # An empty bare repository is valid too: a failed edit can have
+            # operation evidence before its first checkpoint was committed.
+            subprocess.run(["git", "clone", "--mirror", "--no-hardlinks", "--quiet",
+                            str(storage.history), str(exported_history)],
+                           check=True, capture_output=True, text=True)
+        else:
+            # Initialization can fail after the ownership marker and prepared
+            # operation were saved. Archive those records without invoking Git.
+            exported_history.mkdir()
         if metadata.is_file():
             shutil.copyfile(metadata, exported_history / "workspace.json")
+        for source in operations:
+            target = exported_history / "operations" / source.name
+            target.parent.mkdir(exist_ok=True)
+            shutil.copyfile(source, target)
         # A copied checkpoint archive has no live observers, even if another
         # session is still monitoring the original shared workspace repository.
-        for source in (storage.history / "runtime").glob("*.json"):
+        for source in observers:
             record = json.loads(source.read_text(encoding="utf-8"))
             record.update(monitoring=False, archived=True, repository=str(exported_history))
             target = exported_history / "runtime" / source.name
