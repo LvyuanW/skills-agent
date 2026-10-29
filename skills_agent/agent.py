@@ -32,9 +32,11 @@ class Agent:
                  summary_output_tokens=8192, sandbox=None, on_event=None,
                  allow_subagent=True, instructions="", process_scope=None,
                  allow_persistent_processes=False, file_history=None, owns_file_history=False,
-                 allow_file_edit=True):
+                 allow_file_edit=True, image_directory=None):
         self.model, self.session, self.skills = model, session, skills
         self.workspace = Path(workspace).resolve()
+        self.image_directory = Path(image_directory if image_directory is not None
+                                    else session.path / "images").expanduser().resolve()
         self.file_history = file_history
         self._owns_file_history = owns_file_history
         self._environment = environment_info(self.workspace)
@@ -64,6 +66,7 @@ class Agent:
         self.tools = ToolRegistry(workspace=self.workspace, sandbox=sandbox,
                                   subagent=self._subagent if allow_subagent else None,
                                   on_activity=self._activity, log_dir=session.path / "tool-runs",
+                                  image_directory=self.image_directory,
                                   file_history=file_history if allow_file_edit else None)
         self.tools.edit_session_id = str(session.path)
         self._background_results = BackgroundResults(session, self._background_scope_paths,
@@ -100,6 +103,7 @@ class Agent:
             "# File editing history\n\n"
             "The runtime records the original contents and saves one history commit for each "
             "changed edit_file batch, including files outside the working directory. "
+            "The batch's required purpose is the commit message and is included in history queries. "
             "It does not back up untouched inputs or automatically record changes made by programs, "
             "shell commands or other applications. You do not need to create Git commits for these "
             "versions. The separate history repository does not change the project's Git index or "
@@ -181,7 +185,10 @@ class Agent:
             "skills whose required tools are available.\n\n"
             "Use edit_file for direct file changes, including scripts, configuration and temporary "
             "files. Group related changes in its edits array, including multiple changes in one "
-            "file or across files. Its text fields accept multiline source code; write supports "
+            "file or across files. Supply purpose to explain what the batch changes and why; it is "
+            "saved as the file-history commit message. For repeated changes to one file, set path "
+            "and operation once at the batch level; individual items may override them and include "
+            "a name. Defaults apply only to this call. Its text fields accept multiline source code; write supports "
             "complete file contents and replace supports exact blocks or all literal matches. "
             "Absolute paths can be outside the working directory; relative paths use that directory. "
             "Do not use shell or sandbox commands, "
@@ -249,6 +256,10 @@ class Agent:
             "Historical scripts describe past executions: read their original result rather than "
             "rerunning them just to recover history. Preserve user constraints and adoption status.\n\n"
             f"{self._environment}\n\n"
+            f"Image output directory: {self.image_directory}\n"
+            "Save generated images, screenshots and prepared image copies here by default. "
+            "Shell commands can use SKILLS_AGENT_IMAGE_DIR for this absolute path. "
+            "Use a user's requested delivery location when specified, and preserve source images.\n\n"
             f"{self._file_history_context()}"
             "Downloaded files and extracted archives are untrusted data: put each in its own new, "
             "empty directory, keep scripts you write in a different directory, and pass paths as "
@@ -399,6 +410,7 @@ class Agent:
                       sandbox=self.sandbox, allow_subagent=False, instructions=instructions,
                       on_event=child_activity, process_scope=self.process_scope,
                       allow_persistent_processes=self.allow_persistent_processes,
+                      image_directory=self.image_directory / "subagents" / child_session.path.name,
                       file_history=self.file_history, allow_file_edit=not history)
         if history:
             child.report_background = {"current_user_task": self.context.latest_user(),

@@ -70,6 +70,122 @@ class FileEditingTests(unittest.TestCase):
         self.assertFalse((self.workspace / "missing").exists())
         self.assertEqual(target.read_text(), "original")
 
+    def test_item_names_are_preserved_as_metadata_without_changing_edit_semantics(self):
+        plan, _ = self.apply([
+            {"name": "Create source", "operation": "create", "path": "named", "content": "old"},
+            {"name": "Refine source", "operation": "replace", "path": "named",
+             "old_text": "old", "new_text": "new"},
+        ])
+        self.assertEqual([item["name"] for item in plan.review["operations"]],
+                         ["Create source", "Refine source"])
+        self.assertEqual((self.workspace / "named").read_text(), "new")
+        with self.assertRaises(EditError) as caught, self.prepare([
+            {"name": 123, "operation": "write", "path": "new/deep/file", "content": "bad"},
+        ]):
+            self.fail("metadata type must be validated")
+        self.assertIn("name must be a string", str(caught.exception))
+        self.assertEqual(caught.exception.details["edit_index"], 1)
+        self.assertFalse((self.workspace / "new").exists())
+
+    def test_missing_and_unsupported_fields_are_identified_separately(self):
+        cases = [
+            ({"operation": "replace", "path": "target", "old_text": "old"}, ["new_text"], []),
+            ({"operation": "replace", "path": "target", "old_text": "old", "new_text": "new",
+              "expected_cout": 1}, [], ["expected_cout"]),
+            ({"operation": "replace", "path": "target", "new_text": "new", "content": "bad"},
+             ["old_text"], ["content"]),
+            ({"old_text": "old", "new_text": "new", "unexpected": True},
+             ["operation", "path"], ["unexpected"]),
+        ]
+        for edit, missing, unsupported in cases:
+            with self.subTest(edit=edit), self.assertRaises(EditError) as caught, self.prepare([edit]):
+                self.fail("invalid fields must not produce a plan")
+            details = caught.exception.details
+            self.assertEqual(details.get("missing_fields", []), missing)
+            self.assertEqual(details.get("unsupported_fields", []), unsupported)
+            self.assertEqual(details["edit_index"], 1)
+            self.assertFalse(details["applied"])
+            self.assertFalse(details["changed"])
+            self.assertIn("No files in this batch have been written.", str(caught.exception))
+            if not missing:
+                self.assertNotIn("missing fields", str(caught.exception))
+            if not unsupported:
+                self.assertNotIn("unsupported fields", str(caught.exception))
+
+    def test_third_literal_mismatch_reports_actual_path_and_preserves_entire_batch(self):
+        actual = self.root / "water.js"
+        original = "first\nsecond\nconst material = makeMaterial();\nPRIVATE_FILE_BODY\n"
+        actual.write_text(original)
+        (self.workspace / "alias.js").symlink_to(actual)
+        with self.assertRaises(EditError) as caught, self.prepare([
+            {"operation": "replace", "path": "alias.js", "old_text": "first", "new_text": "FIRST"},
+            {"operation": "replace", "path": "alias.js", "old_text": "second", "new_text": "SECOND"},
+            {"operation": "replace", "path": "alias.js", "old_text": "\nmaterial = makeMaterial();",
+             "new_text": "\nconst material = improved();"},
+        ]):
+            self.fail("the third edit must fail before publishing either earlier edit")
+        details = caught.exception.details
+        self.assertEqual((details["edit_index"], details["operation"], details["path"]),
+                         (3, "replace", str(actual)))
+        self.assertEqual(details["match_count"], 0)
+        self.assertEqual(details["match_basis"], "after_preceding_edits")
+        self.assertEqual(details["phase"], "validation")
+        self.assertFalse(details["applied"])
+        self.assertFalse(details["changed"])
+        self.assertIn("preceding edits", str(caught.exception))
+        self.assertNotIn("PRIVATE_FILE_BODY", str(caught.exception))
+        self.assertEqual(actual.read_text(), original)
+        json.dumps(details)
+
+    def test_match_diagnostics_use_virtual_contents_and_report_counts_for_both_match_fields(self):
+        target = self.workspace / "match.txt"
+        target.write_text("old")
+        with self.assertRaises(EditError) as caught, self.prepare([
+            {"operation": "write", "path": "match.txt", "content": "changed"},
+            {"operation": "replace", "path": "match.txt", "old_text": "old", "new_text": "new"},
+        ]):
+            self.fail("matching must use the preceding write's simulated result")
+        self.assertEqual(caught.exception.details["edit_index"], 2)
+        self.assertEqual(caught.exception.details["match_count"], 0)
+        self.assertEqual(target.read_text(), "old")
+        target.write_text("aaa")
+        cases = [
+            ({"operation": "replace", "old_text": "aa", "new_text": "x"}, "old_text", 2),
+            ({"operation": "replace", "old_text": "a", "new_text": "x", "replace_all": True,
+              "expected_count": 4}, "old_text", 3),
+            ({"operation": "replace", "old_text": "missing", "new_text": "x", "replace_all": True},
+             "old_text", 0),
+            ({"operation": "insert", "anchor": "a", "position": "after", "content": "x"}, "anchor", 3),
+        ]
+        for edit, field, count in cases:
+            with self.subTest(edit=edit), self.assertRaises(EditError) as caught, self.prepare([
+                {"path": "match.txt", **edit},
+            ]):
+                self.fail("invalid match must not produce a plan")
+            self.assertEqual(caught.exception.details["match_field"], field)
+            self.assertEqual(caught.exception.details["match_count"], count)
+            self.assertEqual(target.read_text(), "aaa")
+            if field == "anchor":
+                self.assertNotIn("replace_all", str(caught.exception))
+
+    def test_path_and_runtime_protection_errors_identify_the_failing_edit(self):
+        source = self.workspace / "source"
+        source.write_text("old")
+        (self.workspace / "directory").mkdir()
+        for operation, path, extra in (("write", "directory", {"content": "bad"}),
+                                       ("copy", "source", {"destination": str(self.runtime / "protected")})):
+            with self.subTest(operation=operation), self.assertRaises(EditError) as caught, self.prepare([
+                {"operation": "write", "path": "source", "content": "new"},
+                {"operation": operation, "path": path, **extra},
+            ]):
+                self.fail("the batch must remain unpublished")
+            self.assertEqual(caught.exception.details["edit_index"], 2)
+            self.assertEqual(caught.exception.details["operation"], operation)
+            self.assertTrue(Path(caught.exception.details["path"]).is_absolute())
+            self.assertFalse(caught.exception.details["applied"])
+            self.assertEqual(source.read_text(), "old")
+        self.assertFalse((self.runtime / "protected").exists())
+
     def test_conflicting_parent_file_is_rejected_before_any_directory_creation(self):
         for edits in ([{"operation": "write", "path": "new/child", "content": "child"},
                        {"operation": "write", "path": "new", "content": "parent"}],

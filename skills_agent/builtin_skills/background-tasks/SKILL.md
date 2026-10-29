@@ -47,7 +47,7 @@ For a service:
 
 The launch receipt confirms startup only. It contains a stable `job_id`, the human-facing `display_name`, `process_record_path`, `stdout_path`, `stderr_path`, and the internal `state_dir` and safe `name` needed for later management. Preserve these returned values; do not derive the internal name from the display name or invent a PID. The runtime records ownership, saves complete logs, and displays the job's status and elapsed time in the UI.
 
-For image outputs, read the [images skill](../images/SKILL.md) and declare future files in the same shell call:
+For image outputs, read the [images skill](../images/SKILL.md) and declare future files in the same shell call. Configure the script to save them in the system context's **Image output directory**, available as `SKILLS_AGENT_IMAGE_DIR` in its environment, unless the user requested another delivery location. Replace `/absolute/image-output` below with that actual path; `images.path` does not expand environment variables:
 
 ```json
 {
@@ -56,7 +56,7 @@ For image outputs, read the [images skill](../images/SKILL.md) and declare futur
   "run_in_background": true,
   "background_lifecycle": "task",
   "timeout_seconds": 7200,
-  "images": [{"path": "/ABS/TASK/plot.png", "label": "Final analysis plot"}]
+  "images": [{"path": "/absolute/image-output/plot.png", "label": "Final analysis plot"}]
 }
 ```
 

@@ -97,6 +97,27 @@ class BenchmarkTests(unittest.TestCase):
             self.assertEqual((root / "logs/session/events.jsonl").read_bytes(), before)
             self.assertEqual(len(requests), 2)
 
+    def test_generated_images_are_archived_with_their_runtime_location(self):
+        script = shlex.join([sys.executable, "-c",
+                             "import os; from pathlib import Path; "
+                             "Path(os.environ['SKILLS_AGENT_IMAGE_DIR'], 'capture.png').write_bytes(b'image-output')"])
+        endpoint, _ = self.run_server(lambda count: self.response(script) if count == 1 else self.response())
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "workspace").mkdir()
+            (root / "prompt.txt").write_text("Generate an image")
+            process = subprocess.run(self.command(root, endpoint), text=True, capture_output=True)
+            self.assertEqual(process.returncode, 0, process.stderr + process.stdout)
+            receipt = json.loads((root / "logs/runtime-storage.json").read_text())
+            images = Path(receipt["images"])
+            session = Path(receipt["session"])
+            self.assertEqual(images.parent.parent, session.parent.parent)
+            self.assertEqual(images.name, session.name)
+            self.assertEqual(images.parent.name, "images")
+            self.assertEqual((images / "capture.png").read_bytes(), b"image-output")
+            self.assertEqual(Path(receipt["images_export"]), (root / "logs/images").resolve())
+            self.assertEqual((root / "logs/images/capture.png").read_bytes(), b"image-output")
+
     def test_model_failure_returns_nonzero_and_keeps_received_partial_text(self):
         endpoint, _ = self.run_server(lambda count: self.response(text="original partial", reason="length"))
         with tempfile.TemporaryDirectory() as directory:

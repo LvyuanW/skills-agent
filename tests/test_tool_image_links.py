@@ -33,18 +33,20 @@ class ToolImageDisplayTests(unittest.TestCase):
     def setUp(self):
         self.view = TerminalView(input=DummyInput(), output=DummyOutput())
 
-    def test_compact_and_full_views_use_original_image_paths(self):
+    def test_compact_and_full_views_prefer_snapshot_and_support_source_only_records(self):
         event = tool_event(
             {"type": "image", "source_path": "/original/first.png", "path": "/snapshot/first.png"},
             {"type": "image", "path": "/legacy/second.png"},
+            {"type": "image", "source_path": "/legacy/third.png"},
         )
         original = copy.deepcopy(event)
         for full in (False, True):
             with self.subTest(full=full), patch.object(self.view, "append_image_link") as append:
                 render_event(event, self.view, full=full)
                 self.assertEqual(append.call_args_list, [
-                    call("[图片1]", "/original/first.png"),
+                    call("[图片1]", "/snapshot/first.png"),
                     call("[图片2]", "/legacy/second.png"),
+                    call("[图片3]", "/legacy/third.png"),
                 ])
                 self.assertEqual(event, original)
 
@@ -60,8 +62,8 @@ class ToolImageDisplayTests(unittest.TestCase):
                     output = io.StringIO()
                     render_event(event, output, full=full)
                     lines = output.getvalue().splitlines()
-                    self.assertEqual(lines[-1], f"  [图片] {missing_source}")
-                    self.assertNotIn(str(snapshot), output.getvalue())
+                    self.assertEqual(lines[-1], f"  [图片] {snapshot}")
+                    self.assertNotIn(missing_source, output.getvalue())
                     self.assertTrue(lines[0].startswith("tool shell:" if full else "· shell"))
 
     def test_multiline_plain_history_numbers_only_image_attachments(self):
@@ -73,7 +75,7 @@ class ToolImageDisplayTests(unittest.TestCase):
         output = io.StringIO()
         render_event(event, output)
         self.assertEqual(output.getvalue().splitlines()[-2:], [
-            "  [图片1] /original/a.png", "  [图片2] /legacy/b.png",
+            "  [图片1] /snapshot/a.png", "  [图片2] /legacy/b.png",
         ])
 
     def test_clipboard_user_and_assistant_images_never_become_tool_links(self):
@@ -101,7 +103,7 @@ class ToolImageDisplayTests(unittest.TestCase):
                 for event in events:
                     renderer(event)
                 renderer.close()
-                append.assert_called_once_with("[图片]", "/source.png")
+                append.assert_called_once_with("[图片]", "/immutable.png")
             self.assertEqual(events, original)
             self.assertEqual(log.read_bytes(), saved)
 

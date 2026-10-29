@@ -20,7 +20,14 @@ class WorkspaceStorage:
         self.workspace_id = hashlib.sha256(os.fsencode(str(self.workspace))).hexdigest()
         self.root = self.data_dir / "workspaces" / self.workspace_id
         self.sessions = self.root / "sessions"
+        self.images = self.root / "images"
         self.history = self.root / "history.git"
+
+    def session_images(self, session_id: str):
+        """Return this session's image output location without creating it."""
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", session_id):
+            raise ValueError("Invalid session name")
+        return self.images / session_id
 
     def ensure(self):
         if not self.workspace.is_dir():

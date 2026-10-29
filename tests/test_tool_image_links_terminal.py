@@ -14,11 +14,15 @@ from tests import test_cli_terminal as terminal_helpers
 class ToolImageLinkTerminalTests(unittest.TestCase):
     setUp = terminal_helpers.TerminalTests.setUp
 
-    def test_replayed_tool_image_opens_original_path_and_keeps_input_working(self):
+    def test_replayed_tool_image_opens_saved_snapshot_after_original_is_removed(self):
         source = self.workspace / "原始 截图.png"
         snapshot = self.workspace / "snapshot.png"
         opened = self.workspace / "opened.jsonl"
         session = Session(self.storage.sessions, "terminal")
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        snapshot.write_bytes(b"saved image")
+        source.write_bytes(b"original image")
+        source.unlink()
         session.append({"role": "user", "content": "Inspect the saved page."})
         session.append({"role": "assistant", "content": [], "tool_calls": [{
             "id": "capture-1", "name": "shell",
@@ -88,7 +92,7 @@ runpy.run_module('skills_agent', run_name='__main__')
         terminal.wait_exit()
 
         calls = [json.loads(line) for line in opened.read_text().splitlines()]
-        self.assertEqual([call[1:] for call in calls], [[str(source)]])
+        self.assertEqual([call[1:] for call in calls], [[str(snapshot)]])
         self.assertEqual(terminal.process.returncode, 0)
         self.assertEqual((session.path / "events.jsonl").read_bytes(), before)
 

@@ -46,14 +46,14 @@ Decision after observation: obtain missing evidence, resolve the execution gap, 
 
 ## Acquire pixels when the question is visual
 
-Use the [images skill](../../images/SKILL.md) and declare the selected image in the shell tool call. If the task already produced a bounded image, no preparation command is needed:
+Use the [images skill](../../images/SKILL.md) and declare the selected image in the shell tool call. Here, `/absolute/image-output` means the **Image output directory** supplied in system context; replace it with the actual absolute path. Shell can expand `SKILLS_AGENT_IMAGE_DIR`, but the `images.path` parameter cannot. User-specified delivery locations take priority. If the task already produced a bounded image, no preparation command is needed:
 
 ```json
 {
   "name": "Inspect current work result",
   "command": "true",
   "run_in_background": false,
-  "images": [{"path": "/absolute/workspace/output.png", "label": "Current work result"}]
+  "images": [{"path": "/absolute/image-output/output.png", "label": "Current work result"}]
 }
 ```
 
@@ -62,9 +62,9 @@ For a local HTML or SVG result, the installed browser can produce a screenshot:
 ```json
 {
   "name": "Render and inspect preview",
-  "command": "python3 /absolute/path/from/skill-catalog/feedback/scripts/feedback.py render /absolute/workspace/preview.html --output /absolute/workspace/.verify/preview.png --width 500 --height 400 --wait-ms 0",
+  "command": "python3 /absolute/path/from/skill-catalog/feedback/scripts/feedback.py render /absolute/workspace/preview.html --output /absolute/image-output/preview.png --width 500 --height 400 --wait-ms 0",
   "run_in_background": false,
-  "images": [{"path": "/absolute/workspace/.verify/preview.png", "label": "Preview"}]
+  "images": [{"path": "/absolute/image-output/preview.png", "label": "Preview"}]
 }
 ```
 

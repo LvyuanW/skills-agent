@@ -11,6 +11,8 @@ Use this skill for every image attachment. **Declare images in the shell tool's 
 
 `images` is an array of `{ "path": "/absolute/host/image.png", "label": "optional description", "source_url": "optional original URL" }`. `path` also accepts a local `file://` URL, including a saved session snapshot URL. It refers to the **host filesystem**, not a container-only path; download HTTP(S) sources first. This parameter accepts images, not PDF or arbitrary file attachments.
 
+Save generated images, screenshots and prepared copies in the **Image output directory** supplied in the system context, unless the user specified a delivery location. By default, the runtime keeps it at `~/.skills-agent/workspaces/<workspace-id>/images/<session-name>/`, alongside `sessions/`; child agents have their own subdirectory. Shell and sandbox commands receive its absolute path as `SKILLS_AGENT_IMAGE_DIR`. Shell command text can expand that variable, but `images.path` does not expand variables: supply the actual absolute path from context. In the examples, `/absolute/image-output` stands for that directory. Keep source images unchanged; scripts remain in the task workspace.
+
 The runtime reads, validates and snapshots declared files **after the command finishes**. For a background `task`, it registers the declarations at launch and attaches the resulting images with the completion result, not the startup receipt. The files may therefore be created by the command. Explicit `images`, including `[]`, takes precedence over legacy stdout feedback. Stdout can contain progress logs, multiple JSON results or any other text without changing the declared images. Use `images: []` when preparing files without sending them.
 
 Each model request may contain **at most 10 images in total**, with **each encoded image file at most 1,000,000 bytes (1 MB)** before base64 encoding. Count all tool results and user attachments in that request; separate tool calls do not increase the allowance. Select only images needed for the current decision. **If more than ten are needed together, compose them into one or several labeled images within the same limits.**
@@ -46,7 +48,7 @@ images = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(images)
 canvas = Image.new("RGB", (1200, 700), "white")
 ImageDraw.Draw(canvas).rectangle((100, 100, 1100, 600), outline="navy", width=5)
-metadata = images.save_bounded(canvas, "/absolute/workspace/generated.png", label="Generated diagram")
+metadata = images.save_bounded(canvas, "/absolute/image-output/generated.png", label="Generated diagram")
 print("Drawing complete")
 print(json.dumps(metadata, ensure_ascii=False))
 ```
@@ -58,7 +60,7 @@ Run it and declare the output once; do not invoke `images.py attach` afterward:
   "name": "Draw and inspect diagram",
   "command": "python3 /absolute/workspace/draw.py",
   "run_in_background": false,
-  "images": [{"path": "/absolute/workspace/generated.png", "label": "Generated diagram"}]
+  "images": [{"path": "/absolute/image-output/generated.png", "label": "Generated diagram"}]
 }
 ```
 
@@ -69,11 +71,11 @@ Run it and declare the output once; do not invoke `images.py attach` afterward:
 ```json
 {
   "name": "Prepare and inspect two views",
-  "command": "python3 /absolute/builtin_skills/images/scripts/images.py prepare /absolute/workspace/original-a.png --output /absolute/workspace/view-a.jpg && python3 /absolute/builtin_skills/images/scripts/images.py prepare /absolute/workspace/original-b.png --output /absolute/workspace/view-b.jpg",
+  "command": "python3 /absolute/builtin_skills/images/scripts/images.py prepare /absolute/workspace/original-a.png --output /absolute/image-output/view-a.jpg && python3 /absolute/builtin_skills/images/scripts/images.py prepare /absolute/workspace/original-b.png --output /absolute/image-output/view-b.jpg",
   "run_in_background": false,
   "images": [
-    {"path": "/absolute/workspace/view-a.jpg", "label": "View A", "source_url": "file:///absolute/workspace/original-a.png"},
-    {"path": "/absolute/workspace/view-b.jpg", "label": "View B", "source_url": "file:///absolute/workspace/original-b.png"}
+    {"path": "/absolute/image-output/view-a.jpg", "label": "View A", "source_url": "file:///absolute/workspace/original-a.png"},
+    {"path": "/absolute/image-output/view-b.jpg", "label": "View B", "source_url": "file:///absolute/workspace/original-b.png"}
   ]
 }
 ```
@@ -85,9 +87,9 @@ For more than ten needed sources, compose a numbered grid and declare its single
 ```json
 {
   "name": "Inspect eleven views together",
-  "command": "python3 /absolute/builtin_skills/images/scripts/images.py compose /absolute/workspace/view-1.png /absolute/workspace/view-2.png /absolute/workspace/view-3.png /absolute/workspace/view-4.png /absolute/workspace/view-5.png /absolute/workspace/view-6.png /absolute/workspace/view-7.png /absolute/workspace/view-8.png /absolute/workspace/view-9.png /absolute/workspace/view-10.png /absolute/workspace/view-11.png --output /absolute/workspace/overview.jpg --columns 4",
+  "command": "python3 /absolute/builtin_skills/images/scripts/images.py compose /absolute/workspace/view-1.png /absolute/workspace/view-2.png /absolute/workspace/view-3.png /absolute/workspace/view-4.png /absolute/workspace/view-5.png /absolute/workspace/view-6.png /absolute/workspace/view-7.png /absolute/workspace/view-8.png /absolute/workspace/view-9.png /absolute/workspace/view-10.png /absolute/workspace/view-11.png --output /absolute/image-output/overview.jpg --columns 4",
   "run_in_background": false,
-  "images": [{"path": "/absolute/workspace/overview.jpg", "label": "Eleven numbered views"}]
+  "images": [{"path": "/absolute/image-output/overview.jpg", "label": "Eleven numbered views"}]
 }
 ```
 
@@ -102,9 +104,9 @@ For local HTML/SVG, the [feedback render helper](../feedback/SKILL.md) creates a
 ```json
 {
   "name": "Render and inspect page",
-  "command": "python3 /absolute/builtin_skills/feedback/scripts/feedback.py render /absolute/workspace/page.html --output /absolute/workspace/capture.png --width 500 --height 400",
+  "command": "python3 /absolute/builtin_skills/feedback/scripts/feedback.py render /absolute/workspace/page.html --output /absolute/image-output/capture.png --width 500 --height 400",
   "run_in_background": false,
-  "images": [{"path": "/absolute/workspace/capture.png", "label": "Page capture"}]
+  "images": [{"path": "/absolute/image-output/capture.png", "label": "Page capture"}]
 }
 ```
 
@@ -117,7 +119,7 @@ For a long computation, read the [background-tasks skill](../background-tasks/SK
   "run_in_background": true,
   "background_lifecycle": "task",
   "timeout_seconds": 7200,
-  "images": [{"path": "/absolute/workspace/plot.png", "label": "Final analysis plot"}]
+  "images": [{"path": "/absolute/image-output/plot.png", "label": "Final analysis plot"}]
 }
 ```
 

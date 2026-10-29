@@ -38,7 +38,7 @@ def main(argv=None):
         if not prompt.strip():
             raise ValueError("任务文件不能为空")
         root = args.log_dir
-        if (root / "session").exists() or (root / "runtime-storage.json").exists():
+        if any((root / name).exists() for name in ("session", "images", "runtime-storage.json")):
             raise ValueError("日志目录已包含 session；每次 benchmark 运行需要独立日志目录")
         workspace = args.workspace
         storage = WorkspaceStorage(workspace).ensure()
@@ -48,7 +48,8 @@ def main(argv=None):
         # UUIDs avoid collisions when separate ALE containers use the same log path.
         with (root / "runtime-storage.json").open("x", encoding="utf-8") as stream:
             json.dump({"workspace": str(workspace), "session": str(storage.sessions / session_id),
-                       "history": str(storage.history)}, stream, ensure_ascii=False, indent=2)
+                       "history": str(storage.history), "images": str(storage.session_images(session_id)),
+                       "images_export": str(root / "images")}, stream, ensure_ascii=False, indent=2)
             stream.write("\n")
         session = Session(storage.sessions, session_id)
         paths = [path.expanduser() for path in args.file]
@@ -85,6 +86,15 @@ def export_runtime_logs(root, session, storage):
     finally:
         if temporary.exists():
             shutil.rmtree(temporary)
+    images = storage.session_images(session.path.name)
+    if images.is_dir():
+        temporary = root / f".images-export-{uuid4().hex}"
+        try:
+            shutil.copytree(images, temporary, symlinks=True)
+            temporary.rename(root / "images")
+        finally:
+            if temporary.exists():
+                shutil.rmtree(temporary)
     metadata = storage.history / "workspace.json"
     path_map = storage.history / "path-map.json"
     operations = sorted((storage.history / "operations").glob("*.json"))

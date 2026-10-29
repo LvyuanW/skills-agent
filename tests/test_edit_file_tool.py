@@ -23,11 +23,14 @@ class EditFileToolTests(unittest.TestCase):
 
     def edit(self, operation, path="notes.txt", **kwargs):
         return json.loads(self.tools.execute("edit_file", json.dumps({
-            "name": "Update task file", "operation": operation, "path": path, **kwargs,
+            "name": "Update task file", "purpose": "Keep the task file up to date",
+            "operation": operation, "path": path, **kwargs,
         })))
 
-    def batch(self, edits):
-        return json.loads(self.tools.execute("edit_file", json.dumps({"name": "Edit related files", "edits": edits})))
+    def batch(self, edits, **options):
+        return json.loads(self.tools.execute("edit_file", json.dumps({
+            "name": "Edit related files", "purpose": "Update related task files together", "edits": edits, **options,
+        })))
 
     def saved(self, revision, path):
         return subprocess.check_output([
@@ -66,7 +69,7 @@ class EditFileToolTests(unittest.TestCase):
             for values in cases:
                 with self.subTest(values=values):
                     result = json.loads(self.tools.execute("edit_file", json.dumps({
-                        "name": "Edit", "path": "notes.txt", **values,
+                        "name": "Edit", "purpose": "Correct the task file", "path": "notes.txt", **values,
                     })))
                     self.assertIn("error", result)
                     self.assertFalse(result["executed"])
@@ -86,7 +89,85 @@ class EditFileToolTests(unittest.TestCase):
         with patch.object(self.history, "edit_batch", return_value={"changed": False}) as edit:
             self.assertEqual(self.edit("replace", old_text="a", new_text="a"), {"changed": False})
         edit.assert_called_once_with([{"operation": "replace", "path": "notes.txt", "old_text": "a", "new_text": "a"}], tool_call_id="edit-1",
+                                     purpose="Keep the task file up to date",
                                      session_id="actual-child-session")
+
+    def test_purpose_is_mandatory_and_invalid_purpose_never_changes_files(self):
+        edits = [{"operation": "write", "path": "notes.txt", "content": "new"}]
+        for extra in ({}, {"purpose": ""}, {"purpose": "  \n"}, {"purpose": None}, {"purpose": "bad\0message"}):
+            with self.subTest(extra=extra):
+                result = json.loads(self.tools.execute("edit_file", json.dumps({"name": "Write notes", "edits": edits, **extra})))
+                self.assertIn("purpose", result["error"])
+                self.assertFalse((self.workspace / "notes.txt").exists())
+                self.assertFalse(self.history.repository.exists())
+
+    def test_explicit_defaults_support_same_file_batches_and_item_overrides(self):
+        (self.workspace / "first.txt").write_text("first\nsecond\n")
+        (self.workspace / "other.txt").write_text("other\n")
+        purpose = "Fix the two related labels\n\nKeep the existing layout and update only the wording."
+        result = self.batch([
+            {"name": "First label", "old_text": "first", "new_text": "FIRST"},
+            {"path": "other.txt", "old_text": "other", "new_text": "OTHER"},
+            {"name": "Second label", "old_text": "second", "new_text": "SECOND"},
+        ], path="first.txt", operation="replace", purpose=purpose)
+        self.assertNotIn("error", result)
+        self.assertEqual((self.workspace / "first.txt").read_text(), "FIRST\nSECOND\n")
+        self.assertEqual((self.workspace / "other.txt").read_text(), "OTHER\n")
+        self.assertEqual(result["edits"][0]["name"], "First label")
+        self.assertEqual(result["purpose"], purpose)
+        message = subprocess.check_output([
+            "git", "--git-dir", str(self.history.repository), "log", "-1", "--format=%B",
+        ]).decode().strip()
+        self.assertEqual(message, purpose)
+        self.assertEqual(subprocess.check_output([
+            "git", "--git-dir", str(self.history.repository), "rev-list", "--count", "HEAD",
+        ]).strip(), b"1")
+
+    def test_missing_defaults_do_not_inherit_from_previous_item_or_call(self):
+        (self.workspace / "notes.txt").write_text("first second")
+        self.assertNotIn("error", self.batch([
+            {"old_text": "first", "new_text": "FIRST"},
+        ], path="notes.txt", operation="replace"))
+        for edits, index in (([{"old_text": "second", "new_text": "SECOND"}], 1), ([
+            {"operation": "replace", "path": "notes.txt", "old_text": "FIRST", "new_text": "changed"},
+            {"old_text": "second", "new_text": "SECOND"},
+        ], 2)):
+            result = self.batch(edits)
+            self.assertEqual(result["edit_index"], index)
+            self.assertEqual(result["missing_fields"], ["operation", "path"])
+            self.assertFalse(result["applied"])
+            self.assertEqual((self.workspace / "notes.txt").read_text(), "FIRST second")
+
+    def test_unknown_field_is_reported_instead_of_requesting_present_fields(self):
+        result = self.batch([{"old_text": "a", "new_text": "b", "expected_cout": 1}],
+                            path="notes.txt", operation="replace")
+        self.assertEqual(result["unsupported_fields"], ["expected_cout"])
+        self.assertIn("unsupported fields: expected_cout", result["error"])
+        self.assertNotIn("missing", result["error"])
+        self.assertFalse(result["executed"])
+
+    def test_later_mismatch_identifies_exact_item_without_writing_earlier_items(self):
+        original = "first second\nconst material = makeMaterial();\n"
+        (self.workspace / "notes.txt").write_text(original)
+        result = self.batch([
+            {"old_text": "first", "new_text": "FIRST"},
+            {"old_text": "second", "new_text": "SECOND"},
+            {"old_text": "\nmaterial = makeMaterial();", "new_text": "\nconst material = improved();"},
+        ], path="notes.txt", operation="replace")
+        self.assertEqual(result["edit_index"], 3)
+        self.assertEqual(result["path"], str(self.workspace / "notes.txt"))
+        self.assertEqual(result["match_count"], 0)
+        self.assertFalse(result["applied"])
+        self.assertEqual((self.workspace / "notes.txt").read_text(), original)
+
+    def test_image_directory_is_lazy_and_exposed_to_shell(self):
+        directory = self.root / "runtime/images/session"
+        tools = ToolRegistry(self.workspace, image_directory=directory)
+        self.assertFalse(directory.exists())
+        with patch("skills_agent.tools.run_command", return_value={"exit_code": 0}) as execute:
+            tools.execute("shell", json.dumps({"name": "Render image", "command": "render", "run_in_background": False}))
+        self.assertTrue(directory.is_dir())
+        self.assertEqual(execute.call_args.kwargs["env"]["SKILLS_AGENT_IMAGE_DIR"], str(directory))
 
     def test_partial_failure_keeps_recovery_information_in_tool_result(self):
         error = RuntimeError("after-version could not be saved")

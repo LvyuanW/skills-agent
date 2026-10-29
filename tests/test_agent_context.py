@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,6 +15,7 @@ from skills_agent.providers.base import ProviderConnectionError, ProviderOutputL
 from skills_agent.runtime import create_agent
 from skills_agent.session import Session
 from skills_agent.skills import SkillRegistry
+from skills_agent.storage import WorkspaceStorage
 from tests.test_context import Counter
 
 
@@ -47,6 +49,7 @@ class AgentContextTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        self.enterContext(patch.dict(os.environ, {"SKILLS_AGENT_DATA_DIR": str(self.root / "runtime")}))
         self.session = Session(self.root, "main")
         self.skills = SkillRegistry([])
 
@@ -77,6 +80,30 @@ class AgentContextTests(unittest.TestCase):
                     self.assertEqual(factory.call_args.kwargs["max_output_tokens"], 32768)
                     self.assertIn(f"- Primary working directory: {self.root.resolve()}", agent._system())
                     self.assertNotIn("- review:", agent.skills.catalog())
+                    images = WorkspaceStorage(self.root).session_images(self.session.path.name)
+                    self.assertEqual(agent.image_directory, images)
+                    self.assertEqual(agent.tools.image_directory, images)
+                    self.assertFalse(images.exists())
+
+    def test_image_directory_is_explicit_in_main_and_child_context_without_eager_writes(self):
+        images = (self.root / "runtime" / "images" / "main").resolve()
+        model = ScriptedModel([
+            call("subagent", {"name": "Inspect", "task": "Inspect supplied evidence"}),
+            final("Child findings"), final("done"),
+        ])
+        agent = self.agent(model, image_directory=images)
+        self.addCleanup(agent.close)
+        self.assertFalse(images.exists())
+        self.assertEqual(agent.run({"role": "user", "content": "inspect"}), "done")
+        child = next((self.session.path / "subagents").iterdir())
+        self.assertIn(f"Image output directory: {images}", model.calls[0][0])
+        self.assertIn(f"Image output directory: {images / 'subagents' / child.name}", model.calls[1][0])
+        self.assertIn("Use a user's requested delivery location", model.calls[1][0])
+        self.assertFalse(images.exists())
+        embedded = self.agent(ScriptedModel([]))
+        self.addCleanup(embedded.close)
+        self.assertEqual(embedded.image_directory, self.session.path / "images")
+        self.assertFalse(embedded.image_directory.exists())
 
     def test_environment_is_system_context_for_main_child_and_later_turns(self):
         environment = "# Environment\n- Primary working directory: /runtime/workspace"
