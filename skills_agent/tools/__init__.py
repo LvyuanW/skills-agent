@@ -80,23 +80,43 @@ class ToolRegistry:
                                     shell_script, ["name", "command", "run_in_background"])]
         if file_history is not None:
             self.schemas.append(self._schema(
-                "edit_file", "Create, precisely edit, delete or move a file in the workspace. "
-                "The runtime saves the original and resulting contents in separate file history. "
-                "Read current contents with shell before changing an existing file. "
-                "replace requires one exact match (empty old_text is allowed only for an empty file); "
-                "refine ambiguous matches instead of "
-                "rewriting unrelated contents. create and move refuse to overwrite an existing path. "
-                "Parent directories must exist; shell may create directories with mkdir. "
-                "Paths must be inside the workspace and must not traverse symbolic links. "
-                "Use this tool for direct file changes, including scripts and temporary text files.", {
+                "edit_file", "Edit one or more files in a single recorded batch. Use edits with one item "
+                "for a simple change, or several items for related changes in the same or different files. "
+                "Items run in order against the preceding items' results. All are validated before any "
+                "file is written; a successful changed batch creates one history commit and retains its "
+                "original contents. An execution error can leave partial changes; inspect the result. "
+                "Text fields accept complete multiline code, including GLSL shaders, HTML, Python and "
+                "configuration; use JSON newline escapes, not shell quoting or heredocs. "
+                "create makes a new file; write creates or replaces the complete contents; replace "
+                "changes literal text (one match by default, all matches with replace_all=true); insert "
+                "adds text beside an exact anchor; delete removes a file; move/copy use destination. "
+                "Use content for text or content_base64 for arbitrary binary contents. Read existing "
+                "contents before editing and preserve unrelated work; use write when a full replacement "
+                "is intended. Absolute paths may be in any directory; relative paths use the working "
+                "directory. Missing parent directories are created as needed. Content edits follow "
+                "symlinks; delete/move/copy act on the link itself. The runtime's own active history "
+                "and session files are protected. Use this tool for direct file changes, including "
+                "temporary scripts, instead of shell editing commands.", {
                     "name": {"type": "string", "description": "Short action and purpose, shown to the user."},
-                    "operation": {"type": "string", "enum": ["create", "replace", "delete", "move"]},
-                    "path": {"type": "string", "description": "Workspace-relative or absolute file path."},
-                    "content": {"type": "string", "description": "create only: complete UTF-8 text; may be empty."},
-                    "old_text": {"type": "string", "description": "replace only: exact current text occurring once; empty only if the file is empty."},
-                    "new_text": {"type": "string", "description": "replace only: replacement text; empty deletes the match."},
-                    "destination": {"type": "string", "description": "move only: unused destination file path."},
-                }, ["name", "operation", "path"]))
+                    "edits": {"type": "array", "minItems": 1, "description":
+                              "One or more edits, applied in the listed order as one history entry.",
+                              "items": {"type": "object", "additionalProperties": False,
+                                        "required": ["operation", "path"], "properties": {
+                        "operation": {"type": "string", "enum": ["create", "write", "replace", "insert", "delete", "move", "copy"]},
+                        "path": {"type": "string", "description": "Absolute path anywhere, or relative to the working directory."},
+                        "content": {"type": "string", "description": "create/write: complete text; insert: inserted text. May contain multiple lines or be empty."},
+                        "content_base64": {"type": "string", "description": "create/write: base64-encoded bytes instead of content, including binary files."},
+                        "old_text": {"type": "string", "description": "replace: exact current text, including multiline blocks. Empty only when the file is empty."},
+                        "new_text": {"type": "string", "description": "replace: replacement text, including multiline blocks; empty removes the matched text."},
+                        "replace_all": {"type": "boolean", "description": "replace: replace every non-overlapping literal match. Default false requires one match."},
+                        "expected_count": {"type": "integer", "minimum": 1, "description": "replace: optional expected match count; a mismatch rejects the batch."},
+                        "anchor": {"type": "string", "description": "insert: exact nonempty text occurring once; can be multiline."},
+                        "position": {"type": "string", "enum": ["before", "after"], "description": "insert: which side of the anchor receives content."},
+                        "encoding": {"type": "string", "description": "Text encoding, default utf-8; available for content, replace and insert. Not with content_base64."},
+                        "destination": {"type": "string", "description": "move/copy: destination path, absolute or relative to the working directory."},
+                        "overwrite": {"type": "boolean", "description": "move/copy: replace an existing destination when true; default false."},
+                    }}},
+                }, ["name", "edits"]))
         if sandbox:
             self.schemas.append(self._schema("sandbox", "Run programs inside the configured Docker sandbox. "
                                              "Use edit_file for direct file changes; do not use sandbox commands "
@@ -142,6 +162,11 @@ class ToolRegistry:
                 raise ValueError("Tool arguments must be valid JSON; correct them and call the tool again") from None
             if not isinstance(values, dict):
                 raise ValueError("Tool arguments must be a JSON object; correct them and call the tool again")
+            if name == "edit_file" and "edits" not in values and "operation" in values:
+                # Older saved calls remain executable; new schemas expose one
+                # uniform batch form instead of two competing interfaces.
+                values = {**({"name": values["name"]} if "name" in values else {}),
+                          "edits": [{key: value for key, value in values.items() if key != "name"}]}
             expected, allowed = schema["parameters"]["required"], schema["parameters"]["properties"]
             if not set(expected) <= set(values) <= set(allowed):
                 raise ValueError(f"Expected arguments: {', '.join(expected)}")
@@ -149,6 +174,9 @@ class ToolRegistry:
                 field = allowed[key]
                 if key == "images":
                     values[key] = validate_images(value)
+                    continue
+                if name == "edit_file" and key == "edits":
+                    self._validate_edits(value, field["items"]["properties"])
                     continue
                 if key == "timeout_seconds":
                     if name == "shell" and values.get("run_in_background") is True:
@@ -171,19 +199,14 @@ class ToolRegistry:
                     raise ValueError(f"Invalid {key}: {value}")
             if name == "shell" and values.get("background_lifecycle") == "service" and not values["run_in_background"]:
                 raise ValueError("background_lifecycle=service requires run_in_background=true")
-            if name == "edit_file":
-                fields = {"create": {"content"}, "replace": {"old_text", "new_text"},
-                          "delete": set(), "move": {"destination"}}[values["operation"]]
-                if set(values) != {"name", "operation", "path"} | fields:
-                    raise ValueError(f"{values['operation']} requires exactly: " +
-                                     ", ".join(sorted({"name", "operation", "path"} | fields)))
             try:
                 self.on_activity({"kind": "tool", "name": name, "task_name": values["name"]})
                 executed = True
                 if name == "shell":
-                    environment = None
+                    environment = {**os.environ, "PWD": str(self.workspace)}
+                    environment.pop("OLDPWD", None)
                     if self.process_scope is not None:
-                        environment = {**os.environ, SCOPE_ENV: str(self.process_scope.path)}
+                        environment[SCOPE_ENV] = str(self.process_scope.path)
                         for key, value in ((CONTEXT_ENV, self.process_context),
                                            (CALL_ENV, self.tool_call_id)):
                             if value is not None:
@@ -207,11 +230,8 @@ class ToolRegistry:
                         if "images" in values:
                             result["images"] = values["images"]
                 elif name == "edit_file":
-                    result = self.file_history.edit(
-                        values["operation"], values["path"], tool_call_id=self.tool_call_id,
-                        session_id=self.edit_session_id,
-                        **{key: values[key] for key in ("content", "old_text", "new_text", "destination")
-                           if key in values},
+                    result = self.file_history.edit_batch(
+                        values["edits"], tool_call_id=self.tool_call_id, session_id=self.edit_session_id,
                     )
                 elif name == "sandbox":
                     result = self.sandbox.run(
@@ -241,3 +261,40 @@ class ToolRegistry:
         if display_error is not None:
             result["display_error"] = display_error
         return json.dumps(result, ensure_ascii=name == "edit_file")
+
+    @staticmethod
+    def _validate_edits(edits, fields):
+        if not isinstance(edits, list) or not edits:
+            raise ValueError("edits must be a nonempty array")
+        for index, edit in enumerate(edits, 1):
+            if not isinstance(edit, dict) or not {"operation", "path"} <= set(edit) <= set(fields):
+                raise ValueError(f"Edit {index}: provide operation and path with supported fields")
+            for key, value in edit.items():
+                field = fields[key]
+                expected = {"string": str, "boolean": bool, "integer": int}[field["type"]]
+                if not isinstance(value, expected) or expected is int and isinstance(value, bool):
+                    raise ValueError(f"Edit {index}: {key} must be a {field['type']}")
+                if "enum" in field and value not in field["enum"]:
+                    raise ValueError(f"Edit {index}: invalid {key}: {value}")
+                if key in {"path", "destination", "encoding", "anchor"} and not value:
+                    raise ValueError(f"Edit {index}: {key} must not be empty")
+                if key == "expected_count" and value < 1:
+                    raise ValueError(f"Edit {index}: expected_count must be positive")
+            operation = edit["operation"]
+            required, optional = {
+                "create": (set(), {"content", "content_base64", "encoding"}),
+                "write": (set(), {"content", "content_base64", "encoding"}),
+                "replace": ({"old_text", "new_text"}, {"replace_all", "expected_count", "encoding"}),
+                "insert": ({"anchor", "position", "content"}, {"encoding"}),
+                "delete": (set(), set()),
+                "move": ({"destination"}, {"overwrite"}),
+                "copy": ({"destination"}, {"overwrite"}),
+            }[operation]
+            arguments = set(edit) - {"operation", "path"}
+            if not required <= arguments <= required | optional:
+                raise ValueError(f"Edit {index}: invalid fields for {operation}")
+            if operation in {"create", "write"}:
+                if len(arguments & {"content", "content_base64"}) != 1:
+                    raise ValueError(f"Edit {index}: provide exactly one of content or content_base64")
+                if "content_base64" in edit and "encoding" in edit:
+                    raise ValueError(f"Edit {index}: encoding applies to text content, not content_base64")

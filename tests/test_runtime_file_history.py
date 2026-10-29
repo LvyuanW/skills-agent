@@ -1,6 +1,8 @@
 import json
+import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -18,12 +20,13 @@ class RuntimeFileHistoryTests(unittest.TestCase):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
         self.workspace = self.root / "work"
         self.workspace.mkdir()
-        self.storage = WorkspaceStorage(self.workspace, self.root / "state").ensure()
+        self.enterContext(patch.dict(os.environ, {"SKILLS_AGENT_DATA_DIR": str(self.root / "state")}))
+        self.storage = WorkspaceStorage(self.workspace).ensure()
         self.session = Session(self.storage.sessions, "main")
 
     def agent(self, model):
         args = parser().parse_args([
-            "run", "--workspace", str(self.workspace), "--data-dir", str(self.root / "state"),
+            "run", "--workspace", str(self.workspace),
             "--model", "test-model",
         ])
         with patch("skills_agent.runtime.create_provider", return_value=model):
@@ -49,13 +52,14 @@ class RuntimeFileHistoryTests(unittest.TestCase):
         self.assertFalse((self.workspace / ".agent").exists())
         for filename, expected in (("parent.txt", b"parent"), ("child.txt", b"child")):
             saved = subprocess.check_output([
-                "git", "--git-dir", str(self.storage.history), "show", f"HEAD:{filename}",
+                sys.executable, "-m", "skills_agent.file_history", "--repository", str(self.storage.history),
+                "show", "HEAD", filename,
             ])
             self.assertEqual(saved, expected)
         saved_paths = subprocess.check_output([
             "git", "--git-dir", str(self.storage.history), "ls-tree", "-r", "--name-only", "HEAD",
         ], text=True).splitlines()
-        self.assertEqual(set(saved_paths), {"parent.txt", "child.txt"})
+        self.assertEqual(len(saved_paths), 2)
         operations = [json.loads(path.read_text()) for path in (self.storage.history / "operations").glob("*.json")]
         recorded_sessions = {item["session_id"] for item in operations}
         self.assertIn(str(self.session.path), recorded_sessions)
