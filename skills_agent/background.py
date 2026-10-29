@@ -67,7 +67,10 @@ class BackgroundResults:
     def _receipts(self):
         # Recover from an append followed by a crash before context.sync(). Do
         # not derive receipts from context.json, whose old records can compact.
-        for cursor, event in self.session.iter_events(self._cursor):
+        for cursor, event in self.session.iter_receipt_events(self._cursor):
+            if event is None:
+                self._cursor = cursor
+                continue
             message = event.get("message", {})
             if event.get("type") == "message":
                 # Launch receipts remain durable evidence if registration files
@@ -120,7 +123,10 @@ class BackgroundResults:
             resolved = child.setdefault("resolved", set())
             terminal_receipts = child.setdefault("terminal_receipts", set())
             acknowledged = child["status"] == "completed" and child["id"] in self._reported_children
-            for cursor, event in child["session"].iter_events(child["cursor"]):
+            for cursor, event in child["session"].iter_receipt_events(child["cursor"]):
+                if event is None:
+                    child["cursor"] = cursor
+                    continue
                 message = event.get("message", {})
                 if event.get("type") == "message":
                     job = _shell_receipt(message, owner, child["session"].path)
