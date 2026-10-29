@@ -204,6 +204,34 @@ class DisplayTests(unittest.TestCase):
             detailed = self.render(session.events(), full=True)
             self.assertIn("PRIVATE_FILE_CONTENT", detailed)
 
+    def test_large_streamed_arguments_do_not_decode_every_fragment(self):
+        arguments = json.dumps({"name": "Save shader", "edits": [{"content": "x" * 32768}]})
+        output = io.StringIO()
+        renderer = ConsoleRenderer(output, live=False)
+        renderer({"type": "tool_call_delta", "index": 0, "name": "edit_file"})
+        with patch("skills_agent.cli.json.loads", wraps=json.loads) as decode:
+            for offset in range(0, len(arguments), 8):
+                renderer({"type": "tool_call_delta", "index": 0,
+                          "arguments": arguments[offset:offset + 8]})
+            renderer({"type": "tool_call_delta", "index": 0, "arguments": " \n", "id": "late-id"})
+        self.assertLessEqual(decode.call_count, 2)
+        self.assertEqual(output.getvalue(), "· edit_file：接收调用\n· edit_file「Save shader」：调用\n")
+        self.assertEqual(renderer._calls[0]["arguments"], arguments + " \n")
+        self.assertEqual(renderer._calls[0]["id"], "late-id")
+
+    def test_braces_inside_streamed_strings_do_not_prematurely_finish_arguments(self):
+        arguments = json.dumps({"name": 'Literal } and "quote"', "command": "printf '}'"})
+        boundary = arguments.index("}") + 1
+        output = io.StringIO()
+        renderer = ConsoleRenderer(output, live=False)
+        renderer({"type": "tool_call_delta", "index": 0, "name": "shell",
+                  "arguments": arguments[:boundary]})
+        self.assertEqual(output.getvalue(), "· shell：接收调用\n")
+        renderer({"type": "tool_call_delta", "index": 0, "arguments": arguments[boundary:-1]})
+        self.assertEqual(output.getvalue(), "· shell：接收调用\n")
+        renderer({"type": "tool_call_delta", "index": 0, "arguments": "} \n"})
+        self.assertEqual(output.getvalue(), '· shell：接收调用\n· shell「Literal } and "quote"」：调用\n')
+
     def test_multimodal_tool_result_preserves_exit_status_without_dumping_feedback(self):
         for exit_code in (0, 7):
             with self.subTest(exit_code=exit_code):

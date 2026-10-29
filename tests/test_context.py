@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from skills_agent.context import (ContextBudgetError, WorkingContext, record_groups,
-                                  recover_interrupted_calls, recovered_id, working_message)
+                                  recover_interrupted_calls, recovered_id, working_message, image_records)
 from skills_agent.session import Session
 
 
@@ -507,6 +507,57 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(selected["_responses_output"], message["_responses_output"])
         self.assertNotIn("_raw", selected)
         self.assertEqual(message, original)
+
+    def test_working_message_reads_reasoning_without_copying_discarded_raw_payload(self):
+        class RawPayload(dict):
+            def __deepcopy__(self, memo):
+                raise AssertionError("discarded transport logs must not be copied")
+
+        for raw, explicit, expected in (
+            ({"choices": [{"message": {"reasoning_content": "saved reasoning"}}]}, None, "saved reasoning"),
+            ({"stream_events": [{"choices": [{"delta": {"reasoning_content": "first "}}]},
+                                {"choices": [{"delta": {"reasoning_content": None}}]},
+                                {"choices": [{"delta": {"reasoning_content": "second"}}]}]}, None, "first second"),
+            ({"choices": [{"message": {"reasoning_content": "older reasoning"}}]}, "explicit", "explicit"),
+        ):
+            with self.subTest(expected=expected):
+                message = {"role": "assistant", "content": [{"type": "text", "text": "done"}],
+                           "_responses_output": [{"type": "reasoning", "summary": ["retained"]}],
+                           "_raw": RawPayload(raw)}
+                if explicit is not None:
+                    message["reasoning_content"] = explicit
+                original = json.loads(json.dumps(message))
+                self.session.append(message)
+                raw_history = (self.session.path / "events.jsonl").read_bytes()
+                selected = working_message(message)
+                self.assertEqual(selected["reasoning_content"], expected)
+                self.assertNotIn("_raw", selected)
+                selected["content"][0]["text"] = "changed"
+                selected["_responses_output"][0]["summary"].append("changed")
+                self.assertEqual(message, original)
+                self.assertEqual((self.session.path / "events.jsonl").read_bytes(), raw_history)
+
+    def test_image_projection_copies_messages_once_and_keeps_metadata_independent(self):
+        copies = []
+
+        class CountedMessage(dict):
+            def __deepcopy__(self, memo):
+                copies.append(True)
+                return copy.deepcopy(dict(self), memo)
+
+        message = CountedMessage(role="user", content=[{"type": "image", "path": "/tmp/saved-image.png"}])
+        records = [{"event_id": "event-image", "message": message,
+                    "source": {"lines": [1, 2]}, "covered_event_ids": ["earlier"]}]
+        original = json.loads(json.dumps(records))
+        selected = image_records(records)
+        self.assertEqual(len(copies), 1)
+        reference = selected[0]["message"]["content"][0]
+        self.assertEqual(reference["image_reference"]["event_id"], "event-image")
+        self.assertIn("Evidence event: event-image", reference["text"])
+        selected[0]["message"]["content"][-1]["path"] = "/tmp/changed.png"
+        selected[0]["source"]["lines"].append(3)
+        selected[0]["covered_event_ids"].append("changed")
+        self.assertEqual(records, original)
 
 
     def test_stopped_run_recovers_missing_result_before_sending(self):
