@@ -305,7 +305,7 @@ class AgentTests(unittest.TestCase):
             session.append({"role": "user", "content": "  unchanged\ntext  "})
             output = io.StringIO()
             with redirect_stdout(output):
-                code = main(["history", "--workspace", directory])
+                code = main(["history", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions")])
             self.assertEqual(code, 0)
             self.assertIn("  unchanged\ntext  ", output.getvalue())
 
@@ -315,7 +315,7 @@ class CLIInteractionTests(unittest.TestCase):
         output, error = io.StringIO(), io.StringIO()
         with patch("skills_agent.runtime.create_provider", return_value=model) as provider, \
                 patch("sys.stdin", io.StringIO(lines)), redirect_stdout(output), redirect_stderr(error):
-            code = main(["run", "--workspace", directory, "--model", "test", *options])
+            code = main(["run", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions"), "--data-dir", str(Path(directory) / ".test-runtime"), "--model", "test", *options])
         provider.assert_called_once()
         return code, output.getvalue(), error.getvalue()
 
@@ -513,7 +513,8 @@ class CLIProtocolTests(unittest.TestCase):
                 thread = threading.Thread(target=server.serve_forever, daemon=True)
                 thread.start()
                 try:
-                    command = [sys.executable, "-m", "skills_agent", "run", "--workspace", directory,
+                    command = [sys.executable, "-m", "skills_agent", "run", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions"),
+                               "--data-dir", str(workspace / ".test-runtime"),
                                "--provider", provider, "--model", "test-model", "--base-url",
                                f"http://127.0.0.1:{server.server_port}/v1"]
                     if provider == "openai":
@@ -567,7 +568,7 @@ class CLIProtocolTests(unittest.TestCase):
                     self.assertIn("follow up", json.dumps(requests[-1]))
                     self.assertIn("continue via stdin", json.dumps(requests[-1]))
                     history = subprocess.run(
-                        [sys.executable, "-m", "skills_agent", "history", "--workspace", directory],
+                        [sys.executable, "-m", "skills_agent", "history", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions")],
                         capture_output=True, text=True,
                     )
                     self.assertEqual(history.returncode, 0, history.stderr)
@@ -580,7 +581,7 @@ class CLIProtocolTests(unittest.TestCase):
                     self.assertNotIn("\033[", first.stdout + second.stdout + history.stdout)
                     recorded = session_log.read_bytes()
                     full_history = subprocess.run(
-                        [sys.executable, "-m", "skills_agent", "history", "--full", "--workspace", directory],
+                        [sys.executable, "-m", "skills_agent", "history", "--full", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions")],
                         capture_output=True, text=True,
                     )
                     self.assertEqual(full_history.returncode, 0, full_history.stderr)

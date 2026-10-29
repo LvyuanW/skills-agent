@@ -128,7 +128,7 @@ class StreamIntegrationTests(unittest.TestCase):
                 seen = bytearray()
                 try:
                     process = subprocess.Popen(
-                        [sys.executable, "-m", "skills_agent", "run", "--workspace", directory,
+                        [sys.executable, "-m", "skills_agent", "run", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions"), "--data-dir", str(Path(directory) / ".test-runtime"),
                          "--session", "gated", "--provider", provider, "--model", "test-model",
                          "--base-url", f"http://127.0.0.1:{server.server_port}/v1",
                          *(["--api-format", "responses"] if provider == "openai" else [])],
@@ -206,7 +206,7 @@ class StreamIntegrationTests(unittest.TestCase):
                     self.assertLess(output.index(LAST_BODY), output.index(FINAL))
                     saved = log.read_bytes()
                     for full in (False, True):
-                        command = [sys.executable, "-m", "skills_agent", "history", "--workspace", directory,
+                        command = [sys.executable, "-m", "skills_agent", "history", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions"), "--data-dir", str(Path(directory) / ".test-runtime"),
                                    "--session", "gated"] + (["--full"] if full else [])
                         history = subprocess.run(command, cwd=PROJECT, env=ENVIRONMENT,
                                                  capture_output=True, text=True, timeout=5)

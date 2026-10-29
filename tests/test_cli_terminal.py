@@ -98,6 +98,8 @@ class Terminal:
         try:
             self.process = subprocess.Popen(
                 [sys.executable, "-m", "skills_agent", "run", "--workspace", str(workspace),
+                 "--sessions-dir", str(workspace / ".agent/sessions"),
+                 "--data-dir", str(workspace / ".test-runtime"),
                  "--session", "terminal", "--model", "test-model", "--base-url", endpoint,
                  "--api-format", "responses"],
                 stdin=slave, stdout=slave, stderr=slave, cwd=PROJECT,

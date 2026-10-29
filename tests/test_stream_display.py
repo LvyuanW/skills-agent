@@ -231,7 +231,7 @@ class StreamDisplayTests(unittest.TestCase):
             for full in (False, True):
                 with self.subTest(full=full):
                     output = Output()
-                    command = ["history", "--workspace", directory] + (["--full"] if full else [])
+                    command = ["history", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions")] + (["--full"] if full else [])
                     with redirect_stdout(output):
                         self.assertEqual(main(command), 0)
                     text = output.getvalue()
@@ -358,7 +358,7 @@ class StreamDisplayTests(unittest.TestCase):
             for full in (False, True):
                 output = Output()
                 with redirect_stdout(output):
-                    self.assertEqual(main(["history", "--workspace", directory]
+                    self.assertEqual(main(["history", "--workspace", directory, "--sessions-dir", str(Path(directory) / ".agent/sessions")]
                                           + (["--full"] if full else [])), 0)
                 self.assertEqual(output.getvalue(), "assistant:\nbefore thinking\n"
                                                    "思考:\nreadable reasoning\n"

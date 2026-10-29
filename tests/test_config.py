@@ -24,7 +24,8 @@ class ConfigTests(unittest.TestCase):
         else:
             parser = cli_parser()
             initial = ["run", "--session", "demo"]
-        return parser.parse_args([*initial, "--workspace", str(self.root), *options])
+        return parser.parse_args([*initial, "--workspace", str(self.root),
+                                 "--data-dir", str(self.root / "runtime-data"), *options])
 
     def write_config(self, content):
         path = self.root / "skills-agent.toml"
