@@ -171,7 +171,7 @@ class WorkspaceHistory:
         result = _git(self.repository, "rev-parse", "--verify", HISTORY_REF, check=False)
         return result.stdout.strip().decode("ascii") if result.returncode == 0 else None
 
-    def _register_revision(self, revision, paths=()):
+    def _register_revision(self, revision, paths=(), *, operation_id=None):
         manifest_path = self.repository / "path-map.json"
         if manifest_path.exists():
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -181,6 +181,8 @@ class WorkspaceHistory:
             manifest = {"format": 1, "paths": {}, "revisions": {}}
         manifest["revisions"][revision] = PATH_ENCODING
         manifest["paths"].update({_path_key(path): str(path) for path in paths})
+        if operation_id is not None:
+            manifest.setdefault("commit_operations", {})[revision] = operation_id
         _atomic_json(manifest_path, manifest, ensure_ascii=True)
 
     def _write_tree(self, states):
@@ -238,13 +240,12 @@ class WorkspaceHistory:
         if phase != "after" and tree == old_tree:
             self.last_checkpoint = parent
             return parent
-        details = {key: metadata.get(key) for key in ("operation_id", "session_id", "tool_call_id",
-                   "operation", "path", "destination", "operations", "before_revision", "before_ref")}
-        details.update(phase=phase, paths=list(states), path_encoding=PATH_ENCODING)
-        message = "File edit batch " + phase + "\n\n" + json.dumps(details, ensure_ascii=True, sort_keys=True) + "\n"
+        message = metadata["purpose"] + "\n"
         commit = _git(self.repository, "commit-tree", tree, *(["-p", parent] if parent else []),
                       input=message.encode("utf-8")).strip().decode("ascii")
-        self._register_revision(commit, states)
+        # Associate the commit with already-durable structured metadata before
+        # publishing HEAD. User-written purpose text is never parsed as metadata.
+        self._register_revision(commit, states, operation_id=metadata["operation_id"])
         _git(self.repository, "update-ref", HISTORY_REF, commit, parent or "0" * 40)
         self.last_checkpoint = commit
         return commit
@@ -255,18 +256,27 @@ class WorkspaceHistory:
                 "kind": getattr(value, "kind", "file"),
                 "sha256": hashlib.sha256(value.data).hexdigest()} for path, value in states.items()}
 
-    def edit(self, operation, path, *, content=None, old_text=None, new_text=None,
+    def edit(self, operation, path, *, purpose, content=None, old_text=None, new_text=None,
              destination=None, tool_call_id=None, session_id=None, **options):
         edit = {"operation": operation, "path": path, **options}
         for name, value in (("content", content), ("old_text", old_text),
                             ("new_text", new_text), ("destination", destination)):
             if value is not None:
                 edit[name] = value
-        result = self.edit_batch([edit], tool_call_id=tool_call_id, session_id=session_id)
+        result = self.edit_batch([edit], purpose=purpose, tool_call_id=tool_call_id, session_id=session_id)
         return {**result, **result["edits"][0]}
 
-    def edit_batch(self, edits, *, tool_call_id=None, session_id=None):
+    def edit_batch(self, edits, *, purpose, tool_call_id=None, session_id=None):
         from .file_editing import EditError, prepare_batch
+        if not isinstance(purpose, str) or not purpose.strip():
+            raise EditError("purpose must be a nonempty description of why these files are being changed")
+        purpose = purpose.strip()
+        if "\0" in purpose:
+            raise EditError("purpose must not contain NUL characters")
+        try:
+            purpose.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise EditError("purpose must contain valid UTF-8 text") from exc
         with self._mutex:
             if self._closed:
                 raise EditError("File editing history is closed", details={"applied": False, "changed": False})
@@ -276,7 +286,7 @@ class WorkspaceHistory:
                     before = {name: plan.before[name] for name in changed_paths}
                     review = {**plan.review, "operation": "batch", "edit_count": len(edits),
                               "edits": plan.review.get("operations", [plan.review]),
-                              "changed_paths": changed_paths}
+                              "changed_paths": changed_paths, "purpose": purpose}
                     if not plan.changed:
                         for name, target in plan.targets.items():
                             target.verify(plan.before[name])
@@ -348,6 +358,7 @@ class WorkspaceHistory:
                         if not isinstance(exc, Exception):
                             raise
                         details = {"operation_id": identifier, "applied": applied,
+                                   "purpose": purpose,
                                    "changed": changed, "application_state": record["application_state"],
                                    "applied_paths": list(plan.applied_paths),
                                    "attempted_paths": list(plan.attempted_paths),
@@ -436,11 +447,34 @@ def _log_records(repository, limit, path=None):
                              .decode("ascii").splitlines())
     raw = (_git(repository, "log", "-z", "--format=%H%x00%aI%x00%B", HISTORY_REF) if head else b"")
     fields = raw.decode("utf-8", errors="replace").rstrip("\0").split("\0") if raw else []
+    operations = {}
+    for record_path in (repository / "operations").glob("*.json"):
+        operation = json.loads(record_path.read_text(encoding="utf-8"))
+        if operation.get("path_encoding") == PATH_ENCODING:
+            operations[operation["operation_id"]] = operation
+    manifest_path = repository / "path-map.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
+    commit_operations = manifest.get("commit_operations", {}).copy()
+    for identifier, operation in operations.items():
+        if operation.get("status") == "succeeded" and operation.get("after_revision") and "purpose" in operation:
+            commit_operations.setdefault(operation["after_revision"], identifier)
     records, by_operation = [], {}
     for index in range(0, len(fields), 3):
         revision, timestamp, message = fields[index:index + 3]
-        record = {"checkpoint": revision, "time": timestamp, "message": message.strip()}
-        if _encoded_revision(repository, revision):
+        record = {"checkpoint": revision, "time": timestamp, "message": message.strip(), "purpose": None}
+        if revision in commit_operations:
+            identifier = commit_operations[revision]
+            if identifier not in operations:
+                raise ValueError(f"Missing structured metadata for file edit {identifier}")
+            operation = operations[identifier]
+            record.update(operation_id=identifier, purpose=operation["purpose"],
+                          before_revision=operation.get("before_revision"), after_revision=revision,
+                          paths=operation.get("changed_paths", []), status="recorded")
+            by_operation[identifier] = record
+        elif _encoded_revision(repository, revision):
+            # Before purpose became mandatory, format-3 commits used a fixed
+            # machine-written message. New commits are identified by the durable
+            # association above; their arbitrary human prose never reaches this parser.
             details = json.loads(record["message"].split("\n\n", 1)[1])
             record.update(operation_id=details["operation_id"], before_revision=details.get("before_revision"),
                           after_revision=revision, paths=details.get("paths", []), status="recorded")
@@ -451,23 +485,20 @@ def _log_records(repository, limit, path=None):
     # Failed or interrupted batches can have a recoverable preimage and no
     # after-commit. Include them once, and expose both revisions without requiring
     # callers to inspect runtime-internal JSON files.
-    for record_path in (repository / "operations").glob("*.json"):
-        operation = json.loads(record_path.read_text(encoding="utf-8"))
-        if operation.get("path_encoding") != PATH_ENCODING:
-            continue
-        identifier = operation["operation_id"]
+    for identifier, operation in operations.items():
         record = by_operation.get(identifier)
         if record is None:
             record = {"checkpoint": operation.get("after_revision"), "operation_id": identifier,
-                      "message": "File edit batch " + operation["status"]}
+                      "message": operation.get("purpose", "File edit batch " + operation["status"])}
             records.append(record)
         record.update(before_revision=operation.get("before_revision"),
                       after_revision=record["checkpoint"] or operation.get("after_revision"),
                       status=operation["status"], paths=operation.get("changed_paths", []),
+                      purpose=operation.get("purpose"),
                       time=operation.get("completed_at", operation["created_at"]))
     if absolute is not None:
         records = [record for record in records if "paths" not in record or absolute in record["paths"]]
-    records.sort(key=lambda record: record["time"], reverse=True)
+    records.sort(key=lambda record: datetime.fromisoformat(record["time"]), reverse=True)
     return records[:limit]
 
 

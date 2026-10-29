@@ -49,12 +49,14 @@ def create_agent(args, session, *, on_event=None, allow_persistent_processes=Fal
     skills = SkillRegistry([
         Path(__file__).parent / "builtin_skills", workspace / "skills", *args.skill_dirs,
     ])
+    storage = WorkspaceStorage(workspace).ensure()
+    image_directory = storage.session_images(session.path.name)
     sandbox = DockerSandbox(
         image=args.sandbox_image, workspace=workspace,
         skill_roots=[path for path in skills.roots if path.is_dir()],
         read_roots=[session.path.parent],
+        image_directory=image_directory,
     ) if args.sandbox_image else None
-    storage = WorkspaceStorage(workspace).ensure()
     excluded = [session.path]
     if getattr(args, "log_dir", None) is not None:
         excluded.append(args.log_dir / "runtime-storage.json")
@@ -63,5 +65,6 @@ def create_agent(args, session, *, on_event=None, allow_persistent_processes=Fal
     return Agent(model, session, skills, workspace, context_tokens=args.context_tokens,
                  summary_output_tokens=args.summary_output_tokens,
                  sandbox=sandbox, on_event=on_event,
+                 image_directory=image_directory,
                  file_history=history, owns_file_history=True,
                  allow_persistent_processes=allow_persistent_processes)

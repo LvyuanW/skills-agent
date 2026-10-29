@@ -49,6 +49,16 @@ class WorkspaceStorageTests(unittest.TestCase):
         first.ensure()
         self.assertEqual((first.root / "workspace.json").read_bytes(), original)
 
+    def test_image_outputs_are_session_scoped_siblings_and_created_lazily(self):
+        storage = WorkspaceStorage(self.workspace).ensure()
+        self.assertEqual(storage.images.parent, storage.sessions.parent)
+        self.assertEqual(storage.session_images("demo"), storage.root / "images" / "demo")
+        self.assertNotEqual(storage.session_images("demo"), storage.session_images("another"))
+        self.assertFalse(storage.images.exists())
+        for invalid in ("..", "../demo", "/tmp/demo", "a/b", ""):
+            with self.subTest(name=invalid), self.assertRaises(ValueError):
+                storage.session_images(invalid)
+
     def test_cli_default_creates_session_outside_workspace_and_history_is_read_only(self):
         agent = Mock()
         with patch("skills_agent.cli.create_agent", return_value=agent), \
@@ -167,8 +177,34 @@ class WorkspaceStorageTests(unittest.TestCase):
                     export_runtime_logs(logs, session, storage)
                 git.assert_not_called()
                 self.assertFalse((logs / "history.git").exists())
+                self.assertFalse((logs / "images").exists())
                 self.assertEqual((logs / "session/events.jsonl").read_bytes(),
                                  (session.path / "events.jsonl").read_bytes())
+
+    def test_export_carries_parent_child_images_and_preserves_attachment_records(self):
+        storage = WorkspaceStorage(self.workspace).ensure()
+        session = Session(storage.sessions, "visual-check")
+        session.append({"role": "user", "content": "inspect"})
+        images = storage.session_images(session.path.name)
+        child = images / "subagents" / "child" / "capture.png"
+        child.parent.mkdir(parents=True)
+        child.write_bytes(b"child image")
+        capture = images / "capture.png"
+        capture.write_bytes(b"parent image")
+        saved = session.save_attachment(capture)
+        session.append({"role": "tool", "content": saved})
+        original_log = (session.path / "events.jsonl").read_bytes()
+        external = self.root / "external-image.png"
+        external.write_bytes(b"external image")
+        (images / "external.png").symlink_to(external)
+        logs = self.root / "image-export"
+        logs.mkdir()
+        export_runtime_logs(logs, session, storage)
+        self.assertEqual((logs / "images/capture.png").read_bytes(), b"parent image")
+        self.assertEqual((logs / "images/subagents/child/capture.png").read_bytes(), b"child image")
+        self.assertTrue((logs / "images/external.png").is_symlink())
+        self.assertEqual((logs / "session/events.jsonl").read_bytes(), original_log)
+        self.assertEqual((logs / "session/attachments" / Path(saved["path"]).name).read_bytes(), b"parent image")
 
     def test_export_preserves_failed_operation_before_git_initialization(self):
         storage = WorkspaceStorage(self.workspace).ensure()
@@ -206,7 +242,7 @@ class WorkspaceStorageTests(unittest.TestCase):
         result = history.edit_batch([
             {"operation": "replace", "path": str(external), "old_text": "original", "new_text": "updated"},
             {"operation": "create", "path": "nested/new.txt", "content": "new"},
-        ], tool_call_id="batch-outside-workspace")
+        ], purpose="Update external file and create companion", tool_call_id="batch-outside-workspace")
         history.close()
         mapping = (storage.history / "path-map.json").read_bytes()
         logs = self.root / "batch-export"

@@ -21,6 +21,30 @@ class EditError(RuntimeError):
         self.details = {"applied": False, "changed": False, **(details or {})}
 
 
+def _batch_validation_error(error, index, edit, workspace, *, path=None):
+    """Attach preparation context without ever wrapping a published edit."""
+    item = edit if isinstance(edit, dict) else {}
+    operation = item.get("operation") if isinstance(item.get("operation"), str) else None
+    requested = item.get("path")
+    if path is None and isinstance(requested, (str, os.PathLike)) and os.fspath(requested):
+        try:
+            candidate = Path(requested).expanduser()
+            candidate = candidate if candidate.is_absolute() else workspace / candidate
+            path = str(candidate.resolve() if operation in {"write", "replace", "insert"}
+                       else candidate.parent.resolve() / candidate.name)
+        except (OSError, ValueError, TypeError, RuntimeError):
+            path = os.fsdecode(requested)
+    details = {**getattr(error, "details", {}), "phase": "validation", "edit_index": index,
+               "path": path, "operation": operation, "applied": False, "changed": False}
+    label = ", ".join(value for value in (operation, path) if value is not None)
+    message = f"Edit {index}" + (f" ({label})" if label else "") + f": {error}"
+    if "match_count" in details:
+        details["match_basis"] = "after_preceding_edits"
+        message += ". Matching uses the results of preceding edits in this batch"
+    message += ". No files in this batch have been written."
+    return EditError(message, details=details)
+
+
 def supplied_text(value, name):
     if not isinstance(value, str):
         raise EditError(f"{name} must be a string")
@@ -59,12 +83,18 @@ def unique_offset(text, needle, option):
         raise EditError(f"{option} must be nonempty")
     start = text.find(needle)
     if start < 0:
-        raise EditError(f"{option} matched no text; inspect the current file and retry")
+        raise EditError(f"{option} matched no text; inspect the current file and retry",
+                        details={"match_count": 0, "match_field": option})
     second = text.find(needle, start + 1)
     if second >= 0:
+        count, position = 2, second
+        while (position := text.find(needle, position + 1)) >= 0:
+            count += 1
+        hint = ("provide a unique match; for replacing all occurrences, use replace_all=true with expected_count"
+                if option == "old_text" else "provide a unique anchor")
         raise EditError(f"{option} matched more than once (first matches on lines "
                         f"{location(text, start)['line']} and {location(text, second)['line']}); "
-                        "provide a unique match; for replacing all occurrences, use replace_all=true with expected_count")
+                        + hint, details={"match_count": count, "match_field": option})
     return start
 
 
@@ -417,11 +447,32 @@ def _validate_edit(edit):
                 "write": {"content", "content_base64", "encoding"},
                 "replace": {"encoding", "replace_all", "expected_count"},
                 "insert": {"encoding"}, "delete": set(), "move": {"overwrite"}, "copy": {"overwrite"}}
+    missing = {"operation", "path"} - set(edit)
+    if missing:
+        fields = sorted(missing)
+        supported = set().union(*required.values(), *optional.values(), {"name"})
+        unsupported = sorted(map(str, set(edit) - supported))
+        details = {"missing_fields": fields}
+        message = "missing fields: " + ", ".join(fields)
+        if unsupported:
+            details["unsupported_fields"] = unsupported
+            message += "; unsupported fields: " + ", ".join(unsupported)
+        raise EditError(message, details=details)
     operation = edit.get("operation")
     if not isinstance(operation, str) or operation not in required:
         raise EditError("operation must be create, write, replace, insert, delete, move or copy")
-    if not required[operation] <= set(edit) <= required[operation] | optional[operation]:
-        raise EditError(f"Invalid fields for {operation}")
+    missing = required[operation] - set(edit)
+    unsupported = set(edit) - required[operation] - optional[operation] - {"name"}
+    problems, details = [], {}
+    for label, fields in (("missing", missing), ("unsupported", unsupported)):
+        if fields:
+            values = sorted(map(str, fields))
+            problems.append(label + " fields: " + ", ".join(values))
+            details[label + "_fields"] = values
+    if problems:
+        raise EditError("; ".join(problems), details=details)
+    if "name" in edit and not isinstance(edit["name"], str):
+        raise EditError("name must be a string")
     for field in ("path", "destination"):
         if field in edit and (not isinstance(edit[field], (str, os.PathLike)) or not os.fspath(edit[field])):
             raise EditError(f"{field} must be a nonempty path")
@@ -433,8 +484,13 @@ def _validate_edit(edit):
     if "expected_count" in edit and (type(edit["expected_count"]) is not int or edit["expected_count"] < 1):
         raise EditError("expected_count must be a positive integer")
     if operation in {"create", "write"}:
-        if ("content" in edit) == ("content_base64" in edit):
-            raise EditError(f"{operation} requires exactly one of content or content_base64")
+        provided = set(edit) & {"content", "content_base64"}
+        if not provided:
+            raise EditError(f"{operation} is missing content: provide content or content_base64",
+                            details={"required_one_of": ["content", "content_base64"]})
+        if len(provided) == 2:
+            raise EditError(f"{operation} received both content and content_base64; provide only one",
+                            details={"conflicting_fields": ["content", "content_base64"]})
         if "content_base64" in edit and "encoding" in edit:
             raise EditError("encoding applies only to text content, not content_base64")
     if operation == "insert" and edit["position"] not in ("before", "after"):
@@ -445,12 +501,17 @@ def _validate_edit(edit):
 def prepare_batch(workspace, edits, *, excluded_roots=()):
     """Simulate every edit before exposing a plan that can mutate the filesystem."""
     if not isinstance(edits, list) or not edits:
-        raise EditError("edits must be a nonempty array")
-    for edit in edits:
-        _validate_edit(edit)
+        raise EditError("edits must be a nonempty array. No files in this batch have been written.",
+                        details={"phase": "validation", "edit_index": None, "path": None, "operation": None})
     workspace = Path(workspace).expanduser().resolve()
+    for index, edit in enumerate(edits, 1):
+        try:
+            _validate_edit(edit)
+        except Exception as error:
+            raise _batch_validation_error(error, index, edit, workspace) from error
     with ExitStack() as stack:
         targets, before, states, dependencies, summaries = {}, {}, {}, {}, []
+        path_origins = {}
         aliases = {}
 
         def remember(path):
@@ -513,85 +574,98 @@ def prepare_batch(workspace, edits, *, excluded_roots=()):
                 remember(path)
             return states[path]
 
-        for edit in edits:
-            operation = edit["operation"]
-            path = resolve(edit["path"], follow_leaf=operation in {"write", "replace", "insert"})
-            original = current(path)
-            summary = {"operation": operation, "path": path, "requested_path": os.fspath(edit["path"]),
-                       "relative_path": os.path.relpath(path, workspace)}
-            encoding = edit.get("encoding", "utf-8")
-            if operation in {"create", "write"}:
-                if operation == "create" and original is not None:
-                    raise EditError(f"{path}: already exists; create never overwrites")
-                if "content_base64" in edit:
-                    value = supplied_text(edit["content_base64"], "content_base64")
-                    try:
-                        data = base64.b64decode(value, validate=True)
-                    except (ValueError, binascii.Error) as exc:
-                        raise EditError("content_base64 must be valid base64") from exc
-                    summary["bytes_written"] = len(data)
-                else:
-                    text = supplied_text(edit["content"], "content")
-                    data = encode_text(text, encoding, "content")
-                    summary.update(location=location(text, 0), excerpt=excerpt(text, 0))
-                states[path] = FileState(data, original.mode if original else None, ())
-            elif operation in {"replace", "insert"}:
-                if original is None:
-                    raise EditError(f"{path}: file does not exist")
-                if original.kind != "file":
-                    raise EditError(f"{path}: expected a regular file")
-                text = text_from_bytes(original.data, path, encoding)
-                if operation == "replace":
-                    old = supplied_text(edit["old_text"], "old_text")
-                    new = supplied_text(edit["new_text"], "new_text")
-                    if not old:
-                        if text:
-                            raise EditError("old_text may be empty only when the current file is empty")
-                        count, start, result = 1, 0, new
-                    elif edit.get("replace_all"):
-                        count, start = text.count(old), text.find(old)
-                        if not count:
-                            raise EditError("old_text matched no text; inspect the current file and retry")
-                        result = text.replace(old, new)
+        for index, edit in enumerate(edits, 1):
+            path = None
+            try:
+                operation = edit["operation"]
+                path = resolve(edit["path"], follow_leaf=operation in {"write", "replace", "insert"})
+                original = current(path)
+                summary = {"operation": operation, "path": path, "requested_path": os.fspath(edit["path"]),
+                           "relative_path": os.path.relpath(path, workspace)}
+                if "name" in edit:
+                    summary["name"] = edit["name"]
+                encoding = edit.get("encoding", "utf-8")
+                if operation in {"create", "write"}:
+                    if operation == "create" and original is not None:
+                        raise EditError(f"{path}: already exists; create never overwrites")
+                    if "content_base64" in edit:
+                        value = supplied_text(edit["content_base64"], "content_base64")
+                        try:
+                            data = base64.b64decode(value, validate=True)
+                        except (ValueError, binascii.Error) as exc:
+                            raise EditError("content_base64 must be valid base64") from exc
+                        summary["bytes_written"] = len(data)
                     else:
-                        start, count = unique_offset(text, old, "old_text"), 1
-                        result = text[:start] + new + text[start + len(old):]
-                    if "expected_count" in edit and count != edit["expected_count"]:
-                        raise EditError(f"old_text matched {count} times; expected {edit['expected_count']}")
-                    summary.update(replacements=count, characters_removed=len(old) * count,
-                                   characters_inserted=len(new) * count)
+                        text = supplied_text(edit["content"], "content")
+                        data = encode_text(text, encoding, "content")
+                        summary.update(location=location(text, 0), excerpt=excerpt(text, 0))
+                    states[path] = FileState(data, original.mode if original else None, ())
+                elif operation in {"replace", "insert"}:
+                    if original is None:
+                        raise EditError(f"{path}: file does not exist")
+                    if original.kind != "file":
+                        raise EditError(f"{path}: expected a regular file")
+                    text = text_from_bytes(original.data, path, encoding)
+                    if operation == "replace":
+                        old = supplied_text(edit["old_text"], "old_text")
+                        new = supplied_text(edit["new_text"], "new_text")
+                        if not old:
+                            if text:
+                                raise EditError("old_text may be empty only when the current file is empty")
+                            count, start, result = 1, 0, new
+                        elif edit.get("replace_all"):
+                            count, start = text.count(old), text.find(old)
+                            if not count:
+                                raise EditError("old_text matched no text; inspect the current file and retry",
+                                                details={"match_count": 0, "match_field": "old_text"})
+                            result = text.replace(old, new)
+                        else:
+                            start, count = unique_offset(text, old, "old_text"), 1
+                            result = text[:start] + new + text[start + len(old):]
+                        if "expected_count" in edit and count != edit["expected_count"]:
+                            raise EditError(f"old_text matched {count} times; expected {edit['expected_count']}",
+                                            details={"match_count": count, "match_field": "old_text",
+                                                     "expected_count": edit["expected_count"]})
+                        summary.update(replacements=count, characters_removed=len(old) * count,
+                                       characters_inserted=len(new) * count)
+                    else:
+                        anchor = supplied_text(edit["anchor"], "anchor")
+                        insertion = supplied_text(edit["content"], "content")
+                        start = unique_offset(text, anchor, "anchor")
+                        if edit["position"] == "after":
+                            start += len(anchor)
+                        result = text[:start] + insertion + text[start:]
+                        summary["characters_inserted"] = len(insertion)
+                    states[path] = FileState(encode_edited_text(result, original.data, encoding), original.mode, ())
+                    summary.update(location=location(result, start), excerpt=excerpt(result, start))
                 else:
-                    anchor = supplied_text(edit["anchor"], "anchor")
-                    insertion = supplied_text(edit["content"], "content")
-                    start = unique_offset(text, anchor, "anchor")
-                    if edit["position"] == "after":
-                        start += len(anchor)
-                    result = text[:start] + insertion + text[start:]
-                    summary["characters_inserted"] = len(insertion)
-                states[path] = FileState(encode_edited_text(result, original.data, encoding), original.mode, ())
-                summary.update(location=location(result, start), excerpt=excerpt(result, start))
-            else:
-                if original is None:
-                    raise EditError(f"{path}: file does not exist")
-                if operation == "delete":
-                    states[path] = None
-                    summary["removed_bytes"] = len(original.data)
-                else:
-                    destination = resolve(edit["destination"], follow_leaf=False)
-                    if destination == path:
-                        raise EditError(f"{operation} destination must differ from path")
-                    existing = current(destination)
-                    if existing is not None and not edit.get("overwrite", False):
-                        raise EditError(f"{destination}: already exists; set overwrite=true to replace it")
-                    states[destination] = FileState(original.data, original.mode, (), original.kind)
-                    if operation == "move":
+                    if original is None:
+                        raise EditError(f"{path}: file does not exist")
+                    if operation == "delete":
                         states[path] = None
-                    summary.update(destination=destination, requested_destination=os.fspath(edit["destination"]),
-                                   destination_relative_path=os.path.relpath(destination, workspace),
-                                   bytes_copied=len(original.data), kind=original.kind)
-            summary["changed"] = (not same_contents(original, states[path])
-                                  or operation == "copy" and not same_contents(existing, states[destination]))
-            summaries.append(summary)
+                        summary["removed_bytes"] = len(original.data)
+                    else:
+                        destination = resolve(edit["destination"], follow_leaf=False)
+                        if destination == path:
+                            raise EditError(f"{operation} destination must differ from path")
+                        existing = current(destination)
+                        if existing is not None and not edit.get("overwrite", False):
+                            raise EditError(f"{destination}: already exists; set overwrite=true to replace it")
+                        states[destination] = FileState(original.data, original.mode, (), original.kind)
+                        if operation == "move":
+                            states[path] = None
+                        summary.update(destination=destination, requested_destination=os.fspath(edit["destination"]),
+                                       destination_relative_path=os.path.relpath(destination, workspace),
+                                       bytes_copied=len(original.data), kind=original.kind)
+                summary["changed"] = (not same_contents(original, states[path])
+                                      or operation == "copy" and not same_contents(existing, states[destination]))
+                summaries.append(summary)
+                if operation != "copy":
+                    path_origins[path] = (index, edit)
+                if operation in {"copy", "move"}:
+                    path_origins[destination] = (index, edit)
+            except Exception as error:
+                raise _batch_validation_error(error, index, edit, workspace, path=path) from error
         review = ({**summaries[0]} if len(summaries) == 1 else {"operation": "batch"})
         review.update(operations=summaries, edit_count=len(summaries), paths=list(states))
         # Links that are themselves modified are already checked against before;
@@ -599,11 +673,19 @@ def prepare_batch(workspace, edits, *, excluded_roots=()):
         plan = PreparedBatch(targets, before, states, review,
                              [value for path, value in dependencies.items() if path not in targets])
         for path in plan.changed_paths:
-            targets[path].check_writable(excluded_roots)
+            try:
+                targets[path].check_writable(excluded_roots)
+            except Exception as error:
+                index, edit = path_origins[path]
+                raise _batch_validation_error(error, index, edit, workspace, path=path) from error
         for path, state in states.items():
-            if state is not None and any(str(parent) in states and states[str(parent)] is not None
-                                         for parent in Path(path).parents):
-                raise EditError(f"{path}: another file in this batch occupies a required parent directory")
+            conflicts = [str(parent) for parent in Path(path).parents
+                         if str(parent) in states and states[str(parent)] is not None]
+            if state is not None and conflicts:
+                index, edit = max((path_origins[name] for name in [path, *conflicts] if name in path_origins),
+                                  key=lambda origin: origin[0])
+                error = EditError(f"{path}: another file in this batch occupies a required parent directory")
+                raise _batch_validation_error(error, index, edit, workspace, path=path) from error
         yield plan
 
 

@@ -37,10 +37,10 @@ class RuntimeFileHistoryTests(unittest.TestCase):
     def test_parent_and_child_share_recorded_edits_without_recording_other_inputs(self):
         (self.workspace / "input.dat").write_bytes(b"untouched input")
         model = ScriptedModel([
-            call("edit_file", {"name": "Write parent", "operation": "create",
+            call("edit_file", {"name": "Write parent", "purpose": "Save the parent result", "operation": "create",
                                "path": "parent.txt", "content": "parent"}),
             call("subagent", {"name": "Write child", "task": "Create child.txt"}, number=2),
-            call("edit_file", {"name": "Write child", "operation": "create",
+            call("edit_file", {"name": "Write child", "purpose": "Save the child result", "operation": "create",
                                "path": "child.txt", "content": "child"}, number=3),
             final("child done"), final("done"),
         ])
@@ -90,7 +90,7 @@ class RuntimeFileHistoryTests(unittest.TestCase):
     def test_history_retrieval_child_cannot_call_edit_file(self):
         model = ScriptedModel([
             call("subagent", {"name": "Recall", "task": "Find the user's request", "history": True}),
-            call("edit_file", {"name": "Forbidden edit", "operation": "create",
+            call("edit_file", {"name": "Forbidden edit", "purpose": "Attempt a disallowed history edit", "operation": "create",
                                "path": "unexpected.txt", "content": "no"}, number=2),
             final("retrieved"), final("done"),
         ])
@@ -100,6 +100,26 @@ class RuntimeFileHistoryTests(unittest.TestCase):
         self.assertNotIn("edit_file", {tool["name"] for tool in model.calls[1][2]})
         self.assertFalse((self.workspace / "unexpected.txt").exists())
         self.assertFalse(self.storage.history.exists())
+
+    def test_managed_images_are_editable_while_session_records_remain_protected(self):
+        agent = self.agent(ScriptedModel([]))
+        image = self.storage.session_images("main") / "diagram.svg"
+        self.assertFalse(image.parent.exists())
+        result = json.loads(agent.tools.execute("edit_file", json.dumps({
+            "name": "Save diagram", "purpose": "Save a diagram to explain the task result",
+            "edits": [{"operation": "create", "path": str(image), "content": "<svg/>"}],
+        })))
+        self.assertNotIn("error", result)
+        self.assertEqual(image.read_text(), "<svg/>")
+        protected = self.session.path / "events.jsonl"
+        before = protected.read_bytes() if protected.exists() else None
+        result = json.loads(agent.tools.execute("edit_file", json.dumps({
+            "name": "Change session", "purpose": "Attempt to overwrite a runtime record",
+            "edits": [{"operation": "write", "path": str(protected), "content": "invalid"}],
+        })))
+        self.assertIn("error", result)
+        self.assertFalse(result["applied"])
+        self.assertEqual(protected.read_bytes() if protected.exists() else None, before)
 
     def test_user_is_saved_and_displayed_before_saving_runtime_receipt(self):
         model = ScriptedModel([final("done"), final("again")])

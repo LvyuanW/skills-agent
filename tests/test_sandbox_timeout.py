@@ -44,6 +44,23 @@ class SandboxTimeoutTests(unittest.TestCase):
         self.assertGreater(run.call_args_list[1].kwargs["timeout_seconds"], 0)
         self.assertLessEqual(run.call_args_list[1].kwargs["timeout_seconds"], 5)
 
+    def test_images_have_a_writable_mount_while_session_records_remain_read_only(self):
+        workspace = self.workspace / "task"
+        workspace.mkdir()
+        sessions = self.workspace / "runtime" / "sessions"
+        sessions.mkdir(parents=True)
+        images = self.workspace / "runtime" / "images" / "main"
+        sandbox = DockerSandbox("test-image", workspace, read_roots=[sessions], image_directory=images)
+        self.assertFalse(images.exists())
+        for selected in (images, images / "subagents" / "child"):
+            with self.subTest(images=selected), patch("skills_agent.sandbox.run_command", return_value=result()) as run:
+                sandbox.run("render-image", image_directory=selected)
+            arguments = run.call_args.args[0]
+            self.assertIn(f"{sessions.resolve()}:{sessions.resolve()}:ro", arguments)
+            self.assertIn(f"{selected.resolve()}:{selected.resolve()}:rw", arguments)
+            self.assertIn(f"SKILLS_AGENT_IMAGE_DIR={selected.resolve()}", arguments)
+            self.assertTrue(selected.is_dir())
+
     def test_already_removed_container_is_confirmed_with_successful_inventory(self):
         with patch("skills_agent.sandbox.run_command", side_effect=[result(7), result(1), result()]) as run:
             self.assertEqual(self.sandbox.run("exit 7")["exit_code"], 7)

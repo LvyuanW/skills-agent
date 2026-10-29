@@ -34,7 +34,9 @@ Anthropic 接口使用 `--provider anthropic`，并设置 `ANTHROPIC_API_KEY` �
 
 启动时用 `--workspace` 选择工作目录、`--session` 选择会话；未指定工作目录时使用启动时的当前目录。后续相对任务路径均以所选工作目录解析。会话和工具编辑历史统一保存在 runtime 管理的 `~/.skills-agent/workspaces/<工作区标识>/`，CLI 不提供历史目录参数。部署环境可通过 `SKILLS_AGENT_DATA_DIR` 配置 runtime 数据根目录。模型窗口、上下文预算和输出额度必须与实际模型匹配；完整配置、界面操作、图片附件、后台作业与中断恢复见 [使用说明](docs/usage.md)。
 
-`edit_file` 支持任意目录中的多行文本、完整文件和二进制编辑，以及插入、删除、移动和复制。一次调用可编辑一个或多个文件；有改动的成功批次保存一次 Git 提交，并保留修改前内容，不改变项目自身的 Git 分支或暂存区。程序生成物和人工修改不自动记录。系统提示词提供历史仓库路径和查询命令；`read-file-history` skill 说明如何查找、比较旧内容，再通过 `edit_file` 恢复需要的部分。记录范围和查询示例见[工作区文件历史](docs/usage.md#工作区文件历史)。
+`edit_file` 支持任意目录中的多行文本、完整文件和二进制编辑，以及插入、删除、移动和复制。一次调用可编辑一个或多个文件；必填 `purpose` 说明本批修改了什么、为什么修改，并作为历史提交说明。顶层 `path`、`operation` 可为本批设置共享默认值，每项可覆盖，不从前一项或历史调用继承。有改动的成功批次保存一次 Git 提交，并保留修改前内容，不改变项目自身的 Git 分支或暂存区。程序生成物和人工修改不自动记录。系统提示词提供历史仓库路径和查询命令；`read-file-history` skill 说明如何查找、比较旧内容，再通过 `edit_file` 恢复需要的部分。记录范围和查询示例见[工作区文件历史](docs/usage.md#工作区文件历史)。
+
+生成图片、截图和处理后的图片副本默认保存在 runtime 的 `images/<会话名>/`，与 `sessions/` 同级。系统提示词提供绝对图片输出目录，shell 和 sandbox 提供 `SKILLS_AGENT_IMAGE_DIR` 环境变量；用户指定交付位置时优先使用该位置，保留源图片。已发送的图片另有会话附件快照，终端图片链接优先打开该快照。
 
 运行时自动采集工作目录、是否位于 Git 仓库、平台、实际执行 shell 和操作系统版本，加入主 Agent 与子 Agent 的系统提示词；交互 CLI 与 `benchmark` 共用这套环境信息。系统提示引导模型按任务需要适度检查实际结果，并如实说明验证范围、未验证事项和剩余限制。
 
@@ -47,7 +49,7 @@ Anthropic 接口使用 `--provider anthropic`，并设置 `ANTHROPIC_API_KEY` �
   --log-dir /path/to/run-logs
 ```
 
-每次任务使用独立日志目录，正常结束、失败或中断时清理本任务登记的进程。会话和文件历史使用统一运行数据目录，退出时将会话及已有历史导出到 `<log-dir>/session` 和 `<log-dir>/history.git`，供测评归档；没有历史仓库时不导出该仓库。`benchmark` 不允许跨任务保留后台服务。
+每次任务使用独立日志目录，正常结束、失败或中断时清理本任务登记的进程。会话和文件历史使用统一运行数据目录，退出时将会话、已有图片目录和历史导出到 `<log-dir>/session`、`<log-dir>/images` 和 `<log-dir>/history.git`，供测评归档；没有图片目录或历史仓库时不创建对应导出目录。`runtime-storage.json` 记录原运行数据位置及图片导出位置。`benchmark` 不允许跨任务保留后台服务。
 
 - [ALE 适配器与安装说明](adapters/ale/README.md)
 - [ALE 当前环境、隔离和评分验收流程](../benchmark/ale/evaluation-protocol-20261017.txt)

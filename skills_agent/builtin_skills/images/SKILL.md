@@ -13,6 +13,8 @@ Use this skill whenever you attach an image to a model request, including a scre
 
 `images` is an array of `{ "path": "/absolute/host/image.png", "label": "optional description", "source_url": "optional original URL" }`. The `path` must point to a file on the host. It may be an absolute path or a local `file://` URL, including a saved session snapshot URL. A container-only path cannot be read from the host. Download HTTP(S) sources before declaring them. This parameter accepts image files; it does not accept PDFs or other file attachments.
 
+Save generated images, screenshots and prepared copies in the **Image output directory** supplied in the system context, unless the user specified a delivery location. By default, the runtime keeps it at `~/.skills-agent/workspaces/<workspace-id>/images/<session-name>/`, alongside `sessions/`; child agents have their own subdirectory. Shell and sandbox commands receive its absolute path as `SKILLS_AGENT_IMAGE_DIR`. Shell command text can expand that variable, but `images.path` does not expand variables: supply the actual absolute path from context. In the examples, `/absolute/image-output` stands for that directory. Keep source images unchanged; scripts remain in the task workspace.
+
 The runtime reads, validates, and snapshots the declared files **after the command finishes**, so the command may create them. For a background `task`, the runtime registers the paths at launch and attaches images to the completion result. The startup receipt has no image payload.
 
 An explicit `images` field takes precedence over legacy stdout feedback, including when it is `[]`. Progress logs, JSON results, or other stdout text do not change those declarations. Use `images: []` when preparing files without sending them.
@@ -56,7 +58,7 @@ images = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(images)
 canvas = Image.new("RGB", (1200, 700), "white")
 ImageDraw.Draw(canvas).rectangle((100, 100, 1100, 600), outline="navy", width=5)
-metadata = images.save_bounded(canvas, "/absolute/workspace/generated.png", label="Generated diagram")
+metadata = images.save_bounded(canvas, "/absolute/image-output/generated.png", label="Generated diagram")
 print("Drawing complete")
 print(json.dumps(metadata, ensure_ascii=False))
 ```
@@ -68,7 +70,7 @@ Run it and declare the output once; do not invoke `images.py attach` afterward:
   "name": "Draw and inspect diagram",
   "command": "python3 /absolute/workspace/draw.py",
   "run_in_background": false,
-  "images": [{"path": "/absolute/workspace/generated.png", "label": "Generated diagram"}]
+  "images": [{"path": "/absolute/image-output/generated.png", "label": "Generated diagram"}]
 }
 ```
 
@@ -79,11 +81,11 @@ Run it and declare the output once; do not invoke `images.py attach` afterward:
 ```json
 {
   "name": "Prepare and inspect two views",
-  "command": "python3 /absolute/builtin_skills/images/scripts/images.py prepare /absolute/workspace/original-a.png --output /absolute/workspace/view-a.jpg && python3 /absolute/builtin_skills/images/scripts/images.py prepare /absolute/workspace/original-b.png --output /absolute/workspace/view-b.jpg",
+  "command": "python3 /absolute/builtin_skills/images/scripts/images.py prepare /absolute/workspace/original-a.png --output /absolute/image-output/view-a.jpg && python3 /absolute/builtin_skills/images/scripts/images.py prepare /absolute/workspace/original-b.png --output /absolute/image-output/view-b.jpg",
   "run_in_background": false,
   "images": [
-    {"path": "/absolute/workspace/view-a.jpg", "label": "View A", "source_url": "file:///absolute/workspace/original-a.png"},
-    {"path": "/absolute/workspace/view-b.jpg", "label": "View B", "source_url": "file:///absolute/workspace/original-b.png"}
+    {"path": "/absolute/image-output/view-a.jpg", "label": "View A", "source_url": "file:///absolute/workspace/original-a.png"},
+    {"path": "/absolute/image-output/view-b.jpg", "label": "View B", "source_url": "file:///absolute/workspace/original-b.png"}
   ]
 }
 ```
@@ -95,9 +97,9 @@ For more than ten needed sources, compose a numbered grid and declare its single
 ```json
 {
   "name": "Inspect eleven views together",
-  "command": "python3 /absolute/builtin_skills/images/scripts/images.py compose /absolute/workspace/view-1.png /absolute/workspace/view-2.png /absolute/workspace/view-3.png /absolute/workspace/view-4.png /absolute/workspace/view-5.png /absolute/workspace/view-6.png /absolute/workspace/view-7.png /absolute/workspace/view-8.png /absolute/workspace/view-9.png /absolute/workspace/view-10.png /absolute/workspace/view-11.png --output /absolute/workspace/overview.jpg --columns 4",
+  "command": "python3 /absolute/builtin_skills/images/scripts/images.py compose /absolute/workspace/view-1.png /absolute/workspace/view-2.png /absolute/workspace/view-3.png /absolute/workspace/view-4.png /absolute/workspace/view-5.png /absolute/workspace/view-6.png /absolute/workspace/view-7.png /absolute/workspace/view-8.png /absolute/workspace/view-9.png /absolute/workspace/view-10.png /absolute/workspace/view-11.png --output /absolute/image-output/overview.jpg --columns 4",
   "run_in_background": false,
-  "images": [{"path": "/absolute/workspace/overview.jpg", "label": "Eleven numbered views"}]
+  "images": [{"path": "/absolute/image-output/overview.jpg", "label": "Eleven numbered views"}]
 }
 ```
 
@@ -112,9 +114,9 @@ To inspect local HTML or SVG, use the [check-results render helper](../check-res
 ```json
 {
   "name": "Render and inspect page",
-  "command": "python3 /absolute/builtin_skills/check-results/scripts/feedback.py render /absolute/workspace/page.html --output /absolute/workspace/capture.png --width 500 --height 400",
+  "command": "python3 /absolute/builtin_skills/check-results/scripts/feedback.py render /absolute/workspace/page.html --output /absolute/image-output/capture.png --width 500 --height 400",
   "run_in_background": false,
-  "images": [{"path": "/absolute/workspace/capture.png", "label": "Page capture"}]
+  "images": [{"path": "/absolute/image-output/capture.png", "label": "Page capture"}]
 }
 ```
 
@@ -127,7 +129,7 @@ If a computation needs to continue after its shell call returns, read the [backg
   "run_in_background": true,
   "background_lifecycle": "task",
   "timeout_seconds": 7200,
-  "images": [{"path": "/absolute/workspace/plot.png", "label": "Final analysis plot"}]
+  "images": [{"path": "/absolute/image-output/plot.png", "label": "Final analysis plot"}]
 }
 ```
 

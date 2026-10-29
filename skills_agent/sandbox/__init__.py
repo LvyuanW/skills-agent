@@ -17,9 +17,12 @@ class DockerSandbox:
         workspace: Path,
         skill_roots: list[Path] | None = None,
         read_roots: list[Path] | None = None,
+        image_directory: Path | None = None,
     ):
         self.image = image
         self.workspace = Path(workspace).expanduser().resolve()
+        self.image_directory = (Path(image_directory).expanduser().resolve()
+                                if image_directory is not None else None)
         self.read_roots = [
             Path(root).expanduser().resolve()
             for root in [*(skill_roots or []), *(read_roots or [])]
@@ -49,18 +52,25 @@ class DockerSandbox:
             raise ToolCleanupError(f"Could not confirm sandbox container cleanup: {name}") from exc
         raise ToolCleanupError(f"Could not confirm sandbox container cleanup: {name}")
 
-    def run(self, command: str, *, timeout_seconds=DEFAULT_TIMEOUT_SECONDS, log_dir=None) -> dict:
+    def run(self, command: str, *, timeout_seconds=DEFAULT_TIMEOUT_SECONDS, log_dir=None,
+            image_directory=None) -> dict:
         timeout_seconds = validate_timeout(timeout_seconds)
         mounts: dict[Path, str] = {self.workspace: "rw"}
         for root in self.read_roots:
             # Paths in the workspace are already accessible and writable.
             if not root.is_relative_to(self.workspace):
                 mounts[root] = "ro"
+        images = Path(image_directory).expanduser().resolve() if image_directory is not None else self.image_directory
+        if images is not None:
+            images.mkdir(parents=True, exist_ok=True)
+            mounts[images] = "rw"
         container_name = f"skills-agent-{uuid.uuid4().hex}"
         args = ["docker", "run", "--rm", "--network", "none", "--name", container_name]
         # Parent mounts precede children so the workspace keeps its writable mount.
         for root, mode in sorted(mounts.items(), key=lambda item: len(item[0].parts)):
             args.extend(["-v", f"{root}:{root}:{mode}"])
+        if images is not None:
+            args.extend(["-e", f"SKILLS_AGENT_IMAGE_DIR={images}"])
         args.extend(["-w", str(self.workspace), self.image, "sh", "-lc", command])
         cleaned = False
 

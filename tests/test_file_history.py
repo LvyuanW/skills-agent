@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from skills_agent import file_history
-from skills_agent.file_editing import EditError
+from skills_agent.file_editing import EditError, FileState
 from skills_agent.file_history import WorkspaceHistory
 
 
@@ -60,15 +60,112 @@ class FileHistoryTests(unittest.TestCase):
         (self.workspace / "untouched.txt").write_text("private input")
         (self.workspace / "target.txt").write_bytes(b"old\r\n")
         history = self.history()
-        result = history.edit("replace", "target.txt", old_text="old", new_text="new")
+        result = history.edit("replace", "target.txt", old_text="old", new_text="new", purpose="Verify file-history behavior")
         self.assertEqual(self.content(result["before_revision"], "target.txt"), b"old\r\n")
         self.assertEqual(self.content(result["after_revision"], "target.txt"), b"new\r\n")
         self.assertEqual(len(self.git("ls-tree", "-r", "--name-only", "HEAD").splitlines()), 1)
         self.assertEqual(self.git("rev-list", "--count", "HEAD").strip(), b"1")
         commits = self.git("rev-list", "--count", "HEAD")
-        history.edit("replace", "target.txt", old_text="new", new_text="new")
+        history.edit("replace", "target.txt", old_text="new", new_text="new", purpose="Verify file-history behavior")
         self.assertEqual(self.git("rev-list", "--count", "HEAD"), commits)
         self.assertEqual(len(self.records()), 1)
+
+    def test_purpose_is_required_and_validated_before_reading_or_changing_files(self):
+        history = self.history()
+        target = self.workspace / "target.txt"
+        target.write_text("original")
+        edits = [{"operation": "write", "path": "target.txt", "content": "changed"}]
+        with self.assertRaises(TypeError):
+            history.edit_batch(edits)
+        with self.assertRaises(TypeError):
+            history.edit("write", "target.txt", content="changed")
+        for purpose in (None, "", " \n\t ", "has\0NUL", "bad\udcff", 123):
+            with self.subTest(purpose=repr(purpose)), \
+                    patch("skills_agent.file_editing.prepare_batch", side_effect=AssertionError("validation was late")):
+                with self.assertRaises(EditError) as failure:
+                    history.edit_batch(edits, purpose=purpose)
+                self.assertFalse(failure.exception.details["applied"])
+        self.assertEqual(target.read_text(), "original")
+        self.assertFalse(self.repository.parent.exists())
+
+    def test_multiline_purpose_is_the_commit_message_without_metadata_ambiguity(self):
+        purpose = ' \nFile edit batch after\n\n{"operation_id":"fake","paths":["wrong"]}\n\n修复多行内容\n '
+        cleaned = purpose.strip()
+        result = self.history().edit_batch([
+            {"operation": "write", "path": "one.txt", "content": "one"},
+            {"operation": "write", "path": "two.txt", "content": "two"},
+        ], purpose=purpose)
+        message = self.git("cat-file", "commit", result["after_revision"]).split(b"\n\n", 1)[1]
+        self.assertEqual(message, cleaned.encode() + b"\n")
+        self.assertEqual(result["purpose"], cleaned)
+        self.assertEqual(self.git("rev-list", "--count", "HEAD").strip(), b"1")
+        self.assertEqual(self.records()[0]["purpose"], cleaned)
+        logged = json.loads(self.cli("log", "--path", "two.txt").stdout)[0]
+        self.assertEqual(logged["purpose"], cleaned)
+        self.assertEqual(logged["message"], cleaned)
+        self.assertEqual(logged["operation_id"], result["operation_id"])
+        self.assertNotEqual(logged["operation_id"], "fake")
+        self.assertEqual(logged["before_revision"], result["before_revision"])
+
+    def test_noop_and_failed_receipts_keep_the_requested_purpose(self):
+        history = self.history()
+        initial = history.edit("write", "target.txt", content="old", purpose="建立原始版本")
+        unchanged = history.edit("write", "target.txt", content="old", purpose="  核对已存在内容  ")
+        self.assertFalse(unchanged["changed"])
+        self.assertEqual(unchanged["purpose"], "核对已存在内容")
+        self.assertEqual(history.last_checkpoint, initial["after_revision"])
+        with patch("skills_agent.file_editing.PreparedBatch.apply", side_effect=PermissionError("cannot write")):
+            with self.assertRaises(EditError) as failure:
+                history.edit("write", "target.txt", content="new", purpose="  修复目标内容\n保留原版本  ")
+        self.assertEqual(failure.exception.details["purpose"], "修复目标内容\n保留原版本")
+        logged = json.loads(self.cli("log").stdout)[0]
+        self.assertEqual(logged["status"], "failed")
+        self.assertEqual(logged["purpose"], "修复目标内容\n保留原版本")
+        self.assertEqual(self.content(logged["before_revision"], "target.txt"), b"old")
+
+    def test_new_log_reads_structured_link_when_final_operation_record_cannot_be_updated(self):
+        history = self.history()
+        original = file_history._atomic_json
+        def fail_final_record(path, value, **kwargs):
+            if path.parent.name == "operations" and value.get("status") in {"succeeded", "failed"}:
+                raise OSError("operation metadata disk failure")
+            return original(path, value, **kwargs)
+        with patch.object(file_history, "_atomic_json", side_effect=fail_final_record):
+            with self.assertRaises(EditError) as failure:
+                history.edit("write", "target.txt", content="saved", purpose='说明\n\n{"not":"metadata"}')
+        self.assertTrue(failure.exception.details["applied"])
+        self.assertIsNone(self.records()[0]["after_revision"])
+        log = self.cli("log")
+        self.assertEqual(log.returncode, 0, log.stderr)
+        record = json.loads(log.stdout)[0]
+        self.assertEqual(record["purpose"], '说明\n\n{"not":"metadata"}')
+        self.assertEqual(record["operation_id"], failure.exception.details["operation_id"])
+        self.assertEqual(record["after_revision"], failure.exception.details["after_revision"])
+
+    def test_legacy_format_three_machine_messages_remain_readable_without_rewriting(self):
+        history = self.history()
+        history._initialize()
+        target = self.workspace / "legacy.txt"
+        target.write_bytes(b"legacy")
+        _, before = history._write_tree({str(target): None})
+        _, tree = history._write_tree({str(target): FileState(b"legacy", 0o644, ())})
+        details = {"operation_id": "legacy-operation", "before_revision": before,
+                   "paths": [str(target)], "path_encoding": file_history.PATH_ENCODING}
+        old_message = "File edit batch after\n\n" + json.dumps(details) + "\n"
+        old_commit = file_history._git(self.repository, "commit-tree", tree,
+                                      input=old_message.encode()).strip().decode()
+        history._register_revision(old_commit, [str(target)])
+        file_history._git(self.repository, "update-ref", "refs/heads/history", old_commit)
+        original = self.git("cat-file", "commit", old_commit)
+        result = history.edit("write", "legacy.txt", content="updated", purpose="更新旧格式历史中的文件")
+        log = self.cli("log")
+        self.assertEqual(log.returncode, 0, log.stderr)
+        records = json.loads(log.stdout)
+        self.assertEqual(records[0]["purpose"], "更新旧格式历史中的文件")
+        self.assertEqual(records[0]["after_revision"], result["after_revision"])
+        self.assertIsNone(records[1]["purpose"])
+        self.assertEqual(records[1]["operation_id"], "legacy-operation")
+        self.assertEqual(self.git("cat-file", "commit", old_commit), original)
 
     def test_cross_directory_batch_has_one_commit_and_discoverable_preimage_tree(self):
         outside = self.root / "other"
@@ -81,7 +178,7 @@ class FileHistoryTests(unittest.TestCase):
             {"operation": "write", "path": "same.txt", "content": "first new\nline two\n"},
             {"operation": "replace", "path": "same.txt", "old_text": "new", "new_text": "final"},
             {"operation": "write", "path": str(second), "content": "second final\r\n"},
-        ], tool_call_id="batch-call")
+        ], tool_call_id="batch-call", purpose="Verify file-history behavior")
         self.assertEqual(result["operation"], "batch")
         self.assertEqual(result["edit_count"], 3)
         self.assertEqual(set(result["changed_paths"]), {str(first), str(second)})
@@ -104,11 +201,11 @@ class FileHistoryTests(unittest.TestCase):
 
     def test_changed_batch_gets_commit_when_restoring_previous_history_contents(self):
         history = self.history()
-        first = history.edit("write", "target.txt", content="A")
+        first = history.edit("write", "target.txt", content="A", purpose="Verify file-history behavior")
         (self.workspace / "target.txt").write_text("B")
         restored = history.edit_batch([
             {"operation": "write", "path": "target.txt", "content": "A"},
-        ])
+        ], purpose="Verify file-history behavior")
         self.assertTrue(restored["changed"])
         self.assertNotEqual(restored["after_revision"], first["after_revision"])
         self.assertEqual(self.git("rev-list", "--count", "HEAD").strip(), b"2")
@@ -119,7 +216,7 @@ class FileHistoryTests(unittest.TestCase):
         log = json.loads(self.cli("log", "--path", "target.txt").stdout)
         self.assertEqual(len(log), 2)
         self.assertEqual(log[0]["after_revision"], restored["after_revision"])
-        unchanged = history.edit("write", "target.txt", content="A")
+        unchanged = history.edit("write", "target.txt", content="A", purpose="Verify file-history behavior")
         self.assertFalse(unchanged["changed"])
         self.assertEqual(self.git("rev-list", "--count", "HEAD").strip(), b"2")
 
@@ -130,7 +227,7 @@ class FileHistoryTests(unittest.TestCase):
             self.history().edit_batch([
                 {"operation": "write", "path": "target.txt", "content": "new"},
                 {"operation": "replace", "path": "target.txt", "old_text": "missing", "new_text": "x"},
-            ])
+            ], purpose="Verify file-history behavior")
         self.assertEqual(target.read_text(), "old")
         self.assertFalse(self.repository.exists())
 
@@ -140,7 +237,7 @@ class FileHistoryTests(unittest.TestCase):
             {"operation": "replace", "path": "temporary.txt", "old_text": "one", "new_text": "two"},
             {"operation": "move", "path": "temporary.txt", "destination": "final.txt"},
             {"operation": "write", "path": "final.txt", "content": "finished"},
-        ])
+        ], purpose="Verify file-history behavior")
         self.assertFalse((self.workspace / "temporary.txt").exists())
         self.assertEqual(result["changed_paths"], [str(self.workspace / "final.txt")])
         self.assertEqual(self.git("ls-tree", "-r", "--name-only", result["before_revision"]), b"")
@@ -152,7 +249,7 @@ class FileHistoryTests(unittest.TestCase):
         source.write_bytes(b"\x00\xffsource")
         result = self.history().edit_batch([
             {"operation": "copy", "path": str(source), "destination": "copy.bin"},
-        ])
+        ], purpose="Verify file-history behavior")
         self.assertEqual(result["changed_paths"], [str(self.workspace / "copy.bin")])
         self.assertEqual(self.git("ls-tree", "-r", "--name-only", result["before_revision"]), b"")
         self.assertEqual(self.content(result["after_revision"], "copy.bin"), b"\x00\xffsource")
@@ -164,18 +261,18 @@ class FileHistoryTests(unittest.TestCase):
         result = self.history().edit_batch([
             {"operation": "write", "path": ".git/config", "content": "user requested config"},
             {"operation": "write", "path": ".venv/settings.txt", "content": "user requested settings"},
-        ])
+        ], purpose="Verify file-history behavior")
         self.assertEqual(self.content(result["after_revision"], ".git/config"), b"user requested config")
         self.assertEqual(self.content(result["after_revision"], ".venv/settings.txt"), b"user requested settings")
         with self.assertRaises(EditError):
-            self.history().edit("write", str(self.repository / "config"), content="damage")
+            self.history().edit("write", str(self.repository / "config"), content="damage", purpose="Verify file-history behavior")
 
     def test_symlink_preimage_retains_link_bytes_and_survives_git_gc(self):
         target = self.root / "outside.txt"
         target.write_text("outside data")
         link = self.workspace / "link.txt"
         link.symlink_to(target)
-        result = self.history().edit("delete", "link.txt")
+        result = self.history().edit("delete", "link.txt", purpose="Verify file-history behavior")
         self.assertFalse(link.is_symlink())
         self.assertEqual(self.content(result["before_revision"], "link.txt"), os.fsencode(target))
         self.assertTrue(self.git("ls-tree", "-r", result["before_revision"]).startswith(b"120000 blob "))
@@ -193,7 +290,7 @@ class FileHistoryTests(unittest.TestCase):
         target = outside / "text.txt"
         target.write_text("old")
         literal = "files/" + os.fsencode(target).hex()
-        result = self.history().edit("write", str(alias / "text.txt"), content=literal + "\n")
+        result = self.history().edit("write", str(alias / "text.txt"), content=literal + "\n", purpose="Verify file-history behavior")
         self.assertEqual(self.content(result["after_revision"], str(alias / "text.txt")), (literal + "\n").encode())
         diff = self.cli("diff", result["before_revision"], result["after_revision"], "--path", str(target))
         self.assertEqual(diff.returncode, 0, diff.stderr)
@@ -203,9 +300,9 @@ class FileHistoryTests(unittest.TestCase):
 
     def test_sequential_edits_reuse_matching_preimage_and_preserve_operation_metadata(self):
         history = self.history()
-        first = history.edit("create", "new.txt", content="one", tool_call_id="call-one")
+        first = history.edit("create", "new.txt", content="one", tool_call_id="call-one", purpose="Verify file-history behavior")
         second = history.edit("replace", "new.txt", old_text="one", new_text="two",
-                              tool_call_id="child-call", session_id="child-session")
+                              tool_call_id="child-call", session_id="child-session", purpose="Verify file-history behavior")
         self.assertEqual(second["before_revision"],
                          self.git("rev-parse", first["after_revision"] + "^{tree}").strip().decode())
         records = {item["tool_call_id"]: item for item in self.records()}
@@ -217,10 +314,10 @@ class FileHistoryTests(unittest.TestCase):
     def test_delete_and_move_binary_contents_can_be_read_from_both_revisions(self):
         (self.workspace / "binary.bin").write_bytes(b"\xff\x00binary\r\n")
         history = self.history()
-        moved = history.edit("move", "binary.bin", destination="renamed.bin")
+        moved = history.edit("move", "binary.bin", destination="renamed.bin", purpose="Verify file-history behavior")
         self.assertEqual(self.content(moved["before_revision"], "binary.bin"), b"\xff\x00binary\r\n")
         self.assertEqual(self.content(moved["after_revision"], "renamed.bin"), b"\xff\x00binary\r\n")
-        removed = history.edit("delete", "renamed.bin")
+        removed = history.edit("delete", "renamed.bin", purpose="Verify file-history behavior")
         self.assertEqual(self.content(removed["before_revision"], "renamed.bin"), b"\xff\x00binary\r\n")
         self.assertEqual(self.git("ls-tree", "-r", "--name-only", removed["after_revision"]), b"")
 
@@ -230,7 +327,7 @@ class FileHistoryTests(unittest.TestCase):
         name = "数据 [1]\t\n.csv"
         before = b"a\r\nold\r\nlast"
         (self.workspace / name).write_bytes(before)
-        result = self.history().edit("replace", name, old_text="old", new_text="new")
+        result = self.history().edit("replace", name, old_text="old", new_text="new", purpose="Verify file-history behavior")
         self.assertEqual(self.content(result["before_revision"], name), before)
         self.assertEqual(self.content(result["after_revision"], name), before.replace(b"old", b"new"))
         self.assertEqual(len(self.git("ls-tree", "-r", "-z", "--name-only", "HEAD").rstrip(b"\0").split(b"\0")), 1)
@@ -250,7 +347,7 @@ class FileHistoryTests(unittest.TestCase):
         target.write_text("unstaged keep")
         index = (self.workspace / ".git/index").read_bytes()
         head = project_git("rev-parse", "HEAD")
-        self.history().edit("replace", "work.txt", old_text="unstaged", new_text="edited")
+        self.history().edit("replace", "work.txt", old_text="unstaged", new_text="edited", purpose="Verify file-history behavior")
         self.assertEqual((self.workspace / ".git/index").read_bytes(), index)
         self.assertEqual(project_git("rev-parse", "HEAD"), head)
         self.assertEqual(target.read_text(), "edited keep")
@@ -261,7 +358,7 @@ class FileHistoryTests(unittest.TestCase):
         errors = []
         def edit(history, old, new):
             try:
-                history.edit("replace", "shared.txt", old_text=old, new_text=new)
+                history.edit("replace", "shared.txt", old_text=old, new_text=new, purpose="Verify file-history behavior")
             except Exception as exc:
                 errors.append(exc)
         threads = [threading.Thread(target=edit, args=(one, "left", "LEFT")),
@@ -278,7 +375,7 @@ class FileHistoryTests(unittest.TestCase):
         (self.workspace / "shared.txt").write_text("left right")
         script = ("import sys;from skills_agent.file_history import WorkspaceHistory;"
                   "h=WorkspaceHistory(sys.argv[1],sys.argv[2],session_id=sys.argv[3]);"
-                  "h.edit('replace','shared.txt',old_text=sys.argv[3],new_text=sys.argv[3].upper())")
+                  "h.edit('replace','shared.txt',old_text=sys.argv[3],new_text=sys.argv[3].upper(),purpose='Apply concurrent change')")
         children = [subprocess.Popen([sys.executable, "-c", script, str(self.workspace),
                                       str(self.repository), word], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                     for word in ("left", "right")]
@@ -293,7 +390,7 @@ class FileHistoryTests(unittest.TestCase):
         history = self.history()
         with patch("skills_agent.file_editing.PreparedEdit.apply", side_effect=PermissionError("cannot write")):
             with self.assertRaises(EditError) as failure:
-                history.edit("replace", "target.txt", old_text="old", new_text="new")
+                history.edit("replace", "target.txt", old_text="old", new_text="new", purpose="Verify file-history behavior")
         details = failure.exception.details
         self.assertFalse(details["applied"])
         self.assertEqual(self.content(details["before_revision"], "target.txt"), b"old")
@@ -315,7 +412,7 @@ class FileHistoryTests(unittest.TestCase):
             return commit(states, metadata, phase)
         with patch.object(history, "_commit_paths", side_effect=fail):
             with self.assertRaises(EditError) as failure:
-                history.edit("replace", "target.txt", old_text="old", new_text="new")
+                history.edit("replace", "target.txt", old_text="old", new_text="new", purpose="Verify file-history behavior")
         details = failure.exception.details
         self.assertTrue(details["applied"])
         self.assertIsNone(details["after_revision"])
@@ -329,7 +426,7 @@ class FileHistoryTests(unittest.TestCase):
         before = {path.relative_to(self.repository): path.read_bytes()
                   for path in self.repository.rglob("*") if path.is_file()}
         with self.assertRaises(EditError):
-            self.history().edit("create", "target.txt", content="new")
+            self.history().edit("create", "target.txt", content="new", purpose="Verify file-history behavior")
         self.assertFalse((self.workspace / "target.txt").exists())
         after = {path.relative_to(self.repository): path.read_bytes()
                  for path in self.repository.rglob("*") if path.is_file()}
@@ -341,7 +438,7 @@ class FileHistoryTests(unittest.TestCase):
         history = self.history()
         with patch("skills_agent.file_editing.PreparedEdit.apply", side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):
-                history.edit("replace", "target.txt", old_text="old", new_text="new")
+                history.edit("replace", "target.txt", old_text="old", new_text="new", purpose="Verify file-history behavior")
         interrupted = self.records()[0]
         self.assertEqual(interrupted["status"], "interrupted")
         self.assertFalse(interrupted["applied"])
@@ -352,7 +449,7 @@ class FileHistoryTests(unittest.TestCase):
             return commit(states, metadata, phase)
         with patch.object(history, "_commit_paths", side_effect=interrupt):
             with self.assertRaises(SystemExit):
-                history.edit("replace", "target.txt", old_text="old", new_text="new")
+                history.edit("replace", "target.txt", old_text="old", new_text="new", purpose="Verify file-history behavior")
         applied = next(record for record in self.records() if record["applied"])
         self.assertEqual(applied["status"], "interrupted")
         self.assertIsNotNone(applied["after_revision"])
@@ -367,7 +464,7 @@ class FileHistoryTests(unittest.TestCase):
             return original(repository, *args, **kwargs)
         with patch.object(file_history, "_git", side_effect=fail):
             with self.assertRaises(EditError) as failure:
-                history.edit("create", "target.txt", content="new")
+                history.edit("create", "target.txt", content="new", purpose="Verify file-history behavior")
         self.assertFalse(failure.exception.details["applied"])
         self.assertFalse((self.workspace / "target.txt").exists())
         self.assertEqual(self.records()[0]["status"], "failed")
@@ -376,7 +473,7 @@ class FileHistoryTests(unittest.TestCase):
         self.assertFalse(json.loads(status.stdout)["initialized"])
         self.assertIsNone(json.loads(status.stdout)["checkpoint"])
         self.assertEqual(json.loads(self.cli("log").stdout)[0]["status"], "failed")
-        self.history().edit("create", "target.txt", content="resumed")
+        self.history().edit("create", "target.txt", content="resumed", purpose="Verify file-history behavior")
         self.assertEqual(self.content("HEAD", "target.txt"), b"resumed")
 
     def test_interrupt_after_syscall_before_callback_records_uncertainty_and_actual_result(self):
@@ -393,7 +490,7 @@ class FileHistoryTests(unittest.TestCase):
             return result
         with patch("skills_agent.file_editing.os.replace", side_effect=interrupt_after_replace):
             with self.assertRaises(KeyboardInterrupt):
-                self.history().edit("replace", "target.txt", old_text="old", new_text="new")
+                self.history().edit("replace", "target.txt", old_text="old", new_text="new", purpose="Verify file-history behavior")
         record = self.records()[0]
         self.assertEqual(record["status"], "interrupted")
         self.assertIsNone(record["applied"])
@@ -412,7 +509,7 @@ class FileHistoryTests(unittest.TestCase):
         old = file_history._git(self.repository, "commit-tree", tree.decode(), input=b"old full snapshot\n").strip().decode()
         file_history._git(self.repository, "update-ref", "refs/heads/history", old)
         self.assertEqual(self.cli("show", old, "legacy.txt").stdout, b"legacy bytes")
-        result = self.history().edit("create", "new.txt", content="new tool file")
+        result = self.history().edit("create", "new.txt", content="new tool file", purpose="Verify file-history behavior")
         self.assertEqual(self.content(result["after_revision"], "legacy.txt"), b"legacy bytes")
         self.assertEqual(self.content(old, "legacy.txt"), b"legacy bytes")
         self.assertEqual(json.loads(self.cli("status").stdout)["mode"], "editing-only")
@@ -429,7 +526,7 @@ class FileHistoryTests(unittest.TestCase):
         tree = file_history._git(self.repository, "mktree", input=b"040000 tree " + subtree + b"\tfiles\n").strip()
         old = file_history._git(self.repository, "commit-tree", tree.decode(), input=b"legacy snapshot\n").strip().decode()
         file_history._git(self.repository, "update-ref", "refs/heads/history", old)
-        result = self.history().edit("create", "new.txt", content="new data")
+        result = self.history().edit("create", "new.txt", content="new data", purpose="Verify file-history behavior")
         self.assertEqual(self.content(old, legacy_name), b"legacy collision")
         self.assertEqual(self.content(result["after_revision"], legacy_name), b"legacy collision")
         self.assertEqual(self.content(result["after_revision"], "new.txt"), b"new data")
@@ -444,8 +541,8 @@ class FileHistoryTests(unittest.TestCase):
         self.assertEqual(json.loads(self.cli("log").stdout), [])
         self.assertFalse(self.repository.exists())
         history = self.history()
-        first = history.edit("create", "file.txt", content="one\r\n")
-        second = history.edit("replace", "file.txt", old_text="one", new_text="two")
+        first = history.edit("create", "file.txt", content="one\r\n", purpose="Verify file-history behavior")
+        second = history.edit("replace", "file.txt", old_text="one", new_text="two", purpose="Verify file-history behavior")
         self.assertEqual(self.cli("show", first["after_revision"], "file.txt").stdout, b"one\r\n")
         diff = self.cli("diff", second["before_revision"], second["after_revision"], "--path", "file.txt")
         self.assertEqual(diff.returncode, 0, diff.stderr)

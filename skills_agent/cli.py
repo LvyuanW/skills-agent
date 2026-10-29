@@ -130,7 +130,7 @@ def _subagent_summary(event, output, *, key=None):
 
 
 def _tool_images(blocks, output):
-    paths = [block.get("source_path") or block.get("path") for block in blocks
+    paths = [block.get("path") or block.get("source_path") for block in blocks
              if isinstance(block, dict) and block.get("type") == "image"]
     paths = [path for path in paths if isinstance(path, str) and path]
     for index, path in enumerate(paths, 1):

@@ -62,7 +62,7 @@ uv run --env-file .env skills-agent run --session demo --max-output-tokens 32768
 
 鼠标点击需要终端允许鼠标报告；Apple Terminal 默认开启，可在 [View → Allow Mouse Reporting](https://support.apple.com/en-mide/guide/terminal/trmlc69728a5/mac) 中检查。滚轮或 PageUp / PageDown 浏览消息，Ctrl-End 返回最新输出。
 
-工具返回图片时，其结果下方显示蓝色带下划线的 `[图片]`；多张图片依次显示 `[图片1]`、`[图片2]`。在交互会话中单击即可用系统默认应用打开工具返回的原路径，恢复会话后也可点击。原文件已移动或删除时显示打开失败，不查找文件或改用会话副本。F2 选择模式下不触发打开；剪贴板附件维持原有显示。独立 `history` 命令和重定向输出显示图片标签与路径，方便复制。
+工具返回图片时，其结果下方显示蓝色带下划线的 `[图片]`；多张图片依次显示 `[图片1]`、`[图片2]`。在交互会话中单击即可用系统默认应用打开已保存的附件快照，恢复会话后也可点击；原图片后续修改或删除不影响该快照。旧记录只有源路径时使用源路径；所记录的图片不存在时显示打开失败。F2 选择模式下不触发打开；剪贴板附件维持原有显示。独立 `history` 命令和重定向输出显示图片标签与路径，方便复制。
 
 运行期间，耗时右侧显示蓝字“停止”，鼠标移入变红；点击与 Ctrl-C 使用同一中断流程，停止本轮模型接收和正在执行的工具。首次触发后显示“停止中”，清理完成前不重复中断。已收到的正文和思考留在原始会话中；中断正文进入工作上下文，并标记为未完成，不把未完成的工具参数或思考状态作为可续接的响应。已经执行的文件修改不回滚。
 
@@ -141,7 +141,9 @@ macOS 下在输入行按 **Ctrl-V** 粘贴剪贴板中的图片或已复制的�
 uv run --project /path/to/skills-agent skills-agent run --workspace /path/to/task
 ```
 
-会话、附件、执行日志和文件历史默认保存在 `~/.skills-agent/workspaces/<工作区标识>/`。工作区标识根据规范绝对路径生成，同名但不同位置的目录互不混用。`workspace.json` 记录对应路径；该目录下的 `sessions/<会话名>/` 保存每个会话，`history.git/` 保存同一工作区通过 `edit_file` 编辑的文件版本。
+会话、附件、执行日志和文件历史默认保存在 `~/.skills-agent/workspaces/<工作区标识>/`。工作区标识根据规范绝对路径生成，同名但不同位置的目录互不混用。`workspace.json` 记录对应路径；该目录下的 `sessions/<会话名>/` 保存每个会话，`history.git/` 保存同一工作区通过 `edit_file` 编辑的文件版本，`images/<会话名>/` 保存生成图片、截图和处理后的图片副本。`images/` 与 `sessions/` 同级，子 Agent 使用所属图片目录下的 `subagents/<子任务标识>/`；旧附件不搬移。
+
+系统提示词以 `Image output directory` 给出本次绝对图片输出目录，shell 和 sandbox 通过 `SKILLS_AGENT_IMAGE_DIR` 提供相同路径。图片默认保存到这里，用户指定交付位置时优先使用该位置，保留源图片。命令文本可以展开该环境变量，但工具的 `images.path` 参数不会展开变量，必须填写上下文中的实际绝对路径或本地文件 URL。后文 `/absolute/image-output` 是该目录的占位路径；脚本和非图片任务文件仍按原任务安排存放。
 
 CLI 不接受会话或文件历史目录参数。runtime 默认使用 `~/.skills-agent`；部署环境可用 `SKILLS_AGENT_DATA_DIR` 配置数据根目录，相对值以所选工作目录解析。继续或回放会话只需使用同一工作目录和会话名，运行数据位置由部署配置统一管理。
 
@@ -153,7 +155,7 @@ CLI 不接受会话或文件历史目录参数。runtime 默认使用 `~/.skills
 
 ## 工作区文件历史
 
-runtime 仅为 `edit_file` 操作记录文件历史。一个批次可以改动同一文件的多处内容或不同目录中的多个文件；执行前保留涉及文件的真实内容，有改动的成功批次只产生一次 Git 提交。记录关联会话、工具调用、绝对文件路径和修改前后版本，失败时保留已有恢复依据供核查。历史仓库按需建立在 runtime 数据目录，不在任务目录创建 `.git`，不修改项目已有仓库的分支、提交或暂存区。
+runtime 仅为 `edit_file` 操作记录文件历史。一个批次可以改动同一文件的多处内容或不同目录中的多个文件；执行前保留涉及文件的真实内容，有改动的成功批次只产生一次 Git 提交。必填 `purpose` 说明本批修改了什么、为什么修改，并作为提交说明；它独立于显示名称 `name`，不会由后者自动补齐。记录关联会话、工具调用、绝对文件路径和修改前后版本，失败时保留已有恢复依据供核查。历史仓库按需建立在 runtime 数据目录，不在任务目录创建 `.git`，不修改项目已有仓库的分支、提交或暂存区。
 
 没有文件监听或启动、退出时的工作区扫描。程序生成物和人工修改不会自动进入历史；之后如果通过 `edit_file` 编辑其中某个文件，会先保存该文件当时的内容。检查点只覆盖已记录的文件状态，不能据此推断整个工作区在那个时刻的内容，也不代表计算正确、测试通过或任务完成。旧版已保存的检查点保留，新操作继续按工具编辑范围记录。
 
@@ -166,7 +168,7 @@ python -m skills_agent.file_history --repository /absolute/history.git diff BEFO
 python -m skills_agent.file_history --repository /absolute/history.git show BEFORE analysis.py
 ```
 
-`status` 提供记录模式、检查点和错误；`mode: editing-only` 表示仅记录编辑工具操作，`monitoring: false` 表示没有文件监听。尚未执行编辑时可能没有历史仓库或检查点。`BEFORE`、`AFTER` 使用工具结果或 `log` 中的修改前后版本编号；路径可以是任意目录的绝对路径，或相对记录工作目录的路径。`show` 原样输出保存的内容。先核对旧版本与当前文件的差异，再通过 `edit_file` 恢复需要的部分，保留有效的当前工作；不要重定向覆盖文件或通过 Git checkout/reset 绕过编辑工具。文件历史独立于对话历史：查看旧文件不需要回放或删除会话。
+`status` 提供记录模式、检查点和错误；`mode: editing-only` 表示仅记录编辑工具操作，`monitoring: false` 表示没有文件监听。尚未执行编辑时可能没有历史仓库或检查点。`log` 返回批次的 `purpose`、操作 ID 和修改前后版本编号；旧记录可能没有 `purpose`。`BEFORE`、`AFTER` 使用工具结果或 `log` 中的修改前后版本编号；路径可以是任意目录的绝对路径，或相对记录工作目录的路径。`show` 原样输出保存的内容。先核对旧版本与当前文件的差异，再通过 `edit_file` 恢复需要的部分，同时填写恢复内容和原因的 `purpose`，保留有效的当前工作；不要重定向覆盖文件或通过 Git checkout/reset 绕过编辑工具。文件历史独立于对话历史：查看旧文件不需要回放或删除会话。
 
 ## 单次任务与 ALE
 
@@ -177,7 +179,7 @@ python -m skills_agent.file_history --repository /absolute/history.git show BEFO
   --log-dir /path/to/run-logs
 ```
 
-完整任务从 UTF-8 文件读取，执行到模型返回最终回答后退出。配置文件、模型、技能、附件和 runtime 数据根目录与 `run` 使用同一套规则。相对 `--prompt-file`、`--log-dir` 均按所选工作目录解析。每次运行在统一运行数据目录中建立独立会话，退出时将会话和已有文件历史的独立副本导出到 `<log-dir>/session` 和 `<log-dir>/history.git`，供 ALE 等环境归档；未产生历史仓库时不导出该仓库，已使用的日志目录不能重用。退出码为成功 `0`、失败 `1`、中断 `130`。正常结束、失败或接到 SIGTERM 时，均清理当前脚本及通过 shell 登记的本任务后台进程，保留日志后退出；benchmark 明确拒绝 `background_lifecycle=service`，不允许创建跨任务保留的服务。容器部署可用 `SKILLS_AGENT_DATA_DIR` 指向持久化挂载目录；销毁容器前也可归档日志目录中的导出副本。
+完整任务从 UTF-8 文件读取，执行到模型返回最终回答后退出。配置文件、模型、技能、附件和 runtime 数据根目录与 `run` 使用同一套规则。相对 `--prompt-file`、`--log-dir` 均按所选工作目录解析。每次运行在统一运行数据目录中建立独立会话，退出时将会话、已有图片目录和文件历史的独立副本导出到 `<log-dir>/session`、`<log-dir>/images` 和 `<log-dir>/history.git`，供 ALE 等环境归档；没有图片目录或历史仓库时不创建对应导出目录，已使用的日志目录不能重用。`runtime-storage.json` 记录原会话、图片、历史仓库及图片导出位置，原始记录中的路径不改写。退出码为成功 `0`、失败 `1`、中断 `130`。正常结束、失败或接到 SIGTERM 时，均清理当前脚本及通过 shell 登记的本任务后台进程，保留日志后退出；benchmark 明确拒绝 `background_lifecycle=service`，不允许创建跨任务保留的服务。容器部署可用 `SKILLS_AGENT_DATA_DIR` 指向持久化挂载目录；销毁容器前也可归档日志目录中的导出副本。
 
 [ALE 接入说明](../adapters/ale/README.md) 包含可复制到 ALE 仓库的 Deployer、Agent 配置及单任务 smoke 配置。适配器在 ALE 的任务 sandbox 内安装并运行本项目，产物由 Agent 按题目指定路径写入，日志写入 ALE 的 `executor.work_dir`。
 
@@ -277,6 +279,7 @@ scripts/example.py 提供可复用操作；说明它的参数、输入输出和�
 ```json
 {
   "name": "Save input analysis script",
+  "purpose": "Add a CSV inspection script to check the input rows and columns before analysis.",
   "edits": [{
     "operation": "create",
     "path": "analyze.py",
@@ -332,7 +335,7 @@ API 错误的脱敏诊断保存在对应会话 `events.jsonl` 的 `error.diagnos
 
 系统提示引导模型根据原始需求和已接受的修正，按任务需要适度检查实际结果，并依据观察修正问题。最终回答如实说明结果、相关验证和剩余限制，只对已经取得证据的范围作出结论。这些检查由模型结合当前任务选择，不要求独立 reviewer、额外交接或专门报告。
 
-`edit_file` 是文件编辑的专用工具。传入简短的操作目的 `name` 和非空数组 `edits`；每个元素包含操作 `operation`、路径 `path` 及对应参数。绝对路径可指向任意目录，相对路径以 Agent 工作目录解析；文件范围仍由用户任务决定。
+`edit_file` 是文件编辑的专用工具。传入显示名称 `name`、说明本批修改内容及原因的 `purpose`，以及非空数组 `edits`；三者均必填，`purpose` 不从 `name` 自动补齐。顶层可选 `path` 和 `operation` 作为本批的共享默认值；每项可显式覆盖，并可用自己的 `name` 说明该项修改。每项最终都需要路径、操作及对应参数，不从前一项或历史调用继承参数。绝对路径可指向任意目录，相对路径以 Agent 工作目录解析；文件范围仍由用户任务决定。
 
 | 操作 | 额外参数与行为 |
 | --- | --- |
@@ -345,17 +348,18 @@ API 错误的脱敏诊断保存在对应会话 `events.jsonl` 的 `error.diagnos
 
 `content`、`old_text`、`new_text` 和 `anchor` 都支持多行代码，包括 GLSL、HTML、Python 和配置文件，用 JSON 的 `\n` 表示换行，无需 shell 引号或 heredoc。文本默认 UTF-8，可用 `encoding` 指定编码；`content_base64` 直接表示原始字节，不搭配 `encoding`。缺失的父目录会自动创建。内容编辑跟随符号链接；`delete`、`move` 和 `copy` 操作链接本身。runtime 当前会话及正在使用的历史文件受到保护。
 
-例如，先读取现有文件，再针对真实内容调用：
+例如，先读取现有文件，再用本批共享的路径和操作修正两处文字：
 
 ```json
 {
-  "name": "Correct the report heading",
-  "edits": [{
-    "operation": "replace",
-    "path": "report.md",
-    "old_text": "# Anaylsis result",
-    "new_text": "# Analysis result"
-  }]
+  "name": "Correct report typos",
+  "purpose": "Correct two spelling errors so the report is ready to share.",
+  "path": "report.md",
+  "operation": "replace",
+  "edits": [
+    {"name": "Fix heading", "old_text": "# Anaylsis result", "new_text": "# Analysis result"},
+    {"name": "Fix conclusion", "old_text": "The resutls agree.", "new_text": "The results agree."}
+  ]
 }
 ```
 
@@ -393,7 +397,7 @@ shell 可选 `images` 参数的元素为 `{"path":"/absolute/host/image.png","la
   "run_in_background": true,
   "background_lifecycle": "task",
   "timeout_seconds": 7200,
-  "images": [{"path": "/absolute/workspace/plot.png", "label": "分析完成后的图表"}]
+  "images": [{"path": "/absolute/image-output/plot.png", "label": "分析完成后的图表"}]
 }
 ```
 
