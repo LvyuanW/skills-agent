@@ -128,7 +128,7 @@ Example failure: `python run_refine.py 2>&1 | tail -35` showed no logs or output
 
 ## Runnable script examples
 
-Resolve paths relative to this skill before using these examples. Write task outputs into the task workspace, not the skill directory. If adapting an example, save the task's script with `edit_file`, then execute it through shell. The scripts do not replace the runtime supervisor.
+Resolve paths relative to this skill before using these examples. Write task outputs into the task workspace, not the skill directory. Use `edit_file` when saving an adapted script as part of the project or deliverable. Temporary analysis or diagnostic scripts may be created and run through shell within the user's allowed write locations. Execute scripts through shell; they do not replace the runtime supervisor.
 
 | Script | Pattern and use |
 | --- | --- |

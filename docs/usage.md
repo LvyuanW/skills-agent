@@ -157,6 +157,20 @@ CLI 不接受会话或文件历史目录参数。runtime 默认使用 `~/.skills
 
 runtime 仅为 `edit_file` 操作记录文件历史。一个批次可以改动同一文件的多处内容或不同目录中的多个文件；执行前保留涉及文件的真实内容，有改动的成功批次只产生一次 Git 提交。必填 `purpose` 说明本批修改了什么、为什么修改，并作为提交说明；它独立于显示名称 `name`，不会由后者自动补齐。记录关联会话、工具调用、绝对文件路径和修改前后版本，失败时保留已有恢复依据供核查。历史仓库按需建立在 runtime 数据目录，不在任务目录创建 `.git`，不修改项目已有仓库的分支、提交或暂存区。
 
+单条和批量编辑使用同一结构：顶层只有 `name`、`purpose`、`edits`，单条编辑就是 `edits` 中的一项。每项必须包含自己的 `path` 和 `operation`，同一文件的后续编辑也不能省略。操作参数始终写在该项中，`name` 和 `purpose` 只描述整个批次。例如：
+
+```json
+{
+  "name": "保存分析结果",
+  "purpose": "保存已确认的结论，供后续分析继续使用",
+  "edits": [
+    {"path": "analysis.txt", "operation": "write", "content": "已确认的结论。\n"}
+  ]
+}
+```
+
+增加完整的编辑项即可进行批量编辑。工具不再接受旧的顶层单条操作格式、顶层 `path` / `operation` 默认值或单项 `name` / `purpose`；已有会话和文件历史仍可读取。编辑工具只编辑文件，不执行程序。shell 可以在用户允许的写入范围内创建、运行临时分析或诊断脚本，并运行计算、测试和构建程序；不要借临时脚本直接改写交付物、工程源码或配置来绕过编辑工具。
+
 没有文件监听或启动、退出时的工作区扫描。程序生成物和人工修改不会自动进入历史；之后如果通过 `edit_file` 编辑其中某个文件，会先保存该文件当时的内容。检查点只覆盖已记录的文件状态，不能据此推断整个工作区在那个时刻的内容，也不代表计算正确、测试通过或任务完成。旧版已保存的检查点保留，新操作继续按工具编辑范围记录。
 
 系统提示词提供本次历史仓库的绝对路径和可执行查询命令。可通过 shell 使用 [read-file-history skill](../skills_agent/builtin_skills/read-file-history/SKILL.md) 的只读辅助脚本，也可使用运行环境中的 Python 模块：
@@ -274,7 +288,7 @@ scripts/example.py 提供可复用操作；说明它的参数、输入输出和�
 根据执行结果决定下一步。
 ```
 
-`SKILL.md` 提供知识与方法，`scripts/` 提供可复用或改写的参考源码，`references/` 提供按需读取的细节。模型可以根据任务自行编写脚本，保留适用的输入输出约定。需要保存脚本时，先通过 `edit_file` 创建或修改文件，再通过 shell 执行。例如，先调用 `edit_file`：
+`SKILL.md` 提供知识与方法，`scripts/` 提供可复用或改写的参考源码，`references/` 提供按需读取的细节。模型可以根据任务自行编写脚本，保留适用的输入输出约定。作为工程或交付物维护的脚本通过 `edit_file` 创建和修改，再通过 shell 执行；临时分析或诊断脚本也可以直接由 shell 创建、运行，写入位置仍须符合用户约束。例如，保存需维护的分析脚本时调用 `edit_file`：
 
 ```json
 {
@@ -335,7 +349,7 @@ API 错误的脱敏诊断保存在对应会话 `events.jsonl` 的 `error.diagnos
 
 系统提示引导模型根据原始需求和已接受的修正，按任务需要适度检查实际结果，并依据观察修正问题。最终回答如实说明结果、相关验证和剩余限制，只对已经取得证据的范围作出结论。这些检查由模型结合当前任务选择，不要求独立 reviewer、额外交接或专门报告。
 
-`edit_file` 是文件编辑的专用工具。传入显示名称 `name`、说明本批修改内容及原因的 `purpose`，以及非空数组 `edits`；三者均必填，`purpose` 不从 `name` 自动补齐。顶层可选 `path` 和 `operation` 作为本批的共享默认值；每项可显式覆盖，并可用自己的 `name` 说明该项修改。每项最终都需要路径、操作及对应参数，不从前一项或历史调用继承参数。绝对路径可指向任意目录，相对路径以 Agent 工作目录解析；文件范围仍由用户任务决定。
+`edit_file` 用于编辑交付物、工程源码和配置。单条和批量编辑都传入显示名称 `name`、说明本批修改内容及原因的 `purpose`，以及非空数组 `edits`；三者均必填，`purpose` 不从 `name` 自动补齐。每项都明确填写自己的 `path`、`operation` 及对应参数；不接受顶层路径或操作默认值、单项名称或说明，也不从前一项或历史调用继承参数。绝对路径可指向任意目录，相对路径以 Agent 工作目录解析；文件范围仍由用户任务决定。
 
 | 操作 | 额外参数与行为 |
 | --- | --- |
@@ -348,24 +362,22 @@ API 错误的脱敏诊断保存在对应会话 `events.jsonl` 的 `error.diagnos
 
 `content`、`old_text`、`new_text` 和 `anchor` 都支持多行代码，包括 GLSL、HTML、Python 和配置文件，用 JSON 的 `\n` 表示换行，无需 shell 引号或 heredoc。文本默认 UTF-8，可用 `encoding` 指定编码；`content_base64` 直接表示原始字节，不搭配 `encoding`。缺失的父目录会自动创建。内容编辑跟随符号链接；`delete`、`move` 和 `copy` 操作链接本身。runtime 当前会话及正在使用的历史文件受到保护。
 
-例如，先读取现有文件，再用本批共享的路径和操作修正两处文字：
+例如，先读取现有文件，再在一个批次中修正两处文字：
 
 ```json
 {
   "name": "Correct report typos",
   "purpose": "Correct two spelling errors so the report is ready to share.",
-  "path": "report.md",
-  "operation": "replace",
   "edits": [
-    {"name": "Fix heading", "old_text": "# Anaylsis result", "new_text": "# Analysis result"},
-    {"name": "Fix conclusion", "old_text": "The resutls agree.", "new_text": "The results agree."}
+    {"path": "report.md", "operation": "replace", "old_text": "# Anaylsis result", "new_text": "# Analysis result"},
+    {"path": "report.md", "operation": "replace", "old_text": "The resutls agree.", "new_text": "The results agree."}
   ]
 }
 ```
 
 把相关修改放入同一 `edits` 数组，可以在一次调用中处理同一文件的多个位置或多个文件。操作按顺序使用前面操作的结果；写入前验证整批操作，有实际改动的成功批次只创建一次历史提交。执行错误仍可能留下部分修改，应读取工具返回的实际状态再处理。唯一匹配失败时重新读取相应区域。
 
-shell 负责文件读取、程序执行和检查，不得通过 shell、sandbox、内联 Python、重定向或先写脚本再执行的方式，绕过 `edit_file` 直接新建、改写、删除、复制或重命名文件。正常运行程序、测试、编译、分析和渲染仍可生成任务产物；这些产物不自动进入工具编辑历史。
+shell 负责文件读取、程序执行和检查，也可以在用户允许的写入范围内创建、运行临时分析或诊断脚本。交付物、工程源码和配置等需维护的内容仍通过 `edit_file` 直接修改，不得借临时脚本、内联 Python 或重定向绕过。正常运行程序、测试、编译、分析和渲染可生成任务产物；这些产物和 shell 创建的临时脚本不自动进入工具编辑历史。
 
 旧 `file-editing` skill 和 shell 编辑脚本已移除。内置 [read-file-history skill](../skills_agent/builtin_skills/read-file-history/SKILL.md) 提供只读的 `status`、`log`、`diff` 和 `show` 查询，用于比较已记录版本，再通过编辑工具恢复需要的内容。
 

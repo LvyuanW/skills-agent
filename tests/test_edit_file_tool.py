@@ -24,7 +24,7 @@ class EditFileToolTests(unittest.TestCase):
     def edit(self, operation, path="notes.txt", **kwargs):
         return json.loads(self.tools.execute("edit_file", json.dumps({
             "name": "Update task file", "purpose": "Keep the task file up to date",
-            "operation": operation, "path": path, **kwargs,
+            "edits": [{"operation": operation, "path": path, **kwargs}],
         })))
 
     def batch(self, edits, **options):
@@ -37,6 +37,17 @@ class EditFileToolTests(unittest.TestCase):
             sys.executable, "-m", "skills_agent.file_history", "--repository", str(self.history.repository),
             "show", revision, str(path),
         ])
+
+    def test_schema_has_one_shape_for_single_and_multiple_edits(self):
+        schema = next(tool["parameters"] for tool in self.tools.schemas if tool["name"] == "edit_file")
+        self.assertEqual(set(schema["properties"]), {"name", "purpose", "edits"})
+        self.assertEqual(set(schema["required"]), {"name", "purpose", "edits"})
+        self.assertFalse(schema["additionalProperties"])
+        items = schema["properties"]["edits"]["items"]
+        self.assertEqual(set(items["required"]), {"path", "operation"})
+        self.assertFalse(items["additionalProperties"])
+        self.assertNotIn("name", items["properties"])
+        self.assertNotIn("purpose", items["properties"])
 
     def test_tool_operations_return_serializable_results_and_recoverable_contents(self):
         created = self.edit("create", content="first\r\nlast\n")
@@ -69,7 +80,8 @@ class EditFileToolTests(unittest.TestCase):
             for values in cases:
                 with self.subTest(values=values):
                     result = json.loads(self.tools.execute("edit_file", json.dumps({
-                        "name": "Edit", "purpose": "Correct the task file", "path": "notes.txt", **values,
+                        "name": "Edit", "purpose": "Correct the task file",
+                        "edits": [{"path": "notes.txt", **values}],
                     })))
                     self.assertIn("error", result)
                     self.assertFalse(result["executed"])
@@ -101,20 +113,21 @@ class EditFileToolTests(unittest.TestCase):
                 self.assertFalse((self.workspace / "notes.txt").exists())
                 self.assertFalse(self.history.repository.exists())
 
-    def test_explicit_defaults_support_same_file_batches_and_item_overrides(self):
+    def test_complete_items_support_same_file_and_multiple_file_batches(self):
         (self.workspace / "first.txt").write_text("first\nsecond\n")
         (self.workspace / "other.txt").write_text("other\n")
         purpose = "Fix the two related labels\n\nKeep the existing layout and update only the wording."
         result = self.batch([
-            {"name": "First label", "old_text": "first", "new_text": "FIRST"},
-            {"path": "other.txt", "old_text": "other", "new_text": "OTHER"},
-            {"name": "Second label", "old_text": "second", "new_text": "SECOND"},
-        ], path="first.txt", operation="replace", purpose=purpose)
+            {"operation": "replace", "path": "first.txt", "old_text": "first", "new_text": "FIRST"},
+            {"operation": "replace", "path": "other.txt", "old_text": "other", "new_text": "OTHER"},
+            {"operation": "replace", "path": "first.txt", "old_text": "second", "new_text": "SECOND"},
+        ], purpose=purpose)
         self.assertNotIn("error", result)
         self.assertEqual((self.workspace / "first.txt").read_text(), "FIRST\nSECOND\n")
         self.assertEqual((self.workspace / "other.txt").read_text(), "OTHER\n")
-        self.assertEqual(result["edits"][0]["name"], "First label")
         self.assertEqual(result["purpose"], purpose)
+        self.assertEqual(self.saved(result["before_revision"], "first.txt"), b"first\nsecond\n")
+        self.assertEqual(self.saved(result["after_revision"], "other.txt"), b"OTHER\n")
         message = subprocess.check_output([
             "git", "--git-dir", str(self.history.repository), "log", "-1", "--format=%B",
         ]).decode().strip()
@@ -123,24 +136,68 @@ class EditFileToolTests(unittest.TestCase):
             "git", "--git-dir", str(self.history.repository), "rev-list", "--count", "HEAD",
         ]).strip(), b"1")
 
-    def test_missing_defaults_do_not_inherit_from_previous_item_or_call(self):
+    def test_missing_fields_do_not_inherit_from_previous_item_or_call(self):
         (self.workspace / "notes.txt").write_text("first second")
         self.assertNotIn("error", self.batch([
-            {"old_text": "first", "new_text": "FIRST"},
-        ], path="notes.txt", operation="replace"))
-        for edits, index in (([{"old_text": "second", "new_text": "SECOND"}], 1), ([
-            {"operation": "replace", "path": "notes.txt", "old_text": "FIRST", "new_text": "changed"},
-            {"old_text": "second", "new_text": "SECOND"},
-        ], 2)):
-            result = self.batch(edits)
-            self.assertEqual(result["edit_index"], index)
-            self.assertEqual(result["missing_fields"], ["operation", "path"])
-            self.assertFalse(result["applied"])
-            self.assertEqual((self.workspace / "notes.txt").read_text(), "FIRST second")
+            {"operation": "replace", "path": "notes.txt", "old_text": "first", "new_text": "FIRST"},
+        ]))
+        for absent in (("operation",), ("path",), ("operation", "path")):
+            incomplete = {"operation": "replace", "path": "notes.txt", "old_text": "second", "new_text": "SECOND"}
+            for field in absent:
+                del incomplete[field]
+            for edits, index in (([incomplete], 1), ([
+                {"operation": "replace", "path": "notes.txt", "old_text": "FIRST", "new_text": "changed"},
+                incomplete,
+            ], 2)):
+                with self.subTest(absent=absent, index=index), \
+                        patch.object(self.history, "edit_batch", side_effect=AssertionError("must validate first")) as execute:
+                    result = self.batch(edits)
+                    self.assertEqual(result["edit_index"], index)
+                    self.assertEqual(result["missing_fields"], list(absent))
+                    self.assertFalse(result["applied"])
+                    self.assertEqual((self.workspace / "notes.txt").read_text(), "FIRST second")
+                    execute.assert_not_called()
+
+    def test_flat_arguments_and_top_level_defaults_are_rejected_before_editing(self):
+        (self.workspace / "notes.txt").write_text("keep")
+        operation = {"operation": "write", "path": "notes.txt", "content": "changed"}
+        cases = [
+            operation,
+            {"edits": [operation], "path": "different.txt"},
+            {"edits": [operation], "operation": "delete"},
+            {"edits": [{"content": "changed"}], "path": "notes.txt", "operation": "write"},
+        ]
+        with patch.object(self.history, "edit_batch", side_effect=AssertionError("must validate first")) as execute:
+            for arguments in cases:
+                with self.subTest(arguments=arguments):
+                    result = json.loads(self.tools.execute("edit_file", json.dumps({
+                        "name": "Write notes", "purpose": "Update the task notes", **arguments,
+                    })))
+                    self.assertIn("error", result)
+                    self.assertFalse(result["executed"])
+                    self.assertEqual((self.workspace / "notes.txt").read_text(), "keep")
+                    self.assertFalse((self.workspace / "different.txt").exists())
+            execute.assert_not_called()
+        self.assertFalse(self.history.repository.exists())
+
+    def test_item_metadata_and_unknown_fields_reject_the_entire_batch(self):
+        for field in ("name", "purpose", "expected_cout"):
+            with self.subTest(field=field), \
+                    patch.object(self.history, "edit_batch", side_effect=AssertionError("must validate first")) as execute:
+                result = self.batch([
+                    {"operation": "create", "path": "new/first.txt", "content": "first"},
+                    {"operation": "create", "path": "new/second.txt", "content": "second", field: "extra"},
+                ])
+                self.assertEqual(result["edit_index"], 2)
+                self.assertEqual(result["unsupported_fields"], [field])
+                self.assertFalse(result["applied"])
+                self.assertFalse((self.workspace / "new").exists())
+                self.assertFalse(self.history.repository.exists())
+                execute.assert_not_called()
 
     def test_unknown_field_is_reported_instead_of_requesting_present_fields(self):
-        result = self.batch([{"old_text": "a", "new_text": "b", "expected_cout": 1}],
-                            path="notes.txt", operation="replace")
+        result = self.batch([{"operation": "replace", "path": "notes.txt",
+                              "old_text": "a", "new_text": "b", "expected_cout": 1}])
         self.assertEqual(result["unsupported_fields"], ["expected_cout"])
         self.assertIn("unsupported fields: expected_cout", result["error"])
         self.assertNotIn("missing", result["error"])
@@ -150,10 +207,11 @@ class EditFileToolTests(unittest.TestCase):
         original = "first second\nconst material = makeMaterial();\n"
         (self.workspace / "notes.txt").write_text(original)
         result = self.batch([
-            {"old_text": "first", "new_text": "FIRST"},
-            {"old_text": "second", "new_text": "SECOND"},
-            {"old_text": "\nmaterial = makeMaterial();", "new_text": "\nconst material = improved();"},
-        ], path="notes.txt", operation="replace")
+            {"operation": "replace", "path": "notes.txt", "old_text": "first", "new_text": "FIRST"},
+            {"operation": "replace", "path": "notes.txt", "old_text": "second", "new_text": "SECOND"},
+            {"operation": "replace", "path": "notes.txt", "old_text": "\nmaterial = makeMaterial();",
+             "new_text": "\nconst material = improved();"},
+        ])
         self.assertEqual(result["edit_index"], 3)
         self.assertEqual(result["path"], str(self.workspace / "notes.txt"))
         self.assertEqual(result["match_count"], 0)

@@ -46,7 +46,7 @@ Images are visible for one assistant response, including a response that request
 
 ## Generate an image while printing logs
 
-Use `edit_file` to save or adapt this script in the task workspace, for example as `/absolute/workspace/draw.py`, then run it through shell:
+Save or adapt this script in the task workspace, for example as `/absolute/workspace/draw.py`, then run it through shell. Use `edit_file` when the script is part of the project or deliverable. A temporary analysis script may be created and run through shell within the user's allowed write locations:
 
 ```python
 import importlib.util
