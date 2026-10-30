@@ -17,7 +17,7 @@ from urllib.request import url2pathname
 
 
 # Load by file path: shell execution does not require skills_agent on sys.path.
-_helper = Path(__file__).resolve().parents[2] / "check-results/scripts/feedback.py"
+_helper = Path(__file__).resolve().parents[2] / "inspect-files-and-run-checks/scripts/feedback.py"
 _spec = importlib.util.spec_from_file_location("_images_feedback", _helper)
 feedback = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(feedback)
@@ -33,7 +33,7 @@ def source_path(value: str) -> Path:
             raise FeedbackError("SOURCE requires a local file:// URL without a query or fragment")
         return feedback.absolute(url2pathname(parsed.path))
     if "://" in value:
-        raise FeedbackError("Download HTTP(S) sources first with investigation/scripts/fetch.py; "
+        raise FeedbackError("Download HTTP(S) sources first with fetch-and-save-web-sources/scripts/fetch.py; "
                             "pass the saved path and retain its --source-url")
     return feedback.absolute(value)
 

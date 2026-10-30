@@ -1,5 +1,5 @@
 ---
-name: images
+name: attach-images
 description: >-
   Prepare and attach images for model inspection. Required whenever a model
   request includes an image, whether existing, downloaded, generated, or rendered.
@@ -53,7 +53,7 @@ import importlib.util
 import json
 from PIL import Image, ImageDraw
 
-spec = importlib.util.spec_from_file_location("images", "/absolute/builtin_skills/images/scripts/images.py")
+spec = importlib.util.spec_from_file_location("images", "/absolute/builtin_skills/attach-images/scripts/images.py")
 images = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(images)
 canvas = Image.new("RGB", (1200, 700), "white")
@@ -81,7 +81,7 @@ Run it and declare the output once; do not invoke `images.py attach` afterward:
 ```json
 {
   "name": "Prepare and inspect two views",
-  "command": "python3 /absolute/builtin_skills/images/scripts/images.py prepare /absolute/workspace/original-a.png --output /absolute/image-output/view-a.jpg && python3 /absolute/builtin_skills/images/scripts/images.py prepare /absolute/workspace/original-b.png --output /absolute/image-output/view-b.jpg",
+  "command": "python3 /absolute/builtin_skills/attach-images/scripts/images.py prepare /absolute/workspace/original-a.png --output /absolute/image-output/view-a.jpg && python3 /absolute/builtin_skills/attach-images/scripts/images.py prepare /absolute/workspace/original-b.png --output /absolute/image-output/view-b.jpg",
   "run_in_background": false,
   "images": [
     {"path": "/absolute/image-output/view-a.jpg", "label": "View A", "source_url": "file:///absolute/workspace/original-a.png"},
@@ -97,7 +97,7 @@ For more than ten needed sources, compose a numbered grid and declare its single
 ```json
 {
   "name": "Inspect eleven views together",
-  "command": "python3 /absolute/builtin_skills/images/scripts/images.py compose /absolute/workspace/view-1.png /absolute/workspace/view-2.png /absolute/workspace/view-3.png /absolute/workspace/view-4.png /absolute/workspace/view-5.png /absolute/workspace/view-6.png /absolute/workspace/view-7.png /absolute/workspace/view-8.png /absolute/workspace/view-9.png /absolute/workspace/view-10.png /absolute/workspace/view-11.png --output /absolute/image-output/overview.jpg --columns 4",
+  "command": "python3 /absolute/builtin_skills/attach-images/scripts/images.py compose /absolute/workspace/view-1.png /absolute/workspace/view-2.png /absolute/workspace/view-3.png /absolute/workspace/view-4.png /absolute/workspace/view-5.png /absolute/workspace/view-6.png /absolute/workspace/view-7.png /absolute/workspace/view-8.png /absolute/workspace/view-9.png /absolute/workspace/view-10.png /absolute/workspace/view-11.png --output /absolute/image-output/overview.jpg --columns 4",
   "run_in_background": false,
   "images": [{"path": "/absolute/image-output/overview.jpg", "label": "Eleven numbered views"}]
 }
@@ -105,22 +105,22 @@ For more than ten needed sources, compose a numbered grid and declare its single
 
 Composition metadata records each panel's source URL, dimensions, panel and image boxes, and coordinate scale. Boxes use `[left, top, right, bottom]` pixel edges. To recover EXIF-oriented source coordinates, subtract the image-box origin and multiply by `scale_to_source`. If a grid makes important details too small, crop the source and attach that view next.
 
-For an HTTP(S) image, use the [investigation fetch helper](../investigation/scripts/fetch.py). Check the response status and `response_body_complete`, then prepare the file at the returned `body_path`. Set `source_url` to the original HTTP(S) URL. These helpers do not upload images or install dependencies.
+For an HTTP(S) image, use the [fetch-and-save-web-sources fetch helper](../fetch-and-save-web-sources/scripts/fetch.py). Check the response status and `response_body_complete`, then prepare the file at the returned `body_path`. Set `source_url` to the original HTTP(S) URL. These helpers do not upload images or install dependencies.
 
 ## Render or wait for an image
 
-To inspect local HTML or SVG, use the [check-results render helper](../check-results/SKILL.md) to create a screenshot within the size limit. Declare the output in the same shell call:
+To inspect local HTML or SVG, use the [inspect-files-and-run-checks render helper](../inspect-files-and-run-checks/SKILL.md) to create a screenshot within the size limit. Declare the output in the same shell call:
 
 ```json
 {
   "name": "Render and inspect page",
-  "command": "python3 /absolute/builtin_skills/check-results/scripts/feedback.py render /absolute/workspace/page.html --output /absolute/image-output/capture.png --width 500 --height 400",
+  "command": "python3 /absolute/builtin_skills/inspect-files-and-run-checks/scripts/feedback.py render /absolute/workspace/page.html --output /absolute/image-output/capture.png --width 500 --height 400",
   "run_in_background": false,
   "images": [{"path": "/absolute/image-output/capture.png", "label": "Page capture"}]
 }
 ```
 
-If a computation needs to continue after its shell call returns, read the [background-tasks skill](../background-tasks/SKILL.md). Register the future image with the job:
+If a computation needs to continue after its shell call returns, read the [start-background-jobs skill](../start-background-jobs/SKILL.md). Register the future image with the job:
 
 ```json
 {

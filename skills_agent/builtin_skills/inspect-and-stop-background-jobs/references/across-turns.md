@@ -1,6 +1,6 @@
 # Manage a job after the shell launch receipt
 
-Use these examples when a registered job needs a status check, log inspection, readiness check, wait, or stop. Launch the job with `shell run_in_background=true` and the [background-tasks skill](../../background-tasks/SKILL.md). These management commands operate on that existing job; they do not launch another one.
+Use these examples when a registered job needs a status check, log inspection, readiness check, wait, or stop. Launch the job with `shell run_in_background=true` and the [start-background-jobs skill](../../start-background-jobs/SKILL.md). These management commands operate on that existing job; they do not launch another one.
 
 Replace `/ABS/PROCESS.py` with the helper's absolute path. Copy `/ABS/STATE` and `RETURNED_NAME` from the receipt's `state_dir` and internal `name`. Do not use `display_name`. Run each command in a separate shell call with `run_in_background=false`, allowing enough time for its configured wait or stop.
 

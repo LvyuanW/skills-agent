@@ -12,7 +12,7 @@ from skills_agent.skills import SkillRegistry
 
 
 BUILTIN_ROOT = Path(__file__).resolve().parents[1] / "skills_agent" / "builtin_skills"
-ROOT = BUILTIN_ROOT / "workspace"
+ROOT = BUILTIN_ROOT / "inspect-workspace"
 PROBE = ROOT / "scripts" / "probe_environment.py"
 EXTRACT = ROOT / "scripts" / "extract.py"
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -321,7 +321,7 @@ class WorkspaceCapabilitiesTests(unittest.TestCase):
 
     def test_skill_remains_discoverable_and_scripts_compile(self):
         registry = SkillRegistry([BUILTIN_ROOT])
-        self.assertIn("- workspace:", registry.catalog())
+        self.assertIn("- inspect-workspace:", registry.catalog())
         for script in (PROBE, EXTRACT):
             compile(script.read_text(), str(script), "exec")
 

@@ -20,7 +20,7 @@ from skills_agent.skills import SkillRegistry
 from tests.test_feedback_script import BUILTIN_ROOT, SCRIPT, png
 
 
-IMAGE_SCRIPT = BUILTIN_ROOT / 'images' / 'scripts' / 'images.py'
+IMAGE_SCRIPT = BUILTIN_ROOT / 'attach-images' / 'scripts' / 'images.py'
 
 
 def load_images_helper():
@@ -53,8 +53,8 @@ class ImagesSkillTests(unittest.TestCase):
 
     def test_images_skill_is_discovered_from_builtin_root(self):
         catalog = SkillRegistry([BUILTIN_ROOT]).catalog()
-        self.assertIn(str(BUILTIN_ROOT / 'images' / 'SKILL.md'), catalog)
-        self.assertIn('- images:', catalog)
+        self.assertIn(str(BUILTIN_ROOT / 'attach-images' / 'SKILL.md'), catalog)
+        self.assertIn('- attach-images:', catalog)
 
     def test_exact_file_byte_limit_accepts_one_mb_despite_base64_expansion(self):
         path = self.workspace / 'exact image.png'

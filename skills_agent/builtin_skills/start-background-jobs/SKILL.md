@@ -1,15 +1,15 @@
 ---
-name: background-tasks
+name: start-background-jobs
 description: >-
   Start registered shell jobs when the tool call must return before the command
   finishes. Required for shell run_in_background=true, including retained services.
   Skip this skill for foreground commands and scripts that wait for all their
-  children before returning. Use process-management to inspect or stop an existing job.
+  children before returning. Use inspect-and-stop-background-jobs to inspect or stop an existing job.
 ---
 
 Use this skill before a shell command needs to keep running after its tool call returns. This applies to a computation or service, even if it has no child processes.
 
-Use `run_in_background=false` when the shell call should wait for the command. A foreground script may run children in parallel if it waits for all of them before returning; that alone does not require this skill. To inspect or stop a job already registered by shell, use the [process-management skill](../process-management/SKILL.md).
+Use `run_in_background=false` when the shell call should wait for the command. A foreground script may run children in parallel if it waits for all of them before returning; that alone does not require this skill. To inspect or stop a job already registered by shell, use the [inspect-and-stop-background-jobs skill](../inspect-and-stop-background-jobs/SKILL.md).
 
 ## Start through shell
 
@@ -25,7 +25,7 @@ Use the existing `shell` tool with the required Boolean `run_in_background`:
 }
 ```
 
-Keep the actual work in the foreground of the command you pass to shell. Shell handles the early return. Do not add a trailing `&`, use `nohup` or `setsid`, daemonize, or launch detached work. Do not use the process-management helper's legacy `start` command to launch jobs.
+Keep the actual work in the foreground of the command you pass to shell. Shell handles the early return. Do not add a trailing `&`, use `nohup` or `setsid`, daemonize, or launch detached work. Do not use the inspect-and-stop-background-jobs helper's legacy `start` command to launch jobs.
 
 `run_in_background` controls whether the tool waits for the command or returns early. For background jobs, `background_lifecycle` controls when the Agent may give its final reply:
 
@@ -49,7 +49,7 @@ For a service:
 
 The launch receipt confirms that the job started; it does not confirm completion. Save its `job_id`, `display_name`, `process_record_path`, `stdout_path`, `stderr_path`, `state_dir`, and internal `name`. Later management commands need the exact returned `state_dir` and `name`. The display name is only a label; do not use it to guess the internal name or a PID. The runtime records job ownership, keeps complete logs, and shows status and elapsed time in the UI.
 
-For image outputs, read the [images skill](../images/SKILL.md) and declare future files in the same shell call. Configure the script to save them in the system context's **Image output directory**, available as `SKILLS_AGENT_IMAGE_DIR` in its environment, unless the user requested another delivery location. Replace `/absolute/image-output` below with that actual path; `images.path` does not expand environment variables:
+For image outputs, read the [attach-images skill](../attach-images/SKILL.md) and declare future files in the same shell call. Configure the script to save them in the system context's **Image output directory**, available as `SKILLS_AGENT_IMAGE_DIR` in its environment, unless the user requested another delivery location. Replace `/absolute/image-output` below with that actual path; `images.path` does not expand environment variables:
 
 ```json
 {
@@ -84,7 +84,7 @@ A reply with no tool call does not end the run while a registered `task` is pend
 
 If a launch receipt is missing or damaged, the runtime checks the saved registration before returning an error. It does not rerun the command. A `state: "unconfirmed"` or `status: "unconfirmed"` result means the outcome or supervision is unknown. It does not confirm that the job exited.
 
-Read the returned error, job identifiers, record, and log paths. Use the [process-management skill](../process-management/SKILL.md) to check status, read logs, or stop the job. Do not launch a duplicate blindly, invent a PID, or edit registration fields to claim cleanup.
+Read the returned error, job identifiers, record, and log paths. Use the [inspect-and-stop-background-jobs skill](../inspect-and-stop-background-jobs/SKILL.md) to check status, read logs, or stop the job. Do not launch a duplicate blindly, invent a PID, or edit registration fields to claim cleanup.
 
 A required task still prevents the final reply until supervision is restored or actual exit and cleanup are confirmed. Reporting uncertainty alone does not remove that restriction. A verified service may remain running under its `service` lifecycle, but an uncertain state does not prove that it is healthy or ready to deliver.
 
@@ -99,19 +99,19 @@ A `service` stays under its independent supervisor after a successful Agent repl
 }
 ```
 
-A successful HTTP response confirms reachability and the returned content. Check any other behavior required for delivery. Give the user the service address, `job_id`, absolute state and log paths, and an exact stop command from the process-management skill. Stop the service when it is no longer needed.
+A successful HTTP response confirms reachability and the returned content. Check any other behavior required for delivery. Give the user the service address, `job_id`, absolute state and log paths, and an exact stop command from the inspect-and-stop-background-jobs skill. Stop the service when it is no longer needed.
 
 A failed or cancelled turn cleans up its newly launched services and computations. Services retained by earlier successful turns stay available. Benchmark runs do not permit retained services.
 
-Use the [process-management skill](../process-management/SKILL.md) when you need status, a log tail, a readiness check, a bounded wait, or an explicit stop before automatic completion. You do not need it just to launch a job or receive its completion result. Poll only to answer a specific question. Otherwise, continue independent work while the runtime monitors the job.
+Use the [inspect-and-stop-background-jobs skill](../inspect-and-stop-background-jobs/SKILL.md) when you need status, a log tail, a readiness check, a bounded wait, or an explicit stop before automatic completion. You do not need it just to launch a job or receive its completion result. Poll only to answer a specific question. Otherwise, continue independent work while the runtime monitors the job.
 
 ## Observe progress and replace work
 
-If progress information will help you decide what to do next, run Python with `-u` or flush meaningful milestones such as completed batches, the current phase, and elapsed time. Let the supervisor capture stdout/stderr, then use the process-management helper to read bounded tails. Avoid `python worker.py 2>&1 | tail -35` for live progress: `tail -35` normally waits for the input to end, and it cannot show progress that the worker has not printed.
+If progress information will help you decide what to do next, run Python with `-u` or flush meaningful milestones such as completed batches, the current phase, and elapsed time. Let the supervisor capture stdout/stderr, then use the inspect-and-stop-background-jobs helper to read bounded tails. Avoid `python worker.py 2>&1 | tail -35` for live progress: `tail -35` normally waits for the input to end, and it cannot show progress that the worker has not printed.
 
 Empty logs or missing output files do not prove that a job has stalled. CPU at 100% shows activity, but does not establish useful progress or a hang. Use task-specific progress, expected work, known resource limits, and the configured execution deadline to decide whether to wait, stop, or improve and restart the job. Do not assume that the task's remaining time is known. You may stop before the execution timeout when evidence supports replacement.
 
-To stop or replace registered work, use the process-management helper's `stop` with the exact receipt's `state_dir` and internal `name`, and confirm cleanup before starting a replacement:
+To stop or replace registered work, use the inspect-and-stop-background-jobs helper's `stop` with the exact receipt's `state_dir` and internal `name`, and confirm cleanup before starting a replacement:
 
 ```json
 {
@@ -122,7 +122,7 @@ To stop or replace registered work, use the process-management helper's `stop` w
 }
 ```
 
-Resolve the helper path from the process-management skill. Copy `state_dir` and the internal `name` from the receipt. Avoid broad matching such as `pkill -f worker.py`: the same text may appear in a replacement launch's shell or helper, so the command can kill the new launch too. If stop returns an unconfirmed state, diagnose it before starting a replacement.
+Resolve the helper path from the inspect-and-stop-background-jobs skill. Copy `state_dir` and the internal `name` from the receipt. Avoid broad matching such as `pkill -f worker.py`: the same text may appear in a replacement launch's shell or helper, so the command can kill the new launch too. If stop returns an unconfirmed state, diagnose it before starting a replacement.
 
 Example failure: `python run_refine.py 2>&1 | tail -35` showed no logs or output files while the worker used 100% CPU. About 126 seconds into a 600-second deadline, the Agent included `pkill -f run_refine.py; ...` in a replacement command. The replacement lost its launch receipt, which was consistent with the broad match also killing its helper or shell. The empty log did not establish a hang. To replace this work safely, expose flushed progress, stop the exact registered job, and confirm cleanup before launching the replacement.
 

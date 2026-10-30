@@ -182,7 +182,7 @@ def start(args: argparse.Namespace) -> int:
 
     # Ownership checks need ps. Fail before leaving an unconfirmable registration.
     if shutil.which("ps") is None:
-        raise ValueError("process-management requires ps; install the procps package before starting a process")
+        raise ValueError("inspect-and-stop-background-jobs requires ps; install the procps package before starting a process")
     service = getattr(args, "service", False)
     job_timeout = getattr(args, "job_timeout", None)
     if job_timeout is None and not service:

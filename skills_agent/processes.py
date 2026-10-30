@@ -23,7 +23,7 @@ SCOPE_ENV = "SKILLS_AGENT_PROCESS_SCOPE"
 CONTEXT_ENV = "SKILLS_AGENT_PROCESS_CONTEXT"
 CALL_ENV = "SKILLS_AGENT_TOOL_CALL_ID"
 BACKGROUND_STARTUP_TIMEOUT_SECONDS = 10
-HELPER = Path(__file__).parent / "builtin_skills/process-management/scripts/process.py"
+HELPER = Path(__file__).parent / "builtin_skills/inspect-and-stop-background-jobs/scripts/process.py"
 _TERMINAL = {"exited", "failed", "stopped", "timed_out"}
 
 

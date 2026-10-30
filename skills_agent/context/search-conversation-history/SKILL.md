@@ -1,5 +1,5 @@
 ---
-name: history
+name: search-conversation-history
 description: >-
   Recover original main-session requirements, decisions or execution evidence
   with source references. Use only as an assigned history=true retrieval

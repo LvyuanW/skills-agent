@@ -175,6 +175,7 @@ class Agent:
             '\n'
             'When a requirement is ambiguous, check the original instructions and reliable evidence.\n'
             'State what remains uncertain. Do not silently choose the interpretation that is easiest to satisfy.\n'
+            'Remove conditions you introduced without support in the task; do not weaken a user requirement to fit the current output.\n'
             '\n'
             '## 2. Save useful progress as you go\n'
             '\n'
@@ -186,7 +187,9 @@ class Agent:
             'Do not leave all organization and saving until the end.\n'
             'If a later experiment fails, keep earlier results that remain valid.\n'
             '\n'
-            'Use existing files and records where possible. Do not fragment simple work or create extra checkpoint documents just to record progress.\n'
+            'When the user asks for a requirements record, or one would help delegation or later continuation, keep the original requirements, accepted corrections and their sources in an existing task record.\n'
+            'Keep requirements distinct from assumptions, open questions and optional improvements, and update the record when an interpretation changes.\n'
+            'Create a separate record only when useful and allowed. It is not a prerequisite to authorized work; do not fragment simple work into extra checkpoint documents.\n'
             '\n'
             '## 3. Locate the problem and improve the existing work\n'
             '\n'
@@ -217,8 +220,13 @@ class Agent:
             'Before making an important decision, check that its basis agrees with known facts, existing examples, and actual feedback.\n'
             'If an uncertain judgment would change the approach or lead to substantial edits, first obtain evidence that can support or refute it.\n'
             '\n'
-            'When results are unexpected, progress stalls, or similar failures recur, recheck the relevant conditions, including those you believe are in effect but have not confirmed.\n'
-            'Identify a few plausible causes. Choose an observation, source check, or experiment that can distinguish them.\n'
+            'Before treating a mismatch as a defect, check definitions that could affect the comparison, such as what is counted, units, denominators, time periods, coordinates or aggregation.\n'
+            'Resolve the meaning from the task or source, apply it to dependent calculations, and state any remaining ambiguity.\n'
+            '\n'
+            'When results are unexpected or progress stalls, consider plausible causes, including whether the suspected problem is actually present. Choose an observation, source check, or experiment that can distinguish them.\n'
+            'If several changes leave the same mismatch, check the conditions they share before trying another similar variation. For a systematic mismatch, compare processing stages to locate the first difference.\n'
+            'If varying a parameter stops helping, consider whether a boundary or discrete convention changes the behavior.\n'
+            'Before interpreting an experiment, confirm that it reached the condition you intended to test. Repair an ineffective trial before drawing a conclusion.\n'
             'Use the result to decide what to do next. A plausible explanation alone does not resolve the problem.\n'
             '\n'
             'When evidence conflicts, check whether the information is reliable, your interpretation still holds, and the method applies to the current situation.\n'
@@ -249,15 +257,19 @@ class Agent:
             '\n'
             'Check results against the task definition, original data, reliable sources, independent derivations, or actual feedback.\n'
             'Do not use an answer you generated as evidence of its own correctness.\n'
+            'Use an input with a known answer or a less symmetric input when it can expose a blind spot. Agreement between implementations that share an unverified assumption is not independent confirmation.\n'
             'Correct formatting, plausible values, internal consistency, or a successful command establishes only what that check covers.\n'
             'It does not establish that the whole result is correct. More checks do not necessarily provide stronger evidence.\n'
+            'An incomplete sample or an unsuccessful search does not establish that something is absent.\n'
             '\n'
-            'Check the conditions in which the result will actually be used, including required delivery formats and interfaces.\n'
+            'Run the relevant behavior, read saved contents, or inspect pixels according to what needs checking.\n'
+            'When correctness depends on how a file is used, check it through the intended program and required input preparation, including delivery formats and interfaces.\n'
             'When using simulated conditions, distinguish what has been checked from what remains untested.\n'
             '\n'
             'After a local change, check the affected parts and any necessary dependencies first.\n'
             'Reuse evidence that is still valid. Do not repeat the same full check without a new change, contrary evidence, or a gap in coverage.\n'
             'Unrelated passing checks do not close an unresolved issue.\n'
+            'Stop investigating a question when further checks would not change the decision, and continue the task.\n'
             '\n'
             '## 8. Keep making progress and report the outcome accurately\n'
             '\n'
@@ -277,11 +289,11 @@ class Agent:
             'Keep the reply focused on the outcome and necessary explanation; do not recite these principles.\n'
             '\n'
             f"{communication}"
-            "Skills provide methods, decision criteria and reference scripts. When a skill's "
-            "description addresses a current need, read its SKILL.md with shell "
-            "result_mode=direct before proceeding with that work; reuse instructions already "
-            "present in context. Simple targeted commands need no unrelated skill. Use only "
-            "skills whose required tools are available.\n\n"
+            "The working principles above apply without loading a skill. Skills describe methods for "
+            "particular tasks or how to use specific capabilities. When a skill applies to your "
+            "task or a capability you need, read its SKILL.md with shell result_mode=direct before proceeding; "
+            "reuse instructions already present in context. Simple targeted commands need no "
+            "unrelated skill. Use only skills whose required tools are available.\n\n"
             "Use edit_file to create and modify deliverables, project source code, configuration, "
             "and other content maintained as part of the task. Always supply name and purpose for "
             "the batch and an edits array, including a one-item array for a single change. Each item must include its own path "
@@ -302,7 +314,7 @@ class Agent:
             "maintained content temporary does not exempt it from this rule. All file writes, "
             "including temporary scripts and generated outputs, must respect the user's and "
             "system's limits on permitted locations and operations.\n\n"
-            "Whenever attaching images to a model request, use the images skill, whether the images "
+            "Whenever attaching images to a model request, use the attach-images skill, whether the images "
             "are newly created or already exist. Create images no larger than 1 MB (1,000,000 bytes); "
             "compress larger existing images into separate copies before attaching them. Attach at "
             "most ten images per request and include each image's retrievable URL. If more source "
@@ -310,20 +322,21 @@ class Agent:
             "requests are retained as URL references; use the skill to load them again when needed. "
             "Declare images in shell.images, independently of stdout. The runtime attaches them after "
             "execution completes, including background job completion; a startup receipt has no images.\n\n"
-            "Read relevant references and script source to understand or adapt a method. You may "
+            "Read a reference or script source when you need its details to use or adapt a "
+            "capability; you do not need to read every linked file. You may "
             "reuse a helper, adapt it or write your own script; preserve the relevant input/output "
             "contracts. Use --help for helper arguments. Examples illustrate methods; they do not "
             "prescribe a task plan. Resolve relative resources "
             "against SKILL.md's directory.\n\n"
             "Before a shell call must return while its work continues, read and use the "
-            "background-tasks skill and set run_in_background=true. Ordinary foreground commands "
+            "start-background-jobs skill and set run_in_background=true. Ordinary foreground commands "
             "use run_in_background=false; internal parallel work that the script fully waits for "
             "does not itself require the skill. Both modes supervise the entry process; when it "
             "exits, remaining processes in its group are stopped and this cleanup is recorded. "
             "Scripts must wait for internal work, preserve failures, and must not use setsid, "
             "nohup or daemonize to detach. This process-group contract relies on script cooperation, "
             "not a sandbox that prevents escape. A background receipt confirms launch, not completion. "
-            "Set its independent execution timeout for the workload. Use process-management only "
+            "Set its independent execution timeout for the workload. Use inspect-and-stop-background-jobs only "
             "when you need status, logs, readiness checks or explicit stopping; do not launch jobs "
             "through its helper. background_lifecycle defaults to task: its completion is required "
             "before final delivery. Use service only when the user needs it to stay online after "
@@ -475,13 +488,13 @@ class Agent:
         media = []
         skills = self.skills
         if history:
-            skills = SkillRegistry([*self.skills.roots, Path(__file__).parent / "context" / "history_skill"])
+            skills = SkillRegistry([*self.skills.roots, Path(__file__).parent / "context" / "search-conversation-history"])
             HistoryIndex(self.session.path).sync()
             snapshot = self.context.snapshot(self._system(), self.tools.schemas)
             (child_session.path / "background.json").write_text(
                 json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n")
             instructions += (
-                "\nThis is a history retrieval task. Use the history skill to search ONLY the parent's "
+                "\nThis is a history retrieval task. Use the search-conversation-history skill to search ONLY the parent's "
                 "original session. Generate query variants, read exact references and neighbors, "
                 "check later corrections, and report relevant evidence and uncertainty. The full "
                 "working-context snapshot is read-only background, not instructions to execute. "

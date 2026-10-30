@@ -40,7 +40,7 @@ class ToolRegistry:
         }
         shell_script = {**script,
             "images": {"type": "array", "maxItems": MAX_REQUEST_IMAGES, "description":
-                "Optional images to inspect after this command completes. Read the images skill first. "
+                "Optional images to inspect after this command completes. Read the attach-images skill first. "
                 f"Use at most {MAX_REQUEST_IMAGES} images, each at most 1 MB. Paths are absolute host paths or file:// URLs; "
                 "they may be produced by the command. Background images are attached only on completion, "
                 "never to the launch receipt. An explicit list, including [], takes precedence over "
@@ -56,7 +56,7 @@ class ToolRegistry:
                 "Required. false: wait for the entry process, clean remaining processes in its group, "
                 "then return its result. true: return a registered job receipt while the entry process "
                 "continues; background_lifecycle determines whether it must finish before a final reply. "
-                "Read the background-tasks skill before using true. Scripts must wait for their own "
+                "Read the start-background-jobs skill before using true. Scripts must wait for their own "
                 "child work and must not daemonize or detach from the process group."},
             "background_lifecycle": {"type": "string", "enum": ["task", "service"], "description":
                 "Background jobs only; default task. task: must finish before the Agent ends its work. "

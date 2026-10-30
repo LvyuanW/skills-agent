@@ -129,7 +129,7 @@ def feedback_content(result: str, session, *, images=None):
             errors.append("Feedback attachments must be a list")
         elif len(payload["attachments"]) > MAX_REQUEST_IMAGES:
             errors.append(f"A request can contain at most {MAX_REQUEST_IMAGES} images; "
-                          "use the images skill to compose the required sources into a labeled image within 1 MB")
+                          "use the attach-images skill to compose the required sources into a labeled image within 1 MB")
         else:
             attachments = payload["attachments"]
     for index, attachment in enumerate(attachments, 1):

@@ -1,15 +1,15 @@
 ---
-name: process-management
+name: inspect-and-stop-background-jobs
 description: >-
   Inspect status and logs, wait for readiness or completion, or stop a job already
   registered by shell run_in_background=true. Use when you need an intermediate
-  observation or an explicit stop. Use background-tasks to launch jobs; skip this
+  observation or an explicit stop. Use start-background-jobs to launch jobs; skip this
   skill for ordinary foreground commands or automatic completion delivery.
 ---
 
 Use this skill when an existing registered job needs a status check, log inspection, readiness check, bounded wait, or explicit stop.
 
-Launch background work with `shell run_in_background=true` and the [background-tasks skill](../background-tasks/SKILL.md). Do not use this helper's legacy `start` operation. You do not need this skill just to launch a job or receive its automatic completion result. Ordinary foreground commands also do not require it.
+Launch background work with `shell run_in_background=true` and the [start-background-jobs skill](../start-background-jobs/SKILL.md). Do not use this helper's legacy `start` operation. You do not need this skill just to launch a job or receive its automatic completion result. Ordinary foreground commands also do not require it.
 
 Resolve [scripts/process.py](scripts/process.py) to an absolute path from this SKILL.md. Copy the exact `state_dir` and internal `name` from the shell launch receipt. `display_name` is only a label. Retain the returned values between calls; shell variables do not persist. The helper requires Python 3.11 or newer and a POSIX host with `ps` and `waitid/WNOWAIT`.
 

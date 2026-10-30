@@ -16,7 +16,7 @@ from skills_agent.tools import ToolRegistry
 
 
 BUILTIN_ROOT = Path(__file__).resolve().parents[1] / "skills_agent" / "builtin_skills"
-SKILL_ROOT = BUILTIN_ROOT / "check-results"
+SKILL_ROOT = BUILTIN_ROOT / "inspect-files-and-run-checks"
 SCRIPT = SKILL_ROOT / "scripts" / "feedback.py"
 
 
@@ -312,7 +312,7 @@ class FeedbackScriptTests(unittest.TestCase):
 
     def test_feedback_skill_is_discoverable_through_existing_catalog(self):
         catalog = SkillRegistry([BUILTIN_ROOT]).catalog()
-        self.assertIn("check-results:", catalog)
+        self.assertIn("inspect-files-and-run-checks:", catalog)
         self.assertIn(str(SKILL_ROOT / "SKILL.md"), catalog)
         tools = ToolRegistry(self.workspace)
         self.assertEqual([schema["name"] for schema in tools.schemas], ["shell"])

@@ -1,5 +1,5 @@
 ---
-name: manage-compute-resources
+name: measure-and-adjust-resource-use
 description: >-
   Use before a large local calculation, simulation, recording, or file conversion
   when its memory needs or running speed are not yet known. Also use when work
@@ -90,9 +90,9 @@ Do not measure every shell call.
    reduce it before the next run. Do not repeat a plan that has already exhausted
    resources. An exit signal or code alone does not prove that memory was the cause.
 
-Use the [check-results skill](../check-results/SKILL.md) when you need help checking
+Use the [inspect-files-and-run-checks skill](../inspect-files-and-run-checks/SKILL.md) when you need help checking
 actual results or confirming correctness. If work must continue after the shell tool returns,
-also use the [background-tasks skill](../background-tasks/SKILL.md). Running in the
+also use the [start-background-jobs skill](../start-background-jobs/SKILL.md). Running in the
 background does not provide extra resources.
 
 ## Common counterexample

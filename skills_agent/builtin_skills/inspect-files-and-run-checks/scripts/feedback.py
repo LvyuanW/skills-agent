@@ -248,7 +248,7 @@ def attachment(path: Path, label: str, source_url: str | None = None) -> dict:
 def image_feedback(args: argparse.Namespace) -> dict:
     if len(args.paths) > MAX_IMAGES:
         raise FeedbackError(f"At most {MAX_IMAGES} images may be attached to one model request. "
-                            "Select the images needed now, or use images/scripts/images.py compose "
+                            "Select the images needed now, or use attach-images/scripts/images.py compose "
                             "to combine needed sources into one bounded image; do not split tool calls to bypass this limit.")
     source_urls = args.source_url or [None] * len(args.paths)
     if len(source_urls) != len(args.paths):
