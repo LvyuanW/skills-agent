@@ -17,7 +17,7 @@ from skills_agent.tools import ToolRegistry
 
 
 BUILTIN_ROOT = Path(__file__).resolve().parents[1] / "skills_agent" / "builtin_skills"
-SCRIPT = BUILTIN_ROOT / "workspace" / "scripts" / "workspace.py"
+SCRIPT = BUILTIN_ROOT / "inspect-workspace" / "scripts" / "workspace.py"
 
 
 class SkillsToolsTests(unittest.TestCase):

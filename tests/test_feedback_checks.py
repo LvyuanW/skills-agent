@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / 'skills_agent/builtin_skills/feedback/scripts/check.py'
+SCRIPT = Path(__file__).resolve().parents[1] / 'skills_agent/builtin_skills/inspect-files-and-run-checks/scripts/check.py'
 
 
 class FeedbackCheckTests(unittest.TestCase):

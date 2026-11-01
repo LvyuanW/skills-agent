@@ -294,3 +294,109 @@ Choose `result_mode: direct` for exact source, structured values and cursors. In
 
 The main agent retrieves original conversation evidence through a named `subagent` with `history: true` and a concrete question. Ordinary subagents report missing historical input to the parent; dedicated history retrieval subagents follow their assigned instructions. Keep workspace searches outside session directories.
 ````
+
+## v5 · 2026-10-27 · 直接英文表达与明确使用边界
+
+来源：本轮工作区未提交；skills_agent/builtin_skills/workspace/SKILL.md。
+
+- 发现的问题：部分指令较抽象或过长，使用与跳过条件需要更容易区分。
+- 本版本目标：使用清楚、自然、直接的英文说明动作与边界；保留实质约束、原脚本接口和代码示例。六个实验 worktree 使用同一正文。
+- 本版本效果：技能格式、本地引用和原有代码示例核对通过；已完成技能路由场景审阅。未运行新一轮真实模型测评，行为与分数效果待验证。
+
+### 完整原文
+
+````text
+---
+name: workspace
+description: >-
+  Read selected parts of large or structured files and attachments (JSON, CSV,
+  DOCX, XLSX, PDF), with source locations, or check whether required local tools
+  and Python modules are available. Skip simple text reads and searches. Use
+  feedback for visual or runtime checks and delegated history retrieval for
+  conversation records.
+---
+
+## When to use this skill
+
+Use this skill when you need part of a large or structured input, need a source location for what you read, or need to check whether a local dependency is available. Ordinary shell commands are enough for a simple text read or targeted search.
+
+Read the portion needed for the current decision. Keep its source path and location, and follow a continuation cursor when omitted content matters. You can use or adapt the scripts below, or write a parser suited to the task.
+
+## Find and read the relevant input
+
+Locate the workspace, repository or dependency directory before searching file contents recursively. Start from those directories, not `/`. Exclude unrelated directories before traversal. A later `grep -v` or `head` filters output but does not limit how many files the search visits.
+
+Keep useful error messages. Foreground shell calls default to a 120-second execution limit; `timeout_seconds` can raise it to 600 seconds. Use managed background processes for longer work. After a timeout, inspect the partial results and narrow or revise the search before retrying.
+
+Resolve scripts relative to this SKILL.md and run them through `shell` with an available Python interpreter. Each shell call has its own variables.
+
+| Reference | Capability |
+| --- | --- |
+| [scripts/workspace.py](scripts/workspace.py) | `read PATH --start 1 --end 200` selects inclusive UTF-8 lines; `search PATTERN PATH... [--regex] [--glob '*.py']` returns filenames and one-based lines. |
+| [scripts/extract.py](scripts/extract.py) | Located, bounded JSON Pointer, CSV, DOCX, XLSX and PDF extraction. Read [references/extraction.md](references/extraction.md) for the selected format's options, limits and cursor rules. |
+| [scripts/probe_environment.py](scripts/probe_environment.py) | `--executable NAME` / `--module NAME` checks required capabilities without running them; flags may repeat. Module names are top-level names, without dots. Exit 1 means a requested capability is missing. |
+
+Keep the source and selection options unchanged while following cursors. If the file changes, read it again from the appropriate starting point.
+
+These extractors read stored content. They do not check document layout, perform OCR, calculate formulas or test application behavior. Use feedback when those visual or runtime checks are needed. PDF extraction requires an installed reader and does not install one. Use a suitable reader for other binary formats. For very long text lines, the feedback skill's `text` operation supports line/column continuation.
+
+Choose `result_mode: direct` when you need exact source text, structured values or cursors. Inspect the returned content and failure status before relying on it. Finding an executable or module confirms its availability, not that it works correctly.
+
+## Keep conversation retrieval separate
+
+Keep workspace searches outside session directories. The main agent retrieves original conversation evidence by assigning a named `subagent` with `history: true` and a concrete question. Ordinary subagents report missing historical input to their parent. Dedicated history retrieval subagents follow their assigned retrieval instructions.
+````
+
+## v6 · 2026-10-28 · 同步 check-results 路由名称
+
+来源：六个实验 worktree 的共享修改；提交标识见 [本轮提交记录](README.md#2026-10-28-召回条件与名称更新)。
+
+当前源文件：`skills_agent/builtin_skills/workspace/SKILL.md`。
+
+- 发现的问题：结果检查技能改名后，workspace 的 description 和正文仍使用旧 feedback 技能名称进行视觉与运行检查分流。
+- 本版本目标：将 description 和正文中的技能名称更新为 check-results，保留文件读取、环境探测、提取游标和历史检索边界。
+- 本版本效果：现行路由名称已同步，文件读取能力和原有边界保持；真实模型的选择与使用效果待测评。
+
+### 完整原文
+
+````text
+---
+name: workspace
+description: >-
+  Read selected parts of large or structured files and attachments (JSON, CSV,
+  DOCX, XLSX, PDF), with source locations, or check whether required local tools
+  and Python modules are available. Skip simple text reads and searches. Use
+  check-results for visual or runtime checks and delegated history retrieval for
+  conversation records.
+---
+
+## When to use this skill
+
+Use this skill when you need part of a large or structured input, need a source location for what you read, or need to check whether a local dependency is available. Ordinary shell commands are enough for a simple text read or targeted search.
+
+Read the portion needed for the current decision. Keep its source path and location, and follow a continuation cursor when omitted content matters. You can use or adapt the scripts below, or write a parser suited to the task.
+
+## Find and read the relevant input
+
+Locate the workspace, repository or dependency directory before searching file contents recursively. Start from those directories, not `/`. Exclude unrelated directories before traversal. A later `grep -v` or `head` filters output but does not limit how many files the search visits.
+
+Keep useful error messages. Foreground shell calls default to a 120-second execution limit; `timeout_seconds` can raise it to 600 seconds. Use managed background processes for longer work. After a timeout, inspect the partial results and narrow or revise the search before retrying.
+
+Resolve scripts relative to this SKILL.md and run them through `shell` with an available Python interpreter. Each shell call has its own variables.
+
+| Reference | Capability |
+| --- | --- |
+| [scripts/workspace.py](scripts/workspace.py) | `read PATH --start 1 --end 200` selects inclusive UTF-8 lines; `search PATTERN PATH... [--regex] [--glob '*.py']` returns filenames and one-based lines. |
+| [scripts/extract.py](scripts/extract.py) | Located, bounded JSON Pointer, CSV, DOCX, XLSX and PDF extraction. Read [references/extraction.md](references/extraction.md) for the selected format's options, limits and cursor rules. |
+| [scripts/probe_environment.py](scripts/probe_environment.py) | `--executable NAME` / `--module NAME` checks required capabilities without running them; flags may repeat. Module names are top-level names, without dots. Exit 1 means a requested capability is missing. |
+
+Keep the source and selection options unchanged while following cursors. If the file changes, read it again from the appropriate starting point.
+
+These extractors read stored content. They do not check document layout, perform OCR, calculate formulas or test application behavior. Use check-results when those visual or runtime checks are needed. PDF extraction requires an installed reader and does not install one. Use a suitable reader for other binary formats. For very long text lines, the check-results skill's `text` operation supports line/column continuation.
+
+Choose `result_mode: direct` when you need exact source text, structured values or cursors. Inspect the returned content and failure status before relying on it. Finding an executable or module confirms its availability, not that it works correctly.
+
+## Keep conversation retrieval separate
+
+Keep workspace searches outside session directories. The main agent retrieves original conversation evidence by assigning a named `subagent` with `history: true` and a concrete question. Ordinary subagents report missing historical input to their parent. Dedicated history retrieval subagents follow their assigned retrieval instructions.
+````

@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 SCRIPTS = (Path(__file__).resolve().parents[1] / "skills_agent" / "builtin_skills"
-           / "code-repair" / "scripts")
+           / "diagnose-and-fix-code" / "scripts")
 
 
 class VerificationScriptTests(unittest.TestCase):

@@ -40,7 +40,7 @@ class ToolRegistry:
         }
         shell_script = {**script,
             "images": {"type": "array", "maxItems": MAX_REQUEST_IMAGES, "description":
-                "Optional images to inspect after this command completes. Read the images skill first. "
+                "Optional images to inspect after this command completes. Read the attach-images skill first. "
                 f"Use at most {MAX_REQUEST_IMAGES} images, each at most 1 MB. Paths are absolute host paths or file:// URLs; "
                 "they may be produced by the command. Background images are attached only on completion, "
                 "never to the launch receipt. An explicit list, including [], takes precedence over "
@@ -56,7 +56,7 @@ class ToolRegistry:
                 "Required. false: wait for the entry process, clean remaining processes in its group, "
                 "then return its result. true: return a registered job receipt while the entry process "
                 "continues; background_lifecycle determines whether it must finish before a final reply. "
-                "Read the background-tasks skill before using true. Scripts must wait for their own "
+                "Read the start-background-jobs skill before using true. Scripts must wait for their own "
                 "child work and must not daemonize or detach from the process group."},
             "background_lifecycle": {"type": "string", "enum": ["task", "service"], "description":
                 "Background jobs only; default task. task: must finish before the Agent ends its work. "
@@ -75,18 +75,20 @@ class ToolRegistry:
                                     "to return a job ID and continue working while the runtime supervises it. "
                                     "The entry process must wait for internal work; its exit triggers cleanup "
                                     "of remaining processes in the same group, recorded in the result. "
-                                    "Read files, run programs and inspect results. Use edit_file to create or "
-                                    "change scripts and other files; do not edit files through shell commands. "
+                                    "Read files, run programs and inspect results. You may create and run "
+                                    "temporary analysis or diagnostic scripts here within the user's allowed "
+                                    "write locations. Use edit_file for direct changes to deliverables, project "
+                                    "source and configuration; temporary scripts do not exempt those changes. "
                                     "Filter large data in your script and print relevant evidence.",
                                     shell_script, ["name", "command", "run_in_background"])]
         if file_history is not None:
             self.schemas.append(self._schema(
-                "edit_file", "Edit one or more files in a single recorded batch. Use edits with one item "
-                "for a simple change, or several items for related changes in the same or different files. "
+                "edit_file", "Edit deliverables, project source and configuration in a recorded batch. "
+                "Single and multiple edits use the same structure: name and purpose describe the batch, "
+                "and edits contains one or more complete operations. Every item must supply its own path "
+                "and operation, including repeated changes to the same file. "
                 "Explain what this batch changes and why in purpose; it becomes the file-history commit "
-                "message. For repeated edits to one file, set path and operation once at the batch level. "
-                "Each item may override these explicit defaults; nothing is inherited from earlier items "
-                "or calls. An item may include a name to describe that particular edit. "
+                "message. Parameters are not inherited from other items or calls. "
                 "Items run in order against the preceding items' results. All are validated before any "
                 "file is written; a successful changed batch creates one history commit and retains its "
                 "original contents. An execution error can leave partial changes; inspect the result. "
@@ -100,20 +102,16 @@ class ToolRegistry:
                 "is intended. Absolute paths may be in any directory; relative paths use the working "
                 "directory. Missing parent directories are created as needed. Content edits follow "
                 "symlinks; delete/move/copy act on the link itself. The runtime's own active history "
-                "and session files are protected. Use this tool for direct file changes, including "
-                "temporary scripts, instead of shell editing commands.", {
+                "and session files are protected. Temporary analysis or diagnostic scripts may be "
+                "created and run through shell, within the user's allowed write locations. Do not use "
+                "them to bypass this tool for direct changes to deliverables, project source or configuration.", {
                     "name": {"type": "string", "description": "Short action label, shown to the user."},
                     "purpose": {"type": "string", "minLength": 1, "description":
                                 "Required explanation of what this batch changes and why. Saved as the file-history commit message."},
-                    "path": {"type": "string", "description":
-                             "Optional explicit default file path for this batch; individual edits can override it."},
-                    "operation": {"type": "string", "enum": ["create", "write", "replace", "insert", "delete", "move", "copy"],
-                                  "description": "Optional explicit default operation for this batch; individual edits can override it."},
                     "edits": {"type": "array", "minItems": 1, "description":
-                              "One or more edits in order. Each needs path and operation, either here or as explicit batch defaults.",
-                              "items": {"type": "object", "additionalProperties": False,
+                              "One or more complete edits in order. Supply path and operation in every item.",
+                              "items": {"type": "object", "required": ["path", "operation"], "additionalProperties": False,
                                         "properties": {
-                        "name": {"type": "string", "description": "Optional explanation of this individual edit."},
                         "operation": {"type": "string", "enum": ["create", "write", "replace", "insert", "delete", "move", "copy"]},
                         "path": {"type": "string", "description": "Absolute path anywhere, or relative to the working directory."},
                         "content": {"type": "string", "description": "create/write: complete text; insert: inserted text. May contain multiple lines or be empty."},
@@ -131,8 +129,10 @@ class ToolRegistry:
                 }, ["name", "purpose", "edits"]))
         if sandbox:
             self.schemas.append(self._schema("sandbox", "Run programs inside the configured Docker sandbox. "
-                                             "Use edit_file for direct file changes; do not use sandbox commands "
-                                             "to bypass the file editing tool.",
+                                             "You may create and run temporary analysis or diagnostic scripts "
+                                             "within the user's allowed write locations. Use edit_file for direct "
+                                             "changes to deliverables, project source and configuration; do not "
+                                             "use temporary scripts to bypass it.",
                                              script, ["name", "command"]))
         if subagent:
             self.schemas.append(self._schema("subagent", "Delegate a named task; only its final report returns. "
@@ -174,11 +174,6 @@ class ToolRegistry:
                 raise ValueError("Tool arguments must be valid JSON; correct them and call the tool again") from None
             if not isinstance(values, dict):
                 raise ValueError("Tool arguments must be a JSON object; correct them and call the tool again")
-            if name == "edit_file" and "edits" not in values and "operation" in values:
-                # Accept the former single-edit shape, with the same mandatory
-                # purpose as new calls. Historical records need no rewriting.
-                values = {**{key: values[key] for key in ("name", "purpose") if key in values},
-                          "edits": [{key: value for key, value in values.items() if key not in {"name", "purpose"}}]}
             expected, allowed = schema["parameters"]["required"], schema["parameters"]["properties"]
             if not set(expected) <= set(values) <= set(allowed):
                 if name == "edit_file":
@@ -210,15 +205,13 @@ class ToolRegistry:
                 expected_type = bool if field["type"] == "boolean" else str
                 if not isinstance(value, expected_type):
                     raise ValueError(f"Argument {key} must be a {field['type']}")
-                if (isinstance(value, str) and not value.strip()
-                        and not (name == "edit_file" and key in {"content", "old_text", "new_text"})):
+                if isinstance(value, str) and not value.strip():
                     raise ValueError(f"Argument {key} must not be empty")
                 if "enum" in field and value not in field["enum"]:
                     raise ValueError(f"Invalid {key}: {value}")
             if name == "edit_file":
                 values["edits"] = self._validate_edits(
                     values["edits"], allowed["edits"]["items"]["properties"],
-                    {key: values[key] for key in ("path", "operation") if key in values},
                 )
             if name == "shell" and values.get("background_lifecycle") == "service" and not values["run_in_background"]:
                 raise ValueError("background_lifecycle=service requires run_in_background=true")
@@ -291,7 +284,7 @@ class ToolRegistry:
         return json.dumps(result, ensure_ascii=name == "edit_file")
 
     @staticmethod
-    def _validate_edits(edits, fields, defaults=None):
+    def _validate_edits(edits, fields):
         from ..file_editing import EditError
 
         if not isinstance(edits, list) or not edits:
@@ -307,10 +300,9 @@ class ToolRegistry:
                                          "phase": "validation", "applied": False, "changed": False, **details})
             if not isinstance(edit, dict):
                 fail("expected an object")
-            edit = {**(defaults or {}), **edit}
             if missing := {"operation", "path"} - set(edit):
                 fail("missing required fields: " + ", ".join(sorted(missing)) +
-                     "; provide them in this item or as explicit batch defaults", missing_fields=sorted(missing))
+                     "; provide them in this edit item", missing_fields=sorted(missing))
             if unknown := set(edit) - set(fields):
                 fail("unsupported fields: " + ", ".join(sorted(unknown)), unsupported_fields=sorted(unknown))
             for key, value in edit.items():
@@ -320,8 +312,7 @@ class ToolRegistry:
                     fail(f"{key} must be a {field['type']}")
                 if "enum" in field and value not in field["enum"]:
                     fail(f"invalid {key}: {value}")
-                if (key in {"path", "destination", "encoding", "anchor"} and not value
-                        or key == "name" and not value.strip()):
+                if key in {"path", "destination", "encoding", "anchor"} and not value:
                     fail(f"{key} must not be empty")
                 if key == "expected_count" and value < 1:
                     fail("expected_count must be positive")
@@ -335,7 +326,7 @@ class ToolRegistry:
                 "move": ({"destination"}, {"overwrite"}),
                 "copy": ({"destination"}, {"overwrite"}),
             }[operation]
-            arguments = set(edit) - {"operation", "path", "name"}
+            arguments = set(edit) - {"operation", "path"}
             if missing := required - arguments:
                 fail(f"{operation} is missing fields: " + ", ".join(sorted(missing)), missing_fields=sorted(missing))
             if unknown := arguments - required - optional:

@@ -14,7 +14,7 @@ from skills_agent.tools import ToolRegistry
 
 
 BUILTIN_ROOT = Path(__file__).resolve().parents[1] / "skills_agent" / "builtin_skills"
-SKILL_ROOT = BUILTIN_ROOT / "process-management"
+SKILL_ROOT = BUILTIN_ROOT / "inspect-and-stop-background-jobs"
 SCRIPT = SKILL_ROOT / "scripts" / "process.py"
 
 
@@ -234,7 +234,7 @@ class ProcessManagementTests(unittest.TestCase):
 
     def test_discovery_and_help_expose_a_usable_helper_without_new_tools(self):
         catalog = SkillRegistry([BUILTIN_ROOT]).catalog()
-        self.assertIn("process-management", catalog)
+        self.assertIn("inspect-and-stop-background-jobs", catalog)
         self.assertIn(str(SKILL_ROOT / "SKILL.md"), catalog)
         self.assertTrue((SKILL_ROOT / "references" / "across-turns.md").is_file())
         result = subprocess.run([sys.executable, str(SCRIPT), "--help"], capture_output=True, timeout=5)

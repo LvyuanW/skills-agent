@@ -14,7 +14,7 @@ from pathlib import Path
 
 
 SCRIPT = (Path(__file__).resolve().parents[1] / "skills_agent" / "builtin_skills"
-          / "investigation" / "scripts" / "fetch.py")
+          / "fetch-and-save-web-sources" / "scripts" / "fetch.py")
 HTML = ("<!doctype html><html><head><title>原始来源</title>"
         "<style>.secret {display:none}</style></head><body><h1>事实 &amp; 方法</h1>"
         "<script>not evidence()</script><p>第一段 <strong>正文</strong>。</p>"

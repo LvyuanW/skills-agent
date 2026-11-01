@@ -157,6 +157,20 @@ CLI 不接受会话或文件历史目录参数。runtime 默认使用 `~/.skills
 
 runtime 仅为 `edit_file` 操作记录文件历史。一个批次可以改动同一文件的多处内容或不同目录中的多个文件；执行前保留涉及文件的真实内容，有改动的成功批次只产生一次 Git 提交。必填 `purpose` 说明本批修改了什么、为什么修改，并作为提交说明；它独立于显示名称 `name`，不会由后者自动补齐。记录关联会话、工具调用、绝对文件路径和修改前后版本，失败时保留已有恢复依据供核查。历史仓库按需建立在 runtime 数据目录，不在任务目录创建 `.git`，不修改项目已有仓库的分支、提交或暂存区。
 
+单条和批量编辑使用同一结构：顶层只有 `name`、`purpose`、`edits`，单条编辑就是 `edits` 中的一项。每项必须包含自己的 `path` 和 `operation`，同一文件的后续编辑也不能省略。操作参数始终写在该项中，`name` 和 `purpose` 只描述整个批次。例如：
+
+```json
+{
+  "name": "保存分析结果",
+  "purpose": "保存已确认的结论，供后续分析继续使用",
+  "edits": [
+    {"path": "analysis.txt", "operation": "write", "content": "已确认的结论。\n"}
+  ]
+}
+```
+
+增加完整的编辑项即可进行批量编辑。工具不再接受旧的顶层单条操作格式、顶层 `path` / `operation` 默认值或单项 `name` / `purpose`；已有会话和文件历史仍可读取。编辑工具只编辑文件，不执行程序。shell 可以在用户允许的写入范围内创建、运行临时分析或诊断脚本，并运行计算、测试和构建程序；不要借临时脚本直接改写交付物、工程源码或配置来绕过编辑工具。
+
 没有文件监听或启动、退出时的工作区扫描。程序生成物和人工修改不会自动进入历史；之后如果通过 `edit_file` 编辑其中某个文件，会先保存该文件当时的内容。检查点只覆盖已记录的文件状态，不能据此推断整个工作区在那个时刻的内容，也不代表计算正确、测试通过或任务完成。旧版已保存的检查点保留，新操作继续按工具编辑范围记录。
 
 系统提示词提供本次历史仓库的绝对路径和可执行查询命令。可通过 shell 使用 [read-file-history skill](../skills_agent/builtin_skills/read-file-history/SKILL.md) 的只读辅助脚本，也可使用运行环境中的 Python 模块：
@@ -200,7 +214,7 @@ skills_agent/
   file_history.py    编辑工具操作的独立 Git 历史和只读查询
   agent.py           同步模型/工具循环、独立子会话
   session/           追加式事件日志、输入附件副本
-  context/           持久化工作上下文、模型压缩与程序检查、原始历史检索及专用 history_skill
+  context/           持久化工作上下文、模型压缩与程序检查、原始历史检索及专用 search-conversation-history
   providers/         OpenAI 与 Anthropic 协议转换
   tools/             edit_file、shell、subagent、sandbox
   skills/            技能发现与系统提示词中的技能目录
@@ -224,7 +238,7 @@ adapters/ale/        ALE Deployer 与运行配置
 - `--summary-output-tokens` 默认8192，是辅助生成的输出额度，与工具报告正文预算分开；需符合实际模型输出能力。使用请求前计数器时，摘要请求的实际额度还受模型剩余窗口和候选主请求空间约束；受保护内容本身过长时明确报告预算限制。`usage` 模式不在本地估算这些长度。两种模式均不缩短受保护记录范围。
 - Anthropic 客户端压缩在协议允许的边界移除失效 thinking 的发送副本，原始历史不变。工具结果尚待回送且需要原签名时延后压缩；硬预算仍不能超出。
 - shell/sandbox 必填 `name`，shell 另必填布尔值 `run_in_background`；可选择 `result_mode: auto | direct | report`。请求前计数模式下，`auto` 默认保留不超过8192 tokens的结果，超过则生成2048 tokens以内的报告；`direct` 保留原文，装不下时返回原始事件和行范围。`usage` 模式不估算工具结果长度，`auto` 直接保留原文，`direct` 不做本地空间预测。两种模式均可显式选择 `report` 生成报告，`usage` 模式用 `max_output_tokens=2048` 限制该次生成，不以本地计数判断报告长度。工具报告的生成与计量均关闭思考，截断正文不作为完整报告采用；报告失败时返回明确的 `report_error`、原执行状态及原始结果读取位置，保留图片，当前任务继续。原始结果总是先完整落盘，取消仍立即中断。官方接口对报告正文的独立计量包含少量请求开销，因此是保守预算。
-- sub-agent 必填 `name + task`，最终返回 Markdown 报告，说明适用的结论、证据、产物和未解决事项；内部对话不进入主上下文或 UI。`history=true` 时，加载检索专用 history skill，并携带完整工作上下文只读快照搜索父会话；快照装不下就报错，不截断。主 Agent 和普通子任务的技能目录不包含该技能，普通子任务只接收明确交代的输入。
+- sub-agent 必填 `name + task`，最终返回 Markdown 报告，说明适用的结论、证据、产物和未解决事项；内部对话不进入主上下文或 UI。`history=true` 时，加载检索专用 search-conversation-history skill，并携带完整工作上下文只读快照搜索父会话；快照装不下就报错，不截断。主 Agent 和普通子任务的技能目录不包含该技能，普通子任务只接收明确交代的输入。
 - 普通子任务和历史检索子任务均继承主 Agent 的上下文预算配置。普通子任务不继承主对话，`task` 须交代目标、相关约束、必要材料、操作边界和预期交付。主 Agent 根据报告中的证据、执行结果和未解决事项继续工作，定点核验关键或矛盾之处，不盲信完成声明，也不重做整个子任务。
 - `history.sqlite` 增量索引原始主会话，支持中文与英文检索、事件/路径精确查找、行范围、邻近记录及工具配对。检索子任务通过查询扩展、回看证据和检查后续修正生成报告，只把最终报告带回主上下文。任何时候均可检索，不必等到压缩后。
 - `max_output_tokens` / `--max-output-tokens` 默认32768，包含思考和回答。主模型输出截断时保留已收到的公开内容和原始响应，记录错误，不执行不完整的工具调用。
@@ -274,7 +288,7 @@ scripts/example.py 提供可复用操作；说明它的参数、输入输出和�
 根据执行结果决定下一步。
 ```
 
-`SKILL.md` 提供知识与方法，`scripts/` 提供可复用或改写的参考源码，`references/` 提供按需读取的细节。模型可以根据任务自行编写脚本，保留适用的输入输出约定。需要保存脚本时，先通过 `edit_file` 创建或修改文件，再通过 shell 执行。例如，先调用 `edit_file`：
+`SKILL.md` 提供知识与方法，`scripts/` 提供可复用或改写的参考源码，`references/` 提供按需读取的细节。模型可以根据任务自行编写脚本，保留适用的输入输出约定。作为工程或交付物维护的脚本通过 `edit_file` 创建和修改，再通过 shell 执行；临时分析或诊断脚本也可以直接由 shell 创建、运行，写入位置仍须符合用户约束。例如，保存需维护的分析脚本时调用 `edit_file`：
 
 ```json
 {
@@ -327,15 +341,15 @@ API 错误的脱敏诊断保存在对应会话 `events.jsonl` 的 `error.diagnos
 
 诊断不会保存请求正文或完整认证头。当前请求凭据、常见密钥／token／密码／Cookie 字段和 URL 中的账号、查询参数及 fragment 会被脱敏；SSE 错误帧进入 `_raw` 前同样清洗。终端及历史回放继续显示简短报错，详细诊断需读取 JSONL；已存在的历史错误无法补回当时未保存的信息。
 
-内置 [workspace skill](../skills_agent/builtin_skills/workspace/SKILL.md) 提供可直接调用的文本读取、检索、任务所需可执行文件与顶层 Python 模块探测，以及 JSON、CSV、DOCX、XLSX、PDF 的定位提取脚本。长记录可按返回游标续读；文档读取范围与限制见[提取参考](../skills_agent/builtin_skills/workspace/references/extraction.md)。JSON 选择返回序列化值，CSV 记录保留逻辑行与物理行位置，DOCX 定位文档体段落／单元格，XLSX 读取已保存值而不计算公式。PDF 使用已安装的 pypdf／PyPDF2／pdftotext，缺少读取器时明确失败，不自动安装。
+内置 [inspect-workspace skill](../skills_agent/builtin_skills/inspect-workspace/SKILL.md) 提供可直接调用的文本读取、检索、任务所需可执行文件与顶层 Python 模块探测，以及 JSON、CSV、DOCX、XLSX、PDF 的定位提取脚本。长记录可按返回游标续读；文档读取范围与限制见[提取参考](../skills_agent/builtin_skills/inspect-workspace/references/extraction.md)。JSON 选择返回序列化值，CSV 记录保留逻辑行与物理行位置，DOCX 定位文档体段落／单元格，XLSX 读取已保存值而不计算公式。PDF 使用已安装的 pypdf／PyPDF2／pdftotext，缺少读取器时明确失败，不自动安装。
 
-`context/history_skill` 提供原始会话检索和报告方法，仅在 `subagent(history=true)` 的检索子任务中加载；主 Agent 通过委派获得结论，不直接执行检索流程。主会话索引包含已返回的子任务报告，不索引私有子会话。中断后先确认已保存产物和原执行结果，再继续下一步；复杂任务可按需保存进度，不强制建立计划文件。
+`context/search-conversation-history` 提供原始会话检索和报告方法，仅在 `subagent(history=true)` 的检索子任务中加载；主 Agent 通过委派获得结论，不直接执行检索流程。主会话索引包含已返回的子任务报告，不索引私有子会话。中断后先确认已保存产物和原执行结果，再继续下一步；复杂任务可按需保存进度，不强制建立计划文件。
 
-内置 [acceptance-criteria skill](../skills_agent/builtin_skills/acceptance-criteria/SKILL.md) 在持久记录需求和证据有助于协作、后续继续，或用户要求时使用，优先复用已有任务记录；需求仍然清楚时无需另建文档。记录保留原始需求、已接受的修正及来源，区分必要条件、假设、未决问题和可选改进，验收条件用于明确需求而非扩大交付范围。需求变化或解释得到纠正时记录原因和依据；不能为迁就结果降低有效要求，也不能仅因自定条件已经写入文档就继续把它视为必需条件。独立验收文档不是开展授权工作的前置要求。
+需求记录、调查判断和结果验证的通用原则统一写在系统提示词中，始终适用于主 Agent 和子 Agent，不再依赖召回 `acceptance-criteria`、`investigation` 或 `check-results`。复用已有记录，保留原始要求、已接受修正及来源；只在用户要求或有助于协作、续作时另建文档。比较前核对定义，实验后确认实际条件，更正后核对最终产物；不把自定条件变成用户要求，也不要求每项任务建立独立验收文档。网页抓取与结果采集的接口说明分别保留在下面的 `fetch-and-save-web-sources` 和 `inspect-files-and-run-checks` 中。
 
 系统提示引导模型根据原始需求和已接受的修正，按任务需要适度检查实际结果，并依据观察修正问题。最终回答如实说明结果、相关验证和剩余限制，只对已经取得证据的范围作出结论。这些检查由模型结合当前任务选择，不要求独立 reviewer、额外交接或专门报告。
 
-`edit_file` 是文件编辑的专用工具。传入显示名称 `name`、说明本批修改内容及原因的 `purpose`，以及非空数组 `edits`；三者均必填，`purpose` 不从 `name` 自动补齐。顶层可选 `path` 和 `operation` 作为本批的共享默认值；每项可显式覆盖，并可用自己的 `name` 说明该项修改。每项最终都需要路径、操作及对应参数，不从前一项或历史调用继承参数。绝对路径可指向任意目录，相对路径以 Agent 工作目录解析；文件范围仍由用户任务决定。
+`edit_file` 用于编辑交付物、工程源码和配置。单条和批量编辑都传入显示名称 `name`、说明本批修改内容及原因的 `purpose`，以及非空数组 `edits`；三者均必填，`purpose` 不从 `name` 自动补齐。每项都明确填写自己的 `path`、`operation` 及对应参数；不接受顶层路径或操作默认值、单项名称或说明，也不从前一项或历史调用继承参数。绝对路径可指向任意目录，相对路径以 Agent 工作目录解析；文件范围仍由用户任务决定。
 
 | 操作 | 额外参数与行为 |
 | --- | --- |
@@ -348,40 +362,38 @@ API 错误的脱敏诊断保存在对应会话 `events.jsonl` 的 `error.diagnos
 
 `content`、`old_text`、`new_text` 和 `anchor` 都支持多行代码，包括 GLSL、HTML、Python 和配置文件，用 JSON 的 `\n` 表示换行，无需 shell 引号或 heredoc。文本默认 UTF-8，可用 `encoding` 指定编码；`content_base64` 直接表示原始字节，不搭配 `encoding`。缺失的父目录会自动创建。内容编辑跟随符号链接；`delete`、`move` 和 `copy` 操作链接本身。runtime 当前会话及正在使用的历史文件受到保护。
 
-例如，先读取现有文件，再用本批共享的路径和操作修正两处文字：
+例如，先读取现有文件，再在一个批次中修正两处文字：
 
 ```json
 {
   "name": "Correct report typos",
   "purpose": "Correct two spelling errors so the report is ready to share.",
-  "path": "report.md",
-  "operation": "replace",
   "edits": [
-    {"name": "Fix heading", "old_text": "# Anaylsis result", "new_text": "# Analysis result"},
-    {"name": "Fix conclusion", "old_text": "The resutls agree.", "new_text": "The results agree."}
+    {"path": "report.md", "operation": "replace", "old_text": "# Anaylsis result", "new_text": "# Analysis result"},
+    {"path": "report.md", "operation": "replace", "old_text": "The resutls agree.", "new_text": "The results agree."}
   ]
 }
 ```
 
 把相关修改放入同一 `edits` 数组，可以在一次调用中处理同一文件的多个位置或多个文件。操作按顺序使用前面操作的结果；写入前验证整批操作，有实际改动的成功批次只创建一次历史提交。执行错误仍可能留下部分修改，应读取工具返回的实际状态再处理。唯一匹配失败时重新读取相应区域。
 
-shell 负责文件读取、程序执行和检查，不得通过 shell、sandbox、内联 Python、重定向或先写脚本再执行的方式，绕过 `edit_file` 直接新建、改写、删除、复制或重命名文件。正常运行程序、测试、编译、分析和渲染仍可生成任务产物；这些产物不自动进入工具编辑历史。
+shell 负责文件读取、程序执行和检查，也可以在用户允许的写入范围内创建、运行临时分析或诊断脚本。交付物、工程源码和配置等需维护的内容仍通过 `edit_file` 直接修改，不得借临时脚本、内联 Python 或重定向绕过。正常运行程序、测试、编译、分析和渲染可生成任务产物；这些产物和 shell 创建的临时脚本不自动进入工具编辑历史。
 
 旧 `file-editing` skill 和 shell 编辑脚本已移除。内置 [read-file-history skill](../skills_agent/builtin_skills/read-file-history/SKILL.md) 提供只读的 `status`、`log`、`diff` 和 `show` 查询，用于比较已记录版本，再通过编辑工具恢复需要的内容。
 
-内置 [feedback skill](../skills_agent/builtin_skills/feedback/SKILL.md) 提供获取实际工作结果的基础能力，同样通过现有 shell 调用：`file` 读取文件或目录元数据，`text` 按行列读取实际 UTF-8 文本，`run` 执行检查并保存完整、分离的 stdout／stderr 日志，`render` 使用已安装的 Chrome／Chromium 截取本地 HTML 或 SVG。附图统一使用下面的 images 技能和 shell 的 `images` 参数，截图命令负责准备文件。长文本返回续读行列；命令失败和超时保留真实状态。[跨回合反馈示例](../skills_agent/builtin_skills/feedback/references/feedback-loop.md) 展示保存、获取、观察和修改之间的衔接。
+内置 [inspect-files-and-run-checks skill](../skills_agent/builtin_skills/inspect-files-and-run-checks/SKILL.md) 提供获取实际工作结果的基础能力，同样通过现有 shell 调用：`file` 读取文件或目录元数据，`text` 按行列读取实际 UTF-8 文本，`run` 执行检查并保存完整、分离的 stdout／stderr 日志，`render` 使用已安装的 Chrome／Chromium 截取本地 HTML 或 SVG。附图统一使用下面的 attach-images 技能和 shell 的 `images` 参数，截图命令负责准备文件。长文本返回续读行列；命令失败和超时保留真实状态。这些入口提供实际文件内容、执行结果和截图，具体参数与限制按需查阅 skill。
 
-内置 [images skill](../skills_agent/builtin_skills/images/SKILL.md) 要求每次附图时使用，覆盖已有图片、下载图片、生成图片、截图和渲染结果。每个模型请求最多10张图，每张编码图片文件最多1,000,000字节（1 MB，base64前）；多次工具调用不能叠加该额度。禁止制作超过1 MB的新图片；[images.py](../skills_agent/builtin_skills/images/scripts/images.py) 的 `save_bounded` 支持内存生成后合限才写盘，`prepare SOURCE --output PATH` 将已有大图压缩为副本，保留原件。确需同时检查超过10张时，`compose SOURCE... --output PATH [--columns N]` 生成一张合限的编号拼图，返回原图URL、尺寸及最终图片中的区域坐标，便于回查与坐标换算。上述 helper 和 `feedback.py render` 负责准备文件及元数据，发送哪些图片由 shell 的 `images` 参数声明，无需再调用 attach。图片处理使用项目依赖 Pillow，压缩次数有界，不保存超限中间图。helper可从任意工作目录运行，无需导入 skills-agent 包。
+内置 [attach-images skill](../skills_agent/builtin_skills/attach-images/SKILL.md) 要求每次附图时使用，覆盖已有图片、下载图片、生成图片、截图和渲染结果。每个模型请求最多10张图，每张编码图片文件最多1,000,000字节（1 MB，base64前）；多次工具调用不能叠加该额度。禁止制作超过1 MB的新图片；[images.py](../skills_agent/builtin_skills/attach-images/scripts/images.py) 的 `save_bounded` 支持内存生成后合限才写盘，`prepare SOURCE --output PATH` 将已有大图压缩为副本，保留原件。确需同时检查超过10张时，`compose SOURCE... --output PATH [--columns N]` 生成一张合限的编号拼图，返回原图URL、尺寸及最终图片中的区域坐标，便于回查与坐标换算。上述 helper 和 `feedback.py render` 负责准备文件及元数据，发送哪些图片由 shell 的 `images` 参数声明，无需再调用 attach。图片处理使用项目依赖 Pillow，压缩次数有界，不保存超限中间图。helper可从任意工作目录运行，无需导入 skills-agent 包。
 
 shell 可选 `images` 参数的元素为 `{"path":"/absolute/host/image.png","label":"可选说明","source_url":"可选原始URL"}`；`path` 接受绝对宿主机路径或本地 `file://` URL，包括历史图片快照地址。运行时在同步命令结束后读取、校验并保存快照；命令可以先生成图片，也可以用 `command: "true"` 直接查看已有图片。远程图片先用现有 fetch helper 下载，再声明实际文件路径和原始 `source_url`。此参数仅用于图片，不接受 PDF 或任意文件。技能包含生成并打印日志、多图准备后一次声明、合图、历史URL重附、渲染及后台任务范例。脚本不会上传图片，也不会自动安装依赖；拼图用于概览，需要细节时可裁剪原图再声明。
 
-反馈技能的 `scripts/check.py` 检查明确的文件、文本和 JSON 验收条件，保留实际观察与源位置，区分条件失败和获取错误；[验收检查参考](../skills_agent/builtin_skills/feedback/references/acceptance-checks.md) 说明如何检查需求，以及失败后选择下一步。通过指定条件只证明该检查范围，行为要求仍需真实运行。
+`inspect-files-and-run-checks` 的 `scripts/check.py` 检查指定的文件、文本和 JSON 值，保留实际观察与源位置，区分条件失败和获取错误；[文件与值检查示例](../skills_agent/builtin_skills/inspect-files-and-run-checks/references/acceptance-checks.md) 说明参数、JSON Pointer、输出和退出码。通过指定条件只证明该检查范围，行为要求仍需真实运行。
 
 显式 `images`（包括空数组 `[]`）优先于 stdout 的旧反馈协议，普通日志、多段JSON或文本筛选不会改变显式声明的图片；`images: []` 表示只准备文件、不附图。未提供该参数时，暂时兼容 stdout 为单个反馈JSON对象的旧调用，新技能只推荐参数入口。运行时在文本筛选前识别 PNG／JPEG／GIF／WebP 图片头并保存独立会话快照，在同一次模型请求中附上图片与快照的 `file://` URL，保留可选原始 `source_url`，获取失败明确返回诊断。原文件后续修改或删除不会改变已保存的观察。每次 assistant 回复（包括继续调用工具）都会消费该轮图片，之后仅保留可回查引用；需要再次查看时，在新的 `images` 中声明记录的快照URL或准备好的裁剪图。辅助报告、上下文压缩和历史检索遵循相同的图片限制；供应商请求中的只读媒体投影不改变当前真实用户任务。
 
 文件元数据、文本检查、截图和视觉判断各有适用范围：保存或渲染成功不能证明画面正确，单张截图不能证明动画流畅。视觉判断要求所用模型支持图片输入；`render` 需要现有浏览器，不自动安装依赖。PDF、办公文件等需用适当的已安装读取器提取文字或渲染页面，再获取相应文本或图片。
 
-内置 [background-tasks skill](../skills_agent/builtin_skills/background-tasks/SKILL.md) 是后台执行的启动说明：当 shell 需要先交还控制权而入口命令继续运行时必须使用，与命令运行多久、是否有子进程无关。普通同步命令无需使用；脚本内部并行但会等待全部子任务，也不因此要求使用。无需新增工具，在 shell 指定 `run_in_background=true`，可选 `background_lifecycle`：
+内置 [start-background-jobs skill](../skills_agent/builtin_skills/start-background-jobs/SKILL.md) 是后台执行的启动说明：当 shell 需要先交还控制权而入口命令继续运行时必须使用，与命令运行多久、是否有子进程无关。普通同步命令无需使用；脚本内部并行但会等待全部子任务，也不因此要求使用。无需新增工具，在 shell 指定 `run_in_background=true`，可选 `background_lifecycle`：
 
 | 生命周期 | 默认执行期限 | 最终回复与保留规则 |
 | --- | --- | --- |
@@ -413,11 +425,11 @@ shell 可选 `images` 参数的元素为 `{"path":"/absolute/host/image.png","la
 
 常驻服务使用同一 shell 接口的 `run_in_background=true, background_lifecycle=service`，启动后还须检查就绪和实际业务行为，再交付地址、作业ID、绝对状态/日志路径和准确的停止命令。成功回合的服务可跨回合及正常 CLI 退出继续运行；失败或取消回合清理本回合新建任务和服务，保留此前成功交付的服务。benchmark 明确拒绝 service，退出时清理本任务登记工作。当前 Docker sandbox 工具每次使用短生命周期容器，不支持这套后台协议；整个 Agent 在 ALE 容器内运行时，其 shell 仍可使用受管后台 task。
 
-内置 [process-management skill](../skills_agent/builtin_skills/process-management/SKILL.md) 保留为已登记作业的管理能力，通过 `status/wait/logs/stop` 读取状态和日志、等待就绪或退出、停止任务。模型需要中途管理时才读取，不要求每次后台启动额外读取；不再通过 helper 的 start 启动作业。使用回执中的 `state_dir` 和内部 `name`，不要以显示名称推测。管理命令本身使用同步 shell。停止仅由确认归属的 supervisor 清理自己的进程组，归属丢失时明确报告；不支持交互输入或自行脱离监管的 daemon。分回合使用见[进程生命周期示例](../skills_agent/builtin_skills/process-management/references/across-turns.md)。
+内置 [inspect-and-stop-background-jobs skill](../skills_agent/builtin_skills/inspect-and-stop-background-jobs/SKILL.md) 保留为已登记作业的管理能力，通过 `status/wait/logs/stop` 读取状态和日志、等待就绪或退出、停止任务。模型需要中途管理时才读取，不要求每次后台启动额外读取；不再通过 helper 的 start 启动作业。使用回执中的 `state_dir` 和内部 `name`，不要以显示名称推测。管理命令本身使用同步 shell。停止仅由确认归属的 supervisor 清理自己的进程组，归属丢失时明确报告；不支持交互输入或自行脱离监管的 daemon。分回合使用见[进程生命周期示例](../skills_agent/builtin_skills/inspect-and-stop-background-jobs/references/across-turns.md)。
 
 交互界面为 shell 自动登记的每个后台作业单独显示名称、状态和耗时，包括启动中、运行中、停止中、监管状态未确认、完成、失败、已超时和已停止；失败时显示退出码。状态行固定在首次出现的聊天位置，后台计时精确到0.1秒，多个作业并行、模型回复或等待下一条用户消息时仍原位更新。监管状态未确认的错误进入上下文时，在交付节点显示诊断记录，保留原动态状态行；它不是完成通知。作业退出但结果尚未交付时，原位置保留最终状态和耗时；结果进入工作上下文时撤下动态状态行，在该交付节点显示一条完成记录，后续对话继续排在它之后。完成记录随聊天滚动，不固定在末尾；迟到的旧状态快照不会让已交付作业重新出现。F2选择模式冻结画面，返回后显示最新状态。动画和轮询快照不增加模型调用，也不写入对话或历史回放；完成结果则独立持久化并进入工作上下文。自行绕开后台接口启动的进程不具备这套登记和结果通知。
 
-内置 [investigation skill](../skills_agent/builtin_skills/investigation/SKILL.md) 增加已知 HTTP(S) URL 的获取脚本，分别保存响应体、来源元数据和可选提取文本，保留实际 HTTP 状态、重定向、完整性与哈希；有界预览不足时可继续读取保存资料。默认响应上限 64 MiB，网络 deadline 覆盖重定向与渐进读取，超限或失败保留已取得的资料并明确标记不完整。它提供资料获取，不提供搜索、登录或页面脚本执行。
+内置 [fetch-and-save-web-sources skill](../skills_agent/builtin_skills/fetch-and-save-web-sources/SKILL.md) 增加已知 HTTP(S) URL 的获取脚本，分别保存响应体、来源元数据和可选提取文本，保留实际 HTTP 状态、重定向、完整性与哈希；有界预览不足时可继续读取保存资料。默认响应上限 64 MiB，网络 deadline 覆盖重定向与渐进读取，超限或失败保留已取得的资料并明确标记不完整。它提供资料获取，不提供搜索、登录或页面脚本执行。
 
 ### Sandbox
 

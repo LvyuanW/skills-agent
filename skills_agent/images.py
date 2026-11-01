@@ -24,7 +24,7 @@ def image_bytes(block: dict) -> bytes:
         data = source.read(MAX_IMAGE_BYTES + 1)
     if len(data) > MAX_IMAGE_BYTES:
         raise ImageRequestError(f"Image exceeds {MAX_IMAGE_BYTES} bytes: {path}; "
-                                "use the images skill to compress a copy before attaching")
+                                "use the attach-images skill to compress a copy before attaching")
     return data
 
 

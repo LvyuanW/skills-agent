@@ -37,11 +37,11 @@ class RuntimeFileHistoryTests(unittest.TestCase):
     def test_parent_and_child_share_recorded_edits_without_recording_other_inputs(self):
         (self.workspace / "input.dat").write_bytes(b"untouched input")
         model = ScriptedModel([
-            call("edit_file", {"name": "Write parent", "purpose": "Save the parent result", "operation": "create",
-                               "path": "parent.txt", "content": "parent"}),
+            call("edit_file", {"name": "Write parent", "purpose": "Save the parent result",
+                               "edits": [{"operation": "create", "path": "parent.txt", "content": "parent"}]}),
             call("subagent", {"name": "Write child", "task": "Create child.txt"}, number=2),
-            call("edit_file", {"name": "Write child", "purpose": "Save the child result", "operation": "create",
-                               "path": "child.txt", "content": "child"}, number=3),
+            call("edit_file", {"name": "Write child", "purpose": "Save the child result",
+                               "edits": [{"operation": "create", "path": "child.txt", "content": "child"}]}, number=3),
             final("child done"), final("done"),
         ])
         agent = self.agent(model)
@@ -90,8 +90,8 @@ class RuntimeFileHistoryTests(unittest.TestCase):
     def test_history_retrieval_child_cannot_call_edit_file(self):
         model = ScriptedModel([
             call("subagent", {"name": "Recall", "task": "Find the user's request", "history": True}),
-            call("edit_file", {"name": "Forbidden edit", "purpose": "Attempt a disallowed history edit", "operation": "create",
-                               "path": "unexpected.txt", "content": "no"}, number=2),
+            call("edit_file", {"name": "Forbidden edit", "purpose": "Attempt a disallowed history edit",
+                               "edits": [{"operation": "create", "path": "unexpected.txt", "content": "no"}]}, number=2),
             final("retrieved"), final("done"),
         ])
         agent = self.agent(model)

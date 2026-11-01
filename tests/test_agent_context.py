@@ -122,7 +122,7 @@ class AgentContextTests(unittest.TestCase):
         self.assertEqual(len(model.calls), 4)
         for system, messages, tools in model.calls:
             self.assertIn(environment, system)
-            self.assertIn("Report outcomes faithfully", system)
+            self.assertIn("Report what you completed, what you checked, and what remains unconfirmed.", system)
             self.assertNotIn("use the review skill", system)
             self.assertNotIn("/runtime/workspace", json.dumps(messages))
         self.assertNotIn("/runtime/workspace", json.dumps(self.session.messages()))
@@ -386,19 +386,19 @@ class AgentContextTests(unittest.TestCase):
     def test_history_subtask_receives_full_readonly_snapshot_and_returns_only_report(self):
         project = Path(__file__).resolve().parents[1] / "skills_agent"
         self.skills = SkillRegistry([project / "builtin_skills"])
-        history_skill = str(project / "context/history_skill/SKILL.md")
+        history_skill = str(project / "context/search-conversation-history/SKILL.md")
         events = []
         def child(system, messages, tools, on_event):
             self.assertIn("Parent history:", system)
             self.assertIn("history retrieval task", system)
-            self.assertIn("- history:", system)
+            self.assertIn("- search-conversation-history:", system)
             self.assertIn(history_skill, system)
-            self.assertIn("- workspace:", system)
+            self.assertIn("- inspect-workspace:", system)
             self.assertNotIn("Delegate conversation-history retrieval", system)
             self.assertNotIn("subagent", [tool["name"] for tool in tools])
             prompt = messages[-1]["content"][0]["text"]
             snapshot = json.loads(prompt.split("Read-only working context:\n", 1)[1])
-            self.assertNotIn("- history:", snapshot["system"])
+            self.assertNotIn("- search-conversation-history:", snapshot["system"])
             self.assertNotIn(history_skill, snapshot["system"])
             self.assertEqual(snapshot["records"][0]["message"]["content"], "why that decision?")
             self.assertEqual(snapshot["records"][-1]["message"]["tool_calls"][0]["name"], "subagent")
@@ -410,7 +410,7 @@ class AgentContextTests(unittest.TestCase):
         agent = self.agent(model, on_event=events.append)
         agent.run({"role": "user", "content": "why that decision?"})
         for system in (model.calls[0][0], model.calls[-1][0], agent._system()):
-            self.assertNotIn("- history:", system)
+            self.assertNotIn("- search-conversation-history:", system)
             self.assertNotIn(history_skill, system)
             self.assertNotIn("Session history source:", system)
             self.assertIn("Delegate conversation-history retrieval", system)
@@ -427,9 +427,9 @@ class AgentContextTests(unittest.TestCase):
         project = Path(__file__).resolve().parents[1] / "skills_agent"
         self.skills = SkillRegistry([project / "builtin_skills"])
         def child(system, messages, tools, on_event):
-            self.assertIn("- workspace:", system)
-            self.assertNotIn("- history:", system)
-            self.assertNotIn("history_skill", system)
+            self.assertIn("- inspect-workspace:", system)
+            self.assertNotIn("- search-conversation-history:", system)
+            self.assertNotIn("search-conversation-history", system)
             self.assertNotIn("Parent history:", system)
             self.assertNotIn("Delegate conversation-history retrieval", system)
             self.assertNotIn("subagent", [tool["name"] for tool in tools])
