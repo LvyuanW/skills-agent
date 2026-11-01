@@ -7,30 +7,34 @@ Python CLI Agent。模型阅读 `SKILL.md` 和参考脚本，通过 `edit_file` 
 需要 Python 3.11+ 和 Git。Python 依赖及锁定版本见 [pyproject.toml](pyproject.toml) 和 [uv.lock](uv.lock)。
 
 ```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install -e .
+# 在源码目录安装一次，全局提供 skagt 和 skills-agent 两个等价命令。
+uv tool install --editable .
 
 export OPENAI_API_KEY='你的密钥'
 export OPENAI_MODEL='支持工具调用的模型名称'
-.venv/bin/skills-agent run --session demo
+skagt run --session chat_demo
 ```
+
+安装后可在任何目录执行 `skagt`，不需要先进入源码目录或激活虚拟环境。默认以当前目录作为工作目录；用 `--workspace /path/to/task` 可指定另一目录。若命令不在 PATH 中，执行 `uv tool update-shell` 后重新打开终端。可编辑安装直接使用当前源码，后续源码修改不需要重装；入口或依赖变化时执行 `uv tool install --reinstall --editable .`。
+
+需要长期使用同一套模型配置时，将配置放在 `~/.skills-agent/config.toml`，将 API key、模型名称和连接地址等环境变量放在 `~/.skills-agent/.env`（建议权限 `600`），后续只需执行上面的 `skagt run`。无需每次传入 `uv run --env-file`。仍可使用 `python3 -m venv .venv` 和 `.venv/bin/python -m pip install -e .` 安装到项目虚拟环境。
 
 进入后输入自然语言，每次发送一轮；`/exit` 或 Ctrl-D 退出，Ctrl-C 停止当前任务。再次使用同一会话名可恢复记录。
 
 ```sh
 # 回放会话，无需 API 配置；--full 展开命令和完整工具输出。
-.venv/bin/skills-agent history --session demo
-.venv/bin/skills-agent history --session demo --full
+skagt history --session chat_demo
+skagt history --session chat_demo --full
 
 # 在指定目录运行，也可通过 --file 提供附件。
-.venv/bin/skills-agent run --session task --workspace /path/to/task --file ./input.txt
+skagt run --session task --workspace /path/to/task --file ./input.txt
 ```
 
 Anthropic 接口使用 `--provider anthropic`，并设置 `ANTHROPIC_API_KEY` 与 `ANTHROPIC_MODEL`。DeepSeek 的 Chat 协议、网关返回用量计量和思考强度配置见 [完整使用说明](docs/usage.md#会话与上下文)。
 
 ## 配置
 
-`run` 和 `benchmark` 自动读取工作目录中的 [skills-agent.toml](skills-agent.toml)；`--config PATH` 可指定另一份配置。优先级为 **命令行参数 > 配置文件 > 已支持的环境变量 > 默认值**。API key 只从环境变量读取。
+`run` 和 `benchmark` 自动读取工作目录中的 [skills-agent.toml](skills-agent.toml)，缺少时读取 `~/.skills-agent/config.toml`；`--config PATH` 可指定另一份配置，每次只读取一份 TOML。优先级为 **命令行参数 > 配置文件 > 已支持的环境变量 > 默认值**。用户级 `.env` 补充尚未设置的模型环境变量，不覆盖已有环境变量，也不自动读取任务目录的 `.env`；API key 仍经环境变量传给模型。用户级配置随 `SKILLS_AGENT_DATA_DIR` 使用同一个 runtime 数据根目录，完整说明见[使用说明](docs/usage.md)。
 
 启动时用 `--workspace` 选择工作目录、`--session` 选择会话；未指定工作目录时使用启动时的当前目录。后续相对任务路径均以所选工作目录解析。会话和工具编辑历史统一保存在 runtime 管理的 `~/.skills-agent/workspaces/<工作区标识>/`，CLI 不提供历史目录参数。部署环境可通过 `SKILLS_AGENT_DATA_DIR` 配置 runtime 数据根目录。模型窗口、上下文预算和输出额度必须与实际模型匹配；完整配置、界面操作、图片附件、后台作业与中断恢复见 [使用说明](docs/usage.md)。
 

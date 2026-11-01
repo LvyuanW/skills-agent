@@ -33,6 +33,13 @@ class ConfigTests(unittest.TestCase):
         path.write_text(content)
         return path
 
+    def write_user_file(self, name, content):
+        directory = self.root / "runtime-data"
+        directory.mkdir(exist_ok=True)
+        path = directory / name
+        path.write_text(content)
+        return path
+
     def test_cli_and_benchmark_load_file_into_runtime(self):
         self.write_config('''
 provider = "anthropic"
@@ -93,6 +100,81 @@ api_format = "responses"
         self.assertFalse(hasattr(args, "tokenizer_path"))
         self.assertFalse(hasattr(args, "tokenizer_encoding"))
         self.assertIsNone(args.model_context_window)
+        self.assertFalse((self.root / "runtime-data").exists())
+
+    def test_user_config_supplies_defaults_outside_the_installation_directory(self):
+        config = self.write_user_file("config.toml", '''
+provider = "anthropic"
+model = "user-model"
+context_tokens = 12345
+skill_dirs = ["user-skills"]
+''')
+        for benchmark in (False, True):
+            with self.subTest(benchmark=benchmark):
+                args = load_agent_config(self.args(benchmark=benchmark))
+                self.assertEqual((args.provider, args.model, args.context_tokens),
+                                 ("anthropic", "user-model", 12345))
+                self.assertEqual(args.skill_dirs, [str(config.parent / "user-skills")])
+                self.assertEqual(args.workspace, self.root)
+                override = load_agent_config(self.args("--model", "cli-model", benchmark=benchmark))
+                self.assertEqual(override.model, "cli-model")
+        self.assertFalse((config.parent / "workspaces").exists())
+
+    def test_workspace_and_explicit_configs_replace_the_user_file_without_merging(self):
+        self.write_user_file("config.toml", 'model = "user-model"\ncontext_tokens = 12345\n')
+        self.write_config('model = "workspace-model"\nskill_dirs = ["workspace-skills"]\n')
+        args = load_agent_config(self.args())
+        self.assertEqual(args.model, "workspace-model")
+        self.assertEqual(args.context_tokens, 1000000)
+        self.assertEqual(args.skill_dirs, [str(self.root / "workspace-skills")])
+
+        directory = self.root / "settings"
+        directory.mkdir()
+        (directory / "agent.toml").write_text('model = "explicit-model"\nskill_dirs = ["explicit-skills"]\n')
+        args = load_agent_config(self.args("--config", "settings/agent.toml"))
+        self.assertEqual(args.model, "explicit-model")
+        self.assertEqual(args.context_tokens, 1000000)
+        self.assertEqual(args.skill_dirs, [str(directory / "explicit-skills")])
+        with self.assertRaises(FileNotFoundError):
+            load_agent_config(self.args("--config", "missing.toml"))
+
+    def test_user_environment_fills_supported_settings_without_overwriting_existing_values(self):
+        self.write_user_file(".env", '''
+OPENAI_MODEL=user-model
+OPENAI_API_KEY='literal-${VALUE}'
+OPENAI_BASE_URL=https://example.invalid/openai
+ANTHROPIC_MODEL=user-anthropic-model
+ANTHROPIC_API_KEY=user-key
+ANTHROPIC_BASE_URL=https://example.invalid/anthropic
+SKILLS_AGENT_API_FORMAT=chat
+SKILLS_AGENT_TOKEN_COUNTER=usage
+effort=high
+PATH=/unwanted/path
+SKILLS_AGENT_DATA_DIR=/unwanted/storage
+UNRELATED_SETTING=unwanted
+''')
+        os.environ.update(OPENAI_MODEL="existing-model", ANTHROPIC_API_KEY="", effort="max")
+        args = load_agent_config(self.args())
+        self.assertEqual(args.model, "existing-model")
+        self.assertEqual(args.base_url, "https://example.invalid/openai")
+        self.assertEqual((args.api_format, args.token_counter), ("chat", "usage"))
+        self.assertEqual(os.environ["OPENAI_API_KEY"], "literal-${VALUE}")
+        self.assertEqual(os.environ["ANTHROPIC_API_KEY"], "")
+        self.assertEqual(os.environ["effort"], "max")
+        self.assertEqual(os.environ["SKILLS_AGENT_DATA_DIR"], str(self.root / "runtime-data"))
+        self.assertNotIn("PATH", os.environ)
+        self.assertNotIn("UNRELATED_SETTING", os.environ)
+        args = load_agent_config(self.args("--provider", "anthropic", benchmark=True))
+        self.assertEqual(args.model, "user-anthropic-model")
+        self.assertEqual(args.base_url, "https://example.invalid/anthropic")
+
+    def test_workspace_environment_file_is_not_loaded_automatically(self):
+        (self.root / ".env").write_text('OPENAI_MODEL=workspace-model\nOPENAI_API_KEY=workspace-key\n')
+        for benchmark in (False, True):
+            with self.subTest(benchmark=benchmark):
+                args = load_agent_config(self.args(benchmark=benchmark))
+                self.assertIsNone(args.model)
+                self.assertNotIn("OPENAI_API_KEY", os.environ)
 
     def test_usage_counter_is_accepted_from_cli_file_and_environment(self):
         for benchmark in (False, True):

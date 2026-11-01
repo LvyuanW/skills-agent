@@ -11,7 +11,8 @@ from .storage import WorkspaceStorage
 
 
 def add_agent_arguments(parser):
-    parser.add_argument("--config", type=Path, help="TOML 配置文件，默认读取工作目录中的 skills-agent.toml")
+    parser.add_argument("--config", type=Path,
+                        help="TOML 配置文件，默认读取工作目录中的 skills-agent.toml，缺少时读取用户级 config.toml")
     parser.add_argument("--provider", choices=["openai", "anthropic"])
     parser.add_argument("--model", help="也可设置 OPENAI_MODEL 或 ANTHROPIC_MODEL")
     parser.add_argument("--base-url", help="兼容服务的 API base URL")

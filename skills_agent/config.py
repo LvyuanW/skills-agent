@@ -7,6 +7,7 @@ import tomllib
 
 from .context import DEFAULT_CONTEXT_TOKENS
 from .providers.base import DEFAULT_MAX_OUTPUT_TOKENS
+from .storage import WorkspaceStorage
 
 
 DEFAULTS = {
@@ -23,6 +24,22 @@ CHOICES = {
     "api_format": {"auto", "responses", "chat"},
     "token_counter": {"auto", "official", "usage"},
 }
+USER_ENVIRONMENT_KEYS = frozenset({
+    "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL",
+    "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL",
+    "SKILLS_AGENT_API_FORMAT", "SKILLS_AGENT_TOKEN_COUNTER", "effort",
+})
+
+
+def _load_user_environment(path):
+    """Fill supported model settings without changing the caller's environment choices."""
+    if not path.is_file():
+        return
+    from dotenv import dotenv_values
+
+    for key, value in dotenv_values(path, interpolate=False).items():
+        if key in USER_ENVIRONMENT_KEYS and value is not None:
+            os.environ.setdefault(key, value)
 
 
 def _validate(values):
@@ -66,8 +83,12 @@ def normalize_paths(args):
 def load_agent_config(args):
     """Precedence: explicit CLI > TOML > environment > built-in defaults."""
     args = normalize_paths(args)
+    user_directory = WorkspaceStorage(args.workspace).data_dir
+    _load_user_environment(user_directory / ".env")
     explicit = getattr(args, "config", None)
     path = (explicit or args.workspace / "skills-agent.toml").expanduser().resolve()
+    if explicit is None and not path.exists():
+        path = user_directory / "config.toml"
     settings = {}
     if explicit is not None or path.exists():
         with path.open("rb") as stream:

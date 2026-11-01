@@ -7,12 +7,12 @@ Python CLI Agent。模型阅读 `SKILL.md` 和参考脚本源码，通过 `edit_
 需要 Python 3.11+ 和 Git。Python 运行依赖及锁定版本见 `pyproject.toml` 和 `uv.lock`。
 
 ```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install -e .
+# 在源码目录安装一次，随后可在任何目录使用 skagt。
+uv tool install --editable .
 
 export OPENAI_API_KEY='你的密钥'
 export OPENAI_MODEL='支持工具调用的模型名称'
-.venv/bin/skills-agent run --session demo
+skagt run --session demo
 
 # 进入后输入自然语言，每行一轮；/exit 或 Ctrl-D 退出
 > 检查当前工作目录
@@ -20,15 +20,17 @@ export OPENAI_MODEL='支持工具调用的模型名称'
 > /exit
 
 # 回放主会话，无需 API 配置
-.venv/bin/skills-agent history --session demo
+skagt history --session demo
 
 # 展开原始公开消息、命令源码和工具输出
-.venv/bin/skills-agent history --session demo --full
+skagt history --session demo --full
 ```
 
-也可以使用 `.venv/bin/python -m skills_agent`。`run --session demo` 创建或恢复名为 `demo` 的会话，先按时间顺序回放主会话，再等待输入，回答后继续留在会话中。启动命令不接受消息参数。Ctrl-C 中断当前任务并停止正在运行的脚本，随后可继续输入。
+`skagt` 和 `skills-agent` 是同一个程序的两个入口。全局安装不改变启动时的当前目录，也不需要激活项目虚拟环境；若命令不在 PATH 中，执行 `uv tool update-shell` 后重新打开终端。可编辑安装直接使用当前源码；入口或依赖变化后执行 `uv tool install --reinstall --editable .`。开发时也可通过 `python3 -m venv .venv`、`.venv/bin/python -m pip install -e .` 安装，再使用 `.venv/bin/skills-agent` 或 `.venv/bin/python -m skills_agent`。
 
-`run` 和 `benchmark` 自动读取所选工作目录下的 `skills-agent.toml`，没有该文件时使用环境变量及内置默认值。项目根目录已提供：
+`run --session demo` 为当前工作目录创建或恢复名为 `demo` 的会话，先按时间顺序回放主会话，再等待输入，回答后继续留在会话中。同一会话名在不同工作目录中使用独立记录；切换目录后恢复旧会话时，用 `--workspace` 指定原工作目录。启动命令不接受消息参数。Ctrl-C 中断当前任务并停止正在运行的脚本，随后可继续输入。
+
+`run` 和 `benchmark` 自动读取所选工作目录下的 `skills-agent.toml`，没有该文件时读取用户级 `~/.skills-agent/config.toml`；两者都没有时使用环境变量及内置默认值。项目根目录已提供：
 
 ```toml
 context_tokens = 524000
@@ -49,6 +51,17 @@ uv run --env-file .env skills-agent run --session demo --max-output-tokens 32768
 优先级为 **显式命令行参数 > 配置文件 > 已支持的环境变量 > 内置默认值**。`--config /path/to/agent.toml` 可指定另一份文件，只读取这一份，不合并多份配置。相对 `--config` 路径按所选工作目录解析。会话名、工作目录和输入附件仍通过启动参数指定。
 
 配置文件还可填写 `provider`、`model`、`base_url`、`api_format`、`token_counter`、`skill_dirs` 和 `sandbox_image`。文件中的 `skill_dirs` 相对配置文件所在目录解析；命令行中的相对技能路径按所选工作目录解析。`--skill-dir` 覆盖文件中的额外技能目录列表。API key 只从环境变量读取，可继续放在 `.env` 中，不写入 TOML。`token_counter` 可选 `auto`、`official` 或 `usage`；旧的 DeepSeek 本地计数器及 tokenizer 配置已移除。
+
+全局命令还会读取用户级 `~/.skills-agent/.env`，用于补充 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`、对应的 `ANTHROPIC_*` 三项、`SKILLS_AGENT_API_FORMAT`、`SKILLS_AGENT_TOKEN_COUNTER` 和 `effort`。已有环境变量优先；其他变量忽略，不进行变量展开或执行 shell。任务目录的 `.env` 不会自动加载；需要使用它时仍可运行 `uv run --env-file .env skills-agent run --session demo`。
+
+例如，将下面内容保存在 `~/.skills-agent/.env`，并执行 `chmod 600 ~/.skills-agent/.env`：
+
+```dotenv
+OPENAI_API_KEY=你的密钥
+OPENAI_MODEL=支持工具调用的模型名称
+```
+
+之后在任务目录直接执行 `skagt run --session chat_demo` 即可。连接地址和思考强度可按所用服务补充到该文件；token 额度等默认配置写入 `~/.skills-agent/config.toml`。若进程环境设置了 `SKILLS_AGENT_DATA_DIR`，上述两个文件改从该 runtime 数据根目录读取；`.env` 不能修改 runtime 数据根目录。`history` 无需模型配置，也不读取用户级 `.env`。
 
 工作上下文默认预算为 **1M（1000000 tokens）**，各项 token 额度均可独立设置为正整数。`usage` 模式仅以网关最近一次有效的主模型返回用量判断是否达到 `min(context_tokens, model_context_window) × 80%`：Chat Completions 直接读取 `usage.total_tokens`，Responses 使用 `usage.input_tokens + usage.output_tokens`；不预留输出额度而提前压缩。其他计数模式的有效输入预算为 `min(context_tokens, model_context_window - max_output_tokens)`，压缩阈值取该预算与上述 80% 阈值的较小值；未设置实际窗口时使用 `context_tokens`。配置数值仍需符合所用模型的实际能力。
 

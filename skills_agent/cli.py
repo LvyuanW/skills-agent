@@ -665,7 +665,8 @@ class ConsoleRenderer:
 
 
 def parser():
-    result = argparse.ArgumentParser(prog="skills-agent")
+    name = "skagt" if Path(sys.argv[0]).stem == "skagt" else "skills-agent"
+    result = argparse.ArgumentParser(prog=name)
     commands = result.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="进入会话并进行多轮交互")
     history = commands.add_parser("history", help="回放主会话记录")
